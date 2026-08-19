@@ -932,8 +932,7 @@ void App::ToggleGamePlayMode() {
 
 		const auto& objects = level_.GetLevelObjects().GetObjects();
 		for (const auto& obj : objects) {
-			if (!obj.deleted && (obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
-			    obj.name.find("HumanPlayer") != std::string::npos)) {
+			if (!obj.deleted && obj.type == "HumanPlayer") {
 				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
 				spawn_yaw = glm::degrees((float)obj.rot.z);
 				while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
@@ -1000,6 +999,13 @@ void App::ToggleGamePlayMode() {
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
 		edit_mode_ = snap.was_edit_mode;
+		selected_object_index_ = snap.selected_object_id;
+		show_hud_ = true;
+		input_.keys_ = 0;
+		input_.mouse_delta_x_ = 0.0f;
+		input_.mouse_delta_y_ = 0.0f;
+		skip_input_on_motion_once_ = true;
+		glutSetCursor(GLUT_CURSOR_INHERIT);
 		UpdateViewerVectors();
 		status_message_ = "Editor Mode Restored";
 	}

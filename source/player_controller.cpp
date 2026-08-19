@@ -17,7 +17,7 @@ void PlayerController::Reset(const glm::vec3& spawn_pos, float spawn_yaw) {
     current_eye_height_ = STANDING_EYE_HEIGHT;
     health_ = 100.0f;
     armor_ = 100.0f;
-    is_grounded_ = true;
+    is_grounded_ = false;
     stance_ = PlayerStanceState::Standing;
 }
 
@@ -76,9 +76,14 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
     PlayerGroundQuery gq = collision_.QueryGround(position_, current_eye_height_, get_terrain_z);
     float dt = 1.0f / 30.0f;
 
-    // 4. Locomotion integration
-    if (gq.is_grounded) {
+    if (gq.is_grounded && velocity_.z <= 0.0f) {
         is_grounded_ = true;
+    } else if (!gq.is_grounded && position_.z > gq.ground_height + 50.0f) {
+        is_grounded_ = false;
+    }
+
+    // 4. Locomotion integration
+    if (is_grounded_) {
         stance_ = wants_crouch ? PlayerStanceState::Crouching : PlayerStanceState::Standing;
         velocity_.z = 0.0f;
         position_.z = gq.ground_height;
@@ -96,7 +101,6 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
             stance_ = PlayerStanceState::Airborne;
         }
     } else {
-        is_grounded_ = false;
         // Airborne gravity & steering
         stance_ = PlayerStanceState::Airborne;
         velocity_.z -= GRAVITY * dt;
@@ -129,8 +133,8 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
         collision_.ResolveObstacles(position_, obstacles, 0.4f * WORLD_METER);
     }
 
-    // 6. Ground snap if landing
-    if (!is_grounded_ && position_.z <= gq.ground_height) {
+    // 6. Ground snap if landing while falling downward
+    if (!is_grounded_ && velocity_.z <= 0.0f && position_.z <= gq.ground_height) {
         position_.z = gq.ground_height;
         velocity_.z = 0.0f;
         is_grounded_ = true;

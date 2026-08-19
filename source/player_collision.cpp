@@ -35,11 +35,11 @@ PlayerGroundQuery PlayerCollision::QueryGround(const glm::vec3& position, float 
     query.ground_height = tz;
     query.surface_normal = normal;
 
-    // Check if foot is within snap budget above or slightly below terrain
+    // Check if foot is in immediate contact with ground surface
     float foot_z = position.z;
     float diff = foot_z - tz;
 
-    if (diff >= -500.0f && diff <= query.step_down_budget) {
+    if (diff >= -100.0f && diff <= 100.0f) {
         query.is_grounded = true;
     } else {
         query.is_grounded = false;

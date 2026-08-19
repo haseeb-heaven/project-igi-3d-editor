@@ -2911,10 +2911,10 @@ void Renderer::Draw(const draw_params_s &params,
         int cx = vw / 2 - cross_spr.width / 2;
         int cy = vh / 2 - cross_spr.height / 2;
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + cross_spr.width, cy);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + cross_spr.width, cy + cross_spr.height);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy + cross_spr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + cross_spr.width, cy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + cross_spr.width, cy + cross_spr.height);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy + cross_spr.height);
         glEnd();
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
@@ -2948,14 +2948,14 @@ void Renderer::Draw(const draw_params_s &params,
         glBindTexture(GL_TEXTURE_2D, pb_bg.tex_id);
         glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(hx, hy);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(hx + pb_bg.width, hy);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(hx + pb_bg.width, hy + pb_bg.height);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(hx, hy + pb_bg.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(hx, hy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(hx + pb_bg.width, hy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(hx + pb_bg.width, hy + pb_bg.height);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(hx, hy + pb_bg.height);
         glEnd();
 
         // Foreground health fill (bottom-to-top by player health percentage)
-        float hp_frac = hp / 100.0f;
+        float hp_frac = std::clamp(hp / 100.0f, 0.0f, 1.0f);
         int fill_h = (int)(pb_fg.height * hp_frac);
         glBindTexture(GL_TEXTURE_2D, pb_fg.tex_id);
         if (hp > 50.0f)      glColor4f(0.05f, 1.0f, 0.2f, 0.95f);
@@ -2964,10 +2964,10 @@ void Renderer::Draw(const draw_params_s &params,
 
         int fx = hx + 2, fy = hy + 2;
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f);    glVertex2i(fx, fy);
-        glTexCoord2f(1.0f, 0.0f);    glVertex2i(fx + pb_fg.width, fy);
-        glTexCoord2f(1.0f, hp_frac); glVertex2i(fx + pb_fg.width, fy + fill_h);
-        glTexCoord2f(0.0f, hp_frac); glVertex2i(fx, fy + fill_h);
+        glTexCoord2f(0.0f, 1.0f);           glVertex2i(fx, fy);
+        glTexCoord2f(1.0f, 1.0f);           glVertex2i(fx + pb_fg.width, fy);
+        glTexCoord2f(1.0f, 1.0f - hp_frac); glVertex2i(fx + pb_fg.width, fy + fill_h);
+        glTexCoord2f(0.0f, 1.0f - hp_frac); glVertex2i(fx, fy + fill_h);
         glEnd();
 
         // Green health cross icon
@@ -2977,10 +2977,10 @@ void Renderer::Draw(const draw_params_s &params,
           int ix = hx + pb_bg.width + 6;
           int iy = hy + pb_bg.height - hp_icon.height;
           glBegin(GL_QUADS);
-          glTexCoord2f(0.0f, 0.0f); glVertex2i(ix, iy);
-          glTexCoord2f(1.0f, 0.0f); glVertex2i(ix + hp_icon.width, iy);
-          glTexCoord2f(1.0f, 1.0f); glVertex2i(ix + hp_icon.width, iy + hp_icon.height);
-          glTexCoord2f(0.0f, 1.0f); glVertex2i(ix, iy + hp_icon.height);
+          glTexCoord2f(0.0f, 1.0f); glVertex2i(ix, iy);
+          glTexCoord2f(1.0f, 1.0f); glVertex2i(ix + hp_icon.width, iy);
+          glTexCoord2f(1.0f, 0.0f); glVertex2i(ix + hp_icon.width, iy + hp_icon.height);
+          glTexCoord2f(0.0f, 0.0f); glVertex2i(ix, iy + hp_icon.height);
           glEnd();
         }
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -3046,10 +3046,10 @@ void Renderer::Draw(const draw_params_s &params,
         int wx = vw - wspr.width - 24;
         int wy = ry + 36;
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(wx, wy);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(wx + wspr.width, wy);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(wx + wspr.width, wy + wspr.height);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(wx, wy + wspr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(wx, wy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(wx + wspr.width, wy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(wx + wspr.width, wy + wspr.height);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(wx, wy + wspr.height);
         glEnd();
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
@@ -3074,10 +3074,10 @@ void Renderer::Draw(const draw_params_s &params,
         int cx = vw - 170;
         int cy = ry + 4;
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + clip_spr.width, cy);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + clip_spr.width, cy + clip_spr.height);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy + clip_spr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + clip_spr.width, cy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + clip_spr.width, cy + clip_spr.height);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy + clip_spr.height);
         glEnd();
         glBindTexture(GL_TEXTURE_2D, 0);
         glDisable(GL_TEXTURE_2D);
