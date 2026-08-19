@@ -325,6 +325,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 					int btn_idx = 0;
 					int RESUME_ROW = btn_idx++;
+					int MODE_ROW = btn_idx++;
 					int FONT_ROW = btn_idx++;
 					int LEVEL_ROW = btn_idx++;
 					int AUTOSAVE_ROW = btn_idx++;
@@ -352,6 +353,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					};
 
 					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
+					else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 					else if (btn_hit2(FONT_ROW)) {
 						// Layout MUST match renderer: dynamic label width, val_w=44
 						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
@@ -592,11 +594,28 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (window_state_.cursor_visible_ && !pause_mode_) {
 		glutSetCursor(GLUT_CURSOR_NONE);
 	}
+
+	if (in_game_mode_ && !pause_mode_) {
+		if (button == GLUT_LEFT_BUTTON) {
+			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
+		}
+		if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
+			gameplay_host_.GetWorld().GetWeapons().Reload();
+		}
+		return;
+	}
 }
 
 void App::Input_OnMotion(int x, int y) {
 	int dx = x - mouse_state_.prior_x_;
 	int dy = y - mouse_state_.prior_y_;
+
+	if (in_game_mode_ && !pause_mode_) {
+		gameplay_host_.GetInputRouter().OnMouseMove(static_cast<float>(dx), static_cast<float>(dy));
+		mouse_state_.prior_x_ = x;
+		mouse_state_.prior_y_ = y;
+		return;
+	}
 
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 	if (enableCameraMode && (dx != 0 || dy != 0))

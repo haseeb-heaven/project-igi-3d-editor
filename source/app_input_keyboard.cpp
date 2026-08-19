@@ -512,6 +512,15 @@ bool App::InlineAutocomplete() {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
+	if (in_game_mode_ && !pause_mode_) {
+		if (key == 27) { // ESC
+			TogglePauseMenu();
+			return;
+		}
+		gameplay_host_.GetInputRouter().OnKeyboardKey(key, true);
+		return;
+	}
+
 	bool ctrlDown = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0 ||
 	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 	bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
@@ -1432,6 +1441,11 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
+
+	if (in_game_mode_ && !pause_mode_) {
+		gameplay_host_.GetInputRouter().OnKeyboardKey(key, false);
+		return;
+	}
 
 	// Check for modifier keys - if pressed, skip movement key checks
 	int modifiers = glutGetModifiers();

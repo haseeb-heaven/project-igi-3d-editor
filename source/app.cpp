@@ -180,6 +180,15 @@ bool App::Init(int argc, char** argv) {
 		Logger::Get().Log(LogLevel::WARNING, "[App] editor_hwnd_ is NULL — global hotkey will not work");
 	}
 
+	extern App g_app;
+	static auto s_terrain_cb = [](float x, float y) -> float {
+		extern App g_app;
+		float z = 0.0f;
+		g_app.GetLevelZ(x, y, z);
+		return z;
+	};
+	gameplay_host_.Initialize(s_terrain_cb);
+
 	return true;
 }
 
@@ -451,6 +460,13 @@ void App::Frame(float delta_seconds) {
 					return t == "HumanSoldier" || t == "HumanSoldierFemale" ||
 					       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 				 }())),
+			.in_game_mode_         = in_game_mode_,
+			.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
+			.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
+			.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
+			.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
+			.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
+			.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
 			.help_scroll_offset_   = help_scroll_offset_,
 			.help_entries_         = &help_entries_,
 			.show_task_type_       = show_task_type_,
@@ -515,7 +531,18 @@ void App::Frame(float delta_seconds) {
 	extern float g_renderer_delta_secs;
 	g_renderer_delta_secs = delta_seconds;
 
-	ProcessInput(delta_seconds);
+	if (in_game_mode_) {
+		int64_t now_ms = Sys_Milliseconds();
+		gameplay_host_.Update(now_ms);
+
+		const auto& player = gameplay_host_.GetWorld().GetPlayer();
+		viewer_.pos_ = player.GetEyePosition();
+		viewer_.yaw_ = player.GetYaw();
+		viewer_.pitch_ = player.GetPitch();
+		UpdateViewerVectors();
+	} else {
+		ProcessInput(delta_seconds);
+	}
 
 	// Update animation playback (auto-play for AI NPCs)
 	UpdateAnimations(delta_seconds);
@@ -647,6 +674,13 @@ void App::Frame(float delta_seconds) {
 				return t == "HumanSoldier" || t == "HumanSoldierFemale" ||
 				       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 			 }())),
+		.in_game_mode_         = in_game_mode_,
+		.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
+		.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
+		.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
+		.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
+		.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
+		.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
 		.help_scroll_offset_   = help_scroll_offset_,
 		.help_entries_         = &help_entries_,
 		.show_task_type_       = show_task_type_,
@@ -865,6 +899,30 @@ void App::TogglePauseMenu() {
 
 bool App::GetPauseMode() const {
 	return pause_mode_;
+}
+
+void App::ToggleGamePlayMode() {
+	in_game_mode_ = !in_game_mode_;
+	if (in_game_mode_) {
+		igi::EditorSnapshot snap;
+		snap.camera_pos = viewer_.pos_;
+		snap.camera_yaw = viewer_.yaw_;
+		snap.camera_pitch = viewer_.pitch_;
+		snap.was_edit_mode = edit_mode_;
+		snap.selected_object_id = selected_object_index_;
+		gameplay_host_.OpenGameplay(snap);
+		edit_mode_ = false;
+		show_hud_ = true;
+		status_message_ = "Game Mode Active: WASD move, Mouse look/fire, Space jump, C crouch, R reload, ESC menu";
+	} else {
+		igi::EditorSnapshot snap;
+		gameplay_host_.CloseGameplay(snap);
+		viewer_.pos_ = snap.camera_pos;
+		viewer_.yaw_ = snap.camera_yaw;
+		viewer_.pitch_ = snap.camera_pitch;
+		edit_mode_ = snap.was_edit_mode;
+		status_message_ = "Editor Mode Restored";
+	}
 }
 
 void App::SetEditBrush(int brush) {

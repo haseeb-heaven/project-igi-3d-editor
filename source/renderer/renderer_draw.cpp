@@ -1479,6 +1479,10 @@ void Renderer::Draw(const draw_params_s &params,
       char font_btn_label[32];
       snprintf(font_btn_label, sizeof(font_btn_label), "Font: %s",
                Config::Get().useEditorFont ? "Editor" : "System");
+      char mode_btn_label[64];
+      snprintf(mode_btn_label, sizeof(mode_btn_label), "Mode: [%s]",
+               task_tree_view.in_game_mode_ ? "Game Play" : "Editor");
+
       int mods = task_tree_view.terrain_mod_options_;
       bool tex = (mods & TERRAIN_TEXTURE_MOD) != 0;
       bool hgt = (mods & TERRAIN_HEIGHT_MOD) != 0;
@@ -1495,6 +1499,8 @@ void Renderer::Draw(const draw_params_s &params,
 
       std::vector<const char*> btn_labels;
       btn_labels.push_back("Resume");
+      const int MODE_ROW = btn_labels.size();
+      btn_labels.push_back(mode_btn_label);
       const int FONT_ROW = btn_labels.size();
       btn_labels.push_back(font_btn_label);
       const int LEVEL_ROW = btn_labels.size();
@@ -1558,7 +1564,14 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.mouse_y_ >= screen_btn_y - 15 &&
                         task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
-        if (i == FONT_ROW) {
+        if (i == MODE_ROW) {
+          int tw = (int)strlen(mode_btn_label) * 8;
+          int gx = menu_x + (menu_w - tw) / 2;
+          draw_text_sys(gx, screen_btn_y, mode_btn_label,
+                        task_tree_view.in_game_mode_ ? 0.2f : (hovered ? 1.0f : 0.0f),
+                        task_tree_view.in_game_mode_ ? 1.0f : (hovered ? 1.0f : 0.85f),
+                        task_tree_view.in_game_mode_ ? 0.3f : 0.0f);
+        } else if (i == FONT_ROW) {
           // "Font: <type>  [-] <n> [+]" — label left, spinner group right; whole row centered
           const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
           const char* lbl = font_btn_label;
@@ -2773,6 +2786,59 @@ void Renderer::Draw(const draw_params_s &params,
         }
       }
       draw_text(px + 4, vh - ftr_h + 4, "[Enter] Insert  [Esc] Cancel  [Type] Filter", 0.5f, 0.5f, 0.5f);
+    }
+
+    // ── In-Game HUD overlay ──────────────────────────────────────────────────
+    if (task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_) {
+      int vw = params.view_define_->viewport_width_;
+      int vh = params.view_define_->viewport_height_;
+
+      // 1. Center Crosshair
+      int cx = vw / 2;
+      int cy = vh / 2;
+      glLineWidth(1.5f);
+      glColor4f(0.0f, 1.0f, 0.0f, 0.9f);
+      glBegin(GL_LINES);
+      glVertex2i(cx - 12, cy); glVertex2i(cx - 3, cy);
+      glVertex2i(cx + 3, cy);  glVertex2i(cx + 12, cy);
+      glVertex2i(cx, cy - 12); glVertex2i(cx, cy - 3);
+      glVertex2i(cx, cy + 3);  glVertex2i(cx, cy + 12);
+      glEnd();
+      glLineWidth(1.0f);
+
+      // 2. Health & Armor HUD (Bottom Left)
+      char hp_str[64], arm_str[64];
+      snprintf(hp_str, sizeof(hp_str), "HEALTH: %d", (int)task_tree_view.player_health_);
+      snprintf(arm_str, sizeof(arm_str), "ARMOR:  %d", (int)task_tree_view.player_armor_);
+
+      draw_text_sys(24, vh - 60, hp_str, 0.2f, 1.0f, 0.2f);
+      draw_text_sys(24, vh - 40, arm_str, 0.3f, 0.8f, 1.0f);
+
+      // Health bar quad
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(0.0f, 0.8f, 0.0f, 0.7f);
+      glBegin(GL_QUADS);
+      glVertex2i(24, 65);
+      glVertex2i(24 + (int)(task_tree_view.player_health_ * 1.5f), 65);
+      glVertex2i(24 + (int)(task_tree_view.player_health_ * 1.5f), 75);
+      glVertex2i(24, 75);
+      glEnd();
+      glDisable(GL_BLEND);
+
+      // 3. Weapon Name & Ammo Counter (Bottom Right)
+      char ammo_str[96];
+      snprintf(ammo_str, sizeof(ammo_str), "%s   %d / %d", task_tree_view.active_weapon_name_.c_str(), task_tree_view.clip_ammo_, task_tree_view.reserve_ammo_);
+      int aw_w = (int)strlen(ammo_str) * 8;
+      draw_text_sys(vw - aw_w - 30, vh - 45, ammo_str, 1.0f, 0.9f, 0.2f);
+
+      // 4. Mission Objective Banner (Top Center)
+      if (!task_tree_view.objective_text_.empty()) {
+        char obj_str[256];
+        snprintf(obj_str, sizeof(obj_str), "MISSION: %s", task_tree_view.objective_text_.c_str());
+        int ob_w = (int)strlen(obj_str) * 8;
+        draw_text_sys((vw - ob_w) / 2, 28, obj_str, 1.0f, 1.0f, 1.0f);
+      }
     }
 
     glMatrixMode(GL_PROJECTION);

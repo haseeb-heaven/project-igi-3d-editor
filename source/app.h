@@ -11,6 +11,7 @@
 #include "renderer/model.h"
 #include "animation.h"
 #include "debug_command_manager.h"
+#include "runtime/gameplay_host.h"
 #include <atomic>
 #include <optional>
 #include <set>
@@ -41,11 +42,14 @@ public:
   void LaunchGame();
   void ExportTextureMap();
   int GetCurLevelNo() const;
+  bool GetLevelZ(float x, float y, float& z) { return level_.GetTerrainZ(x, y, z); }
 
   // draw wireframe on top of solid mesh
   void ToggleOverlayWireframe();
   void ToggleDrawParts(int part);
   void SetDrawParts(int parts);
+  void ToggleGamePlayMode();
+  bool IsGamePlayMode() const { return in_game_mode_; }
   void ToggleTerrainDrawOption(int opt);
   void ToggleTerrainModOption(int opt);
   void SetFogEnabled(bool enabled);
@@ -144,7 +148,9 @@ private:
   IGIBridge bridge_;
   Renderer::draw_params_s draw_params_;
   int terrain_mod_options_;
-  // editor
+  // editor & runtime
+  bool in_game_mode_ = false;
+  igi::GameplayHost gameplay_host_;
   bool edit_mode_;
   bool terrain_edit_enabled_;
   bool pause_mode_;
