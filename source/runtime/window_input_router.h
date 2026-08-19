@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include "../player_controller.h"
+#include "config_qvm.h"
 
 namespace igi {
 
@@ -14,6 +15,9 @@ enum class WindowFocusTarget {
 class WindowInputRouter {
 public:
     WindowInputRouter();
+
+    void SetProfile(const ProfileConfig& profile);
+    const ProfileConfig& GetProfile() const { return profile_; }
 
     void SetFocus(WindowFocusTarget target);
     WindowFocusTarget GetFocus() const { return focus_target_; }
@@ -29,6 +33,7 @@ public:
 
 private:
     WindowFocusTarget focus_target_ = WindowFocusTarget::EditorWindow;
+    ProfileConfig profile_;
     PlayerInputCmd current_cmd_;
 };
 

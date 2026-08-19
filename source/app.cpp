@@ -1,4 +1,6 @@
 #include "app_internal.h"
+#include "runtime/config_qvm.h"
+#include "runtime/human_player_config.h"
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -695,10 +697,52 @@ void App::ToggleGamePlayMode() {
 		snap.camera_pitch = viewer_.pitch_;
 		snap.was_edit_mode = edit_mode_;
 		snap.selected_object_id = selected_object_index_;
+
+		// 1. Read config.qvm profile for controls, sensitivity, sound volume
+		igi::ProfileConfig profile = igi::ConfigQvmLoader::GetActiveProfile();
+		gameplay_host_.GetInputRouter().SetProfile(profile);
+
+		// 2. Read humanplayer.qvm tuning for player speed, jump impulse, health
+		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
+		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.max_health, tuning.max_armor);
+
+		// 2. Find HumanPlayer (Task_New(0, ...)) spawn position from level objects
+		glm::vec3 spawn_pos = viewer_.pos_;
+		float spawn_yaw = viewer_.yaw_;
+		float spawn_pitch = 0.0f;
+		bool found_spawn = false;
+
+		const auto& objects = level_.GetLevelObjects().GetObjects();
+		for (const auto& obj : objects) {
+			if (obj.taskId == "0" || obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
+			    obj.name.find("HumanPlayer") != std::string::npos) {
+				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
+				spawn_yaw = (float)obj.rot.z;
+				found_spawn = true;
+				break;
+			}
+		}
+
 		gameplay_host_.OpenGameplay(snap);
+
+		if (found_spawn) {
+			gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
+			gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
+			viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
+			viewer_.yaw_ = spawn_yaw;
+			viewer_.pitch_ = 0.0f;
+			UpdateViewerVectors();
+		}
+
+		// Disable all editor modes and editor tools
 		edit_mode_ = false;
+		terrain_edit_enabled_ = false;
+		prop_editor_open_ = false;
+		task_picker_open_ = false;
+		ac_task_picker_open_ = false;
+		model_picker_open_ = false;
 		show_hud_ = true;
-		status_message_ = "Game Mode Active: WASD move, Mouse look/fire, Space jump, C crouch, R reload, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, R reload, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		gameplay_host_.CloseGameplay(snap);
@@ -706,6 +750,7 @@ void App::ToggleGamePlayMode() {
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
 		edit_mode_ = snap.was_edit_mode;
+		UpdateViewerVectors();
 		status_message_ = "Editor Mode Restored";
 	}
 }
