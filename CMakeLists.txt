@@ -116,6 +116,7 @@ set_source_files_properties(
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
+  source/renderer/object_lightmap.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -260,9 +261,7 @@ target_include_directories(igi_tests PRIVATE source)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
-target_link_libraries(igi_tests PRIVATE gtest_main)
+target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
@@ -289,6 +288,7 @@ target_sources(igi_tests PRIVATE
     source/level/terrain_files.cpp
     source/renderer/mef_native.cpp
     source/utils_igi1conv.cpp
+    source/renderer/object_lightmap.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies

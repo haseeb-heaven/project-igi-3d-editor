@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "renderer_internal.h"
 #include "graph_overlay.h"
+#include "object_lightmap.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
@@ -1479,6 +1480,10 @@ void Renderer::Draw(const draw_params_s &params,
       char font_btn_label[32];
       snprintf(font_btn_label, sizeof(font_btn_label), "Font: %s",
                Config::Get().useEditorFont ? "Editor" : "System");
+      char lightmap_btn_label[64];
+      snprintf(lightmap_btn_label, sizeof(lightmap_btn_label), "Lightmap: [%s]",
+               igi::ObjectLightmapManager::Get().GetRenderModeName());
+
       int mods = task_tree_view.terrain_mod_options_;
       bool tex = (mods & TERRAIN_TEXTURE_MOD) != 0;
       bool hgt = (mods & TERRAIN_HEIGHT_MOD) != 0;
@@ -1506,7 +1511,7 @@ void Renderer::Draw(const draw_params_s &params,
       const int MUSIC_ROW = btn_labels.size();
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
-      btn_labels.push_back("Lightmaps");
+      btn_labels.push_back(lightmap_btn_label);
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
