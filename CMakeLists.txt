@@ -121,6 +121,7 @@ set_source_files_properties(
   source/runtime/config_qvm.cpp
   source/runtime/human_player_config.cpp
   source/runtime/audio_system.cpp
+  source/renderer/object_lightmap.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -279,9 +280,7 @@ target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parser
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
-target_link_libraries(igi_tests PRIVATE gtest_main)
+target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
@@ -327,8 +326,16 @@ target_sources(igi_tests PRIVATE
     source/runtime/editor_snapshot.cpp
     source/runtime/window_input_router.cpp
     source/runtime/simulation_scheduler.cpp
-    source/runtime/gameplay_host.cpp
->>>>>>> eb4ca04 (feat(runtime): implement Game Mode runtime subsystems and twin-window architecture per PORTING_SPECIFICATION.md)
+    source/runtime/audio_system.cpp
+    source/runtime/config_qvm.cpp
+    source/runtime/human_player_config.cpp
+)
+
+set_source_files_properties(
+    source/runtime/audio_system.cpp
+    source/runtime/config_qvm.cpp
+    source/runtime/human_player_config.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies

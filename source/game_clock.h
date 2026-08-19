@@ -47,6 +47,7 @@ private:
     uint64_t tick_count_ = 0;
     bool is_paused_ = false;
     bool in_excluded_scope_ = false;
+    bool has_last_time_ = false;
 };
 
 } // namespace igi

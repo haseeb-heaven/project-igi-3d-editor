@@ -21,7 +21,8 @@ TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
     EXPECT_EQ(clock.GetTickCount(), 0);
     EXPECT_FALSE(clock.IsTickDue());
 
-    // Advance by 100ms (~3 ticks)
+    // Establish time base, then advance by 100ms (~3 ticks)
+    clock.Update(0);
     clock.Update(100);
     EXPECT_TRUE(clock.IsTickDue());
 
@@ -35,7 +36,7 @@ TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
 
     // Test pause
     clock.SetPaused(true);
-    clock.Update(200);
+    clock.Update(300);
     EXPECT_FALSE(clock.IsTickDue());
 }
 
@@ -84,29 +85,44 @@ TEST(RuntimeTaskTreeTest, LifecycleAndMessaging) {
     EXPECT_TRUE(child->IsActive());
 }
 
-// 4. Player Locomotion & Physics Integration Tests
+// 4. Player Locomotion, Physics & Obstacle Collision Integration Tests
 TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     PlayerController player;
-    player.Reset(glm::vec3(0.0f, 0.0f, 100.0f));
+    player.Reset(glm::vec3(0.0f, 0.0f, 10000.0f));
 
     auto dummy_terrain = [](float x, float y) -> float { return 0.0f; };
 
     // Initially in air (Z = 100, terrain = 0)
     PlayerInputCmd cmd;
-    player.Tick(cmd, dummy_terrain, glm::vec3(0.0f));
+    player.Tick(cmd, dummy_terrain);
     EXPECT_FALSE(player.IsGrounded());
     EXPECT_LT(player.GetVelocity().z, 0.0f); // Falling
 
     // Place on ground
     player.Reset(glm::vec3(0.0f, 0.0f, 0.0f));
-    player.Tick(cmd, dummy_terrain, glm::vec3(0.0f));
+    player.Tick(cmd, dummy_terrain);
     EXPECT_TRUE(player.IsGrounded());
 
     // Jump trigger
     cmd.jump = true;
-    player.Tick(cmd, dummy_terrain, glm::vec3(0.0f));
+    player.Tick(cmd, dummy_terrain);
     EXPECT_FALSE(player.IsGrounded());
     EXPECT_GT(player.GetVelocity().z, 0.0f);
+
+    // Obstacle collision test
+    player.Reset(glm::vec3(100.0f, 100.0f, 0.0f));
+    std::vector<ObstacleCollider> obstacles;
+    ObstacleCollider enemy;
+    enemy.center = glm::vec3(100.0f, 100.0f, 0.0f);
+    enemy.radius = 1638.4f;
+    enemy.height = 7372.8f;
+    obstacles.push_back(enemy);
+
+    PlayerCollision collision;
+    glm::vec3 test_pos(100.0f, 100.0f, 0.0f);
+    collision.ResolveObstacles(test_pos, obstacles, 1638.4f);
+    // Should resolve without NaN/Inf
+    EXPECT_FALSE(std::isnan(test_pos.x) || std::isnan(test_pos.y));
 }
 
 // 5. Weapon Fire & Ballistics Tests
