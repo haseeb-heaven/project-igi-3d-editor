@@ -609,8 +609,8 @@ int main(int argc, char **argv) {
 #endif
 
   // read window width & height from command line
-  int wnd_w = Arg_ReadInt(argc, argv, "-w", 800);
-  int wnd_h = Arg_ReadInt(argc, argv, "-h", 600);
+  int wnd_w = Arg_ReadInt(argc, argv, "-w", 1280);
+  int wnd_h = Arg_ReadInt(argc, argv, "-h", 720);
 
   // read level from command line
   int level_no = Arg_ReadInt(argc, argv, "-level", 1);
@@ -808,9 +808,8 @@ int main(int argc, char **argv) {
   UpdateChooseLevelMenuText();
   UpdateScaleMenuText();
 
-  // Start in fullscreen (ALT+ENTER toggles back to the windowed size below).
-  g_app.SetInitialFullscreen(wnd_w, wnd_h);
-  glutFullScreen();
+  // Start in windowed mode (ALT+ENTER toggles fullscreen)
+  g_app.OnWindowResize(wnd_w, wnd_h);
 
   try {
     // enter main loop
