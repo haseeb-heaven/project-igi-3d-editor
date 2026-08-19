@@ -25,6 +25,7 @@ public:
     static ObjectLightmapManager& Get();
 
     void LoadLevelLightmaps(int level_no);
+    void BakeAllLightmaps(int level_no);
     void Clear();
 
     // Look up lightmap texture for a placement model (e.g. "001_01_1_00000.olm")

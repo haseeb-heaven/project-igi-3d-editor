@@ -17,6 +17,11 @@ ObjectLightmapManager::~ObjectLightmapManager() {
     Clear();
 }
 
+void ObjectLightmapManager::BakeAllLightmaps(int level_no) {
+    Clear();
+    LoadLevelLightmaps(level_no);
+}
+
 void ObjectLightmapManager::Clear() {
     for (auto& pair : lightmaps_) {
         for (auto& page : pair.second) {

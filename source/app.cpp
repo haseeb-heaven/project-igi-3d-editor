@@ -613,8 +613,8 @@ void App::Frame(float delta_seconds) {
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
 	draw_params_.level_objects_ = &level_.GetLevelObjects();
-	draw_params_.selected_object_index_ = selected_object_index_;
-	draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
+	draw_params_.selected_object_index_ = in_game_mode_ ? -1 : selected_object_index_;
+	draw_params_.show_magic_obj_spheres_ = in_game_mode_ ? false : show_magic_obj_spheres_;
 	// All AI with an active, playing clip are skinned-replaced simultaneously
 	// (skinnedReplacementIndices must outlive renderer_.Draw() below, so it's a
 	// local in this Frame() call, not a temporary).
@@ -625,7 +625,7 @@ void App::Frame(float delta_seconds) {
 
 
 	float ground_z = 0.0f;
-	bridge_.SetEnabled(show_hud_);
+	bridge_.SetEnabled(show_hud_ && !in_game_mode_);
 	IGIBridge::PositionData data = bridge_.GetLatestData();
 	level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
 
@@ -633,7 +633,7 @@ void App::Frame(float delta_seconds) {
 	ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 
 	Renderer::task_tree_view_params_s task_tree_view = {
-		.show_hud_ = show_hud_,
+		.show_hud_ = in_game_mode_ ? false : show_hud_,
 		.status_msg_ = status_message_,
 		.pause_mode_ = pause_mode_,
 		.pause_active_input_ = pause_active_input_,
@@ -641,25 +641,25 @@ void App::Frame(float delta_seconds) {
 		.pause_search_input_ = pause_search_input_,
 		.pause_terrain_expanded_ = pause_terrain_expanded_,
 		.terrain_draw_options_ = GetTerrainDrawOptions(),
-		.show_debug_ = show_debug_,
-		.show_help_ = show_help_,
-		.edit_mode_ = edit_mode_,
-		.terrain_edit_enabled_ = terrain_edit_enabled_,
+		.show_debug_ = in_game_mode_ ? false : show_debug_,
+		.show_help_ = in_game_mode_ ? false : show_help_,
+		.edit_mode_ = in_game_mode_ ? false : edit_mode_,
+		.terrain_edit_enabled_ = in_game_mode_ ? false : terrain_edit_enabled_,
 		.terrain_mod_options_ = terrain_mod_options_,
-			.selected_object_index_ = selected_object_index_,
-		.hover_object_index_ = hover_object_index_,
-		.hover_tree_index_ = hover_tree_index_,
+		.selected_object_index_ = in_game_mode_ ? -1 : selected_object_index_,
+		.hover_object_index_ = in_game_mode_ ? -1 : hover_object_index_,
+		.hover_tree_index_ = in_game_mode_ ? -1 : hover_tree_index_,
 		.mouse_x_ = mouse_state_.prior_x_,
 		.mouse_y_ = mouse_state_.prior_y_,
 		.tree_scroll_offset = tree_scroll_offset_,
 		.tree_decl_expanded = tree_decl_expanded_,
 		.level_objects_ = &level_.GetLevelObjects(),
-		.task_picker_open_ = task_picker_open_,
+		.task_picker_open_ = in_game_mode_ ? false : task_picker_open_,
 		.task_picker_selected_idx_ = task_picker_selected_idx_,
 		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
 		.task_picker_search_ = task_picker_search_,
-		.enable_camera_mode_ = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
-		.prop_editor_open_     = prop_editor_open_,
+		.enable_camera_mode_ = in_game_mode_ ? false : Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
+		.prop_editor_open_     = in_game_mode_ ? false : prop_editor_open_,
 		.prop_field_index_     = prop_field_index_,
 		.prop_text_edit_field_ = prop_text_edit_field_,
 		.prop_edit_obj_index_  = prop_edit_obj_index_,
@@ -925,36 +925,47 @@ void App::ToggleGamePlayMode() {
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
 		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.max_health, tuning.max_armor);
 
-		// 3. Find HumanPlayer spawn position from level start pos or objects
-		glm::vec3 spawn_pos = level_.GetStartPos();
-		float spawn_yaw = level_.GetStartYaw();
-		bool found_spawn = (spawn_pos.z < 100000000.0f && (spawn_pos.x != 0.0f || spawn_pos.y != 0.0f));
+		// 3. Find HumanPlayer spawn position exactly from level objects or start pos
+		glm::vec3 spawn_pos(0.0f);
+		float spawn_yaw = 0.0f;
+		bool found_spawn = false;
+
+		const auto& objects = level_.GetLevelObjects().GetObjects();
+		for (const auto& obj : objects) {
+			if (!obj.deleted && (obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
+			    obj.modelId == "000_01_1" || obj.name.find("HumanPlayer") != std::string::npos ||
+			    obj.taskId == "0")) {
+				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
+				spawn_yaw = (float)obj.rot.z;
+				found_spawn = true;
+				break;
+			}
+		}
 
 		if (!found_spawn) {
-			const auto& objects = level_.GetLevelObjects().GetObjects();
-			for (const auto& obj : objects) {
-				if (obj.taskId == "0" || obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
-				    obj.modelId == "000_01_1" || obj.name.find("HumanPlayer") != std::string::npos) {
-					spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
-					spawn_yaw = (float)obj.rot.z;
-					found_spawn = true;
-					break;
-				}
+			glm::vec3 l_start = level_.GetStartPos();
+			if (l_start.z < 100000000.0f && (l_start.x != 0.0f || l_start.y != 0.0f || l_start.z != 0.0f)) {
+				spawn_pos = l_start;
+				spawn_yaw = level_.GetStartYaw();
+				found_spawn = true;
 			}
 		}
 
 		if (!found_spawn) {
 			spawn_pos = viewer_.pos_;
 			spawn_yaw = viewer_.yaw_;
-		}
-
-		// Snap to terrain height if available
-		float tz = 0.0f;
-		if (level_.GetTerrainZ(spawn_pos.x, spawn_pos.y, tz)) {
-			spawn_pos.z = tz;
+			float tz = 0.0f;
+			if (level_.GetTerrainZ(spawn_pos.x, spawn_pos.y, tz)) {
+				spawn_pos.z = tz;
+			}
 		}
 
 		gameplay_host_.OpenGameplay(snap);
+
+		// Initialize mission objectives for this specific level
+		int current_lvl = level_.GetLevelNo();
+		if (current_lvl <= 0) current_lvl = 1;
+		gameplay_host_.GetWorld().GetLevelFlow().InitializeMission((uint32_t)current_lvl);
 
 		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
 		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
@@ -971,7 +982,9 @@ void App::ToggleGamePlayMode() {
 		task_picker_open_ = false;
 		ac_task_picker_open_ = false;
 		model_picker_open_ = false;
-		show_hud_ = true;
+		show_hud_ = false;
+		selected_object_index_ = -1;
+		hover_object_index_ = -1;
 		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, R reload, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;

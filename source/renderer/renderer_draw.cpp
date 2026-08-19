@@ -481,8 +481,8 @@ void Renderer::Draw(const draw_params_s &params,
 
     int line_y = 30;
 
-    // --- TreeView HUD Implementation (only when TaskTree is visible) ---
-    if (task_tree_view.show_hud_) {
+    // --- TreeView HUD Implementation (only when TaskTree is visible and not in game mode) ---
+    if (task_tree_view.show_hud_ && !task_tree_view.in_game_mode_) {
     if (task_tree_view.level_objects_ && !task_tree_view.prop_editor_open_ && !task_tree_view.task_picker_open_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
       int tree_x = 20;
@@ -768,20 +768,21 @@ void Renderer::Draw(const draw_params_s &params,
       line_y = start_y + (current_row - scroll_offset) * row_h + 20;
     }
     } // end show_hud_ tree panel
-
+    
     // Display object info at mouse position
     int info_object_index = task_tree_view.hover_object_index_;
+    if (task_tree_view.in_game_mode_) info_object_index = -1;
     if (!task_tree_view.status_msg_.empty() &&
         task_tree_view.selected_object_index_ >= 0) {
       info_object_index = task_tree_view.selected_object_index_;
     }
 
-    // Suppress tooltip when: camera orbit mode, over TaskTree, or over property panel
+    // Suppress tooltip when: in game mode, camera orbit mode, over TaskTree, or over property panel
     {
         bool over_tree  = task_tree_view.show_hud_ && task_tree_view.mouse_x_ < 350;
         bool over_panel = task_tree_view.prop_editor_open_ &&
                           task_tree_view.mouse_x_ < (PropPanel::kLeft + PropPanel::kWidth);
-        if (over_tree || over_panel || task_tree_view.enable_camera_mode_) info_object_index = -1;
+        if (task_tree_view.in_game_mode_ || over_tree || over_panel || task_tree_view.enable_camera_mode_) info_object_index = -1;
     }
 
     if (info_object_index >= 0 && task_tree_view.level_objects_) {
@@ -900,7 +901,7 @@ void Renderer::Draw(const draw_params_s &params,
                     1.0f, 0.6f);
         }
       }
-    } else if (!task_tree_view.pause_mode_ && (!task_tree_view.show_hud_ || task_tree_view.mouse_x_ >= 350)) {
+    } else if (!task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_ && (!task_tree_view.show_hud_ || task_tree_view.mouse_x_ >= 350)) {
       int terrainId = -1;
       if (params.terrain_id_at_world_xy_) {
         // Same world->clip transform the 3D scene uses (proj * view * scale_down);
@@ -928,7 +929,7 @@ void Renderer::Draw(const draw_params_s &params,
     // Terrain-edit overlay: 3D brush-radius rings + brush name label.
     // Rendered independently of hover state so rings appear on right-click regardless
     // of whether an object is under the cursor or where the task tree panel is.
-    if (!task_tree_view.pause_mode_ && task_tree_view.terrain_edit_enabled_) {
+    if (!task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_ && task_tree_view.terrain_edit_enabled_) {
       const int vpW = params.view_define_->viewport_width_;
       const int vpH = params.view_define_->viewport_height_;
 
@@ -1431,7 +1432,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
+      const int menu_h = 714; // +38 for Bake All Lightmaps button row
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1517,6 +1518,8 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
       btn_labels.push_back(lightmap_btn_label);
+      const int LIGHTMAPS_CALC_ROW = btn_labels.size();
+      btn_labels.push_back("Bake All Lightmaps");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1681,6 +1684,21 @@ void Renderer::Draw(const draw_params_s &params,
           }
           int lmtw = (int)strlen(lightmap_btn_label) * 6;
           draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lightmap_btn_label,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == LIGHTMAPS_CALC_ROW) {
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          const char* bake_lbl = "Bake All Lightmaps";
+          int btw = (int)strlen(bake_lbl) * 6;
+          draw_text_sys(menu_x + (menu_w - btw) / 2, screen_btn_y, bake_lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
