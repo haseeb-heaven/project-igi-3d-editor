@@ -49,7 +49,7 @@ glm::vec3 PlayerController::GetEyePosition() const {
     return glm::vec3(position_.x, position_.y, position_.z + current_eye_height_);
 }
 
-void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const glm::vec3& anim_root_delta) {
+void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles) {
     if (!IsAlive()) return;
 
     // 1. Look orientation integration
@@ -65,7 +65,7 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
     // 2. Stance and eye height interpolation
     bool wants_crouch = cmd.crouch;
     float target_eye_height = wants_crouch ? CROUCHING_EYE_HEIGHT : STANDING_EYE_HEIGHT;
-    float eye_step = 15.0f; // Smooth ease per tick
+    float eye_step = 250.0f; // Smooth ease per tick
     if (std::abs(current_eye_height_ - target_eye_height) <= eye_step) {
         current_eye_height_ = target_eye_height;
     } else {
@@ -74,10 +74,11 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
 
     // 3. Ground query
     PlayerGroundQuery gq = collision_.QueryGround(position_, current_eye_height_, get_terrain_z);
-    is_grounded_ = gq.is_grounded;
+    float dt = 1.0f / 30.0f;
 
     // 4. Locomotion integration
-    if (is_grounded_) {
+    if (gq.is_grounded) {
+        is_grounded_ = true;
         stance_ = wants_crouch ? PlayerStanceState::Crouching : PlayerStanceState::Standing;
         velocity_.z = 0.0f;
         position_.z = gq.ground_height;
@@ -90,24 +91,30 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
 
         // Jump trigger
         if (cmd.jump && !wants_crouch) {
-            velocity_.z = JUMP_VERTICAL_SPEED;
+            velocity_.z = JUMP_SPEED;
             is_grounded_ = false;
             stance_ = PlayerStanceState::Airborne;
         }
     } else {
+        is_grounded_ = false;
         // Airborne gravity & steering
         stance_ = PlayerStanceState::Airborne;
-        velocity_.z -= GRAVITY_PER_TICK;
+        velocity_.z -= GRAVITY * dt;
 
         // Air control
         glm::vec3 air_nudge = (forward_dir * cmd.forward + right_dir * cmd.strafe) * AIR_CONTROL_SPEED;
-        velocity_.x += air_nudge.x * 0.1f;
-        velocity_.y += air_nudge.y * 0.1f;
+        velocity_.x = air_nudge.x;
+        velocity_.y = air_nudge.y;
     }
 
-    // 5. Apply delta translation (Fixed 30Hz tick = 1/30s)
-    glm::vec3 step = velocity_ * (1.0f / 30.0f);
+    // 5. Apply delta translation (Fixed 30Hz tick)
+    glm::vec3 step = velocity_ * dt;
     position_ += step;
+
+    // Resolve collision against obstacles & enemies
+    if (!obstacles.empty()) {
+        collision_.ResolveObstacles(position_, obstacles, 0.4f * WORLD_METER);
+    }
 
     // 6. Ground snap if landing
     if (!is_grounded_ && position_.z <= gq.ground_height) {

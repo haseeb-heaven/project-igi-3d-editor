@@ -27,7 +27,7 @@ void GameClock::Update(int64_t now_milliseconds) {
     if (last_time_ms_ != 0) {
         delta_ms = now_milliseconds - last_time_ms_;
     } else {
-        delta_ms = now_milliseconds;
+        delta_ms = 0;
     }
     last_time_ms_ = now_milliseconds;
 

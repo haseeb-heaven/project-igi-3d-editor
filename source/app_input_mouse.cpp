@@ -31,11 +31,20 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 }
 
 void App::Input_OnMouse(int button, int state, int x, int y) {
-	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
-
 	// Update mouse position first so EditorProcessClick uses correct coords
 	mouse_state_.prior_x_ = x;
 	mouse_state_.prior_y_ = y;
+
+	if (in_game_mode_ && !pause_mode_) {
+		if (button == GLUT_LEFT_BUTTON) {
+			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
+		} else if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
+			gameplay_host_.GetWorld().GetWeapons().Reload();
+		}
+		return;
+	}
+
+	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 
 	if (button == GLUT_LEFT_BUTTON) {
 		if (GLUT_DOWN == state) {

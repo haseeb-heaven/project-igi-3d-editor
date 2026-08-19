@@ -6,6 +6,10 @@
 #include "app_internal.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
+	if (in_game_mode_ && !pause_mode_) {
+		return;
+	}
+
 	auto& config = Config::Get();
 	// Shift detection mirrors Input_OnKeyboard: GLUT modifiers are sometimes
 	// not reported, so fall back to GetAsyncKeyState for Shift+arrow
@@ -422,6 +426,10 @@ void App::Input_OnSpecial(int key, int x, int y) {
 }
 
 void App::Input_OnSpecialUp(int key, int x, int y) {
+	if (in_game_mode_ && !pause_mode_) {
+		return;
+	}
+
 	auto& config = Config::Get();
 
 	if (key == config.keyMoveForward)  { input_.keys_ &= ~MK_FORWARD;  return; }

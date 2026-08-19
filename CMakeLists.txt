@@ -120,6 +120,7 @@ set_source_files_properties(
   source/utils_igi1conv.cpp
   source/runtime/config_qvm.cpp
   source/runtime/human_player_config.cpp
+  source/runtime/audio_system.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
