@@ -2807,127 +2807,100 @@ void Renderer::Draw(const draw_params_s &params,
       draw_text(px + 4, vh - ftr_h + 4, "[Enter] Insert  [Esc] Cancel  [Type] Filter", 0.5f, 0.5f, 0.5f);
     }
 
-    // ── In-Game HUD overlay ──────────────────────────────────────────────────
+    // ── In-Game HUD overlay (Authentic IGI-style) ────────────────────────────
     if (task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_) {
       int vw = params.view_define_->viewport_width_;
       int vh = params.view_define_->viewport_height_;
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-      // ── 1. Tactical Reticle (Center Crosshair) ───────────────────────────
-      int cx = vw / 2;
-      int cy = vh / 2;
-      glLineWidth(2.0f);
-      glColor4f(0.0f, 1.0f, 0.3f, 0.95f);
+      // ── 1. Tactical Crosshair (center, small green dot-crosshair like IGI) ─
+      int cx = vw / 2, cy = vh / 2;
+      glColor4f(0.0f, 1.0f, 0.2f, 0.9f);
+      glLineWidth(1.5f);
       glBegin(GL_LINES);
-      glVertex2i(cx - 14, cy); glVertex2i(cx - 4, cy);
-      glVertex2i(cx + 4, cy);  glVertex2i(cx + 14, cy);
-      glVertex2i(cx, cy - 14); glVertex2i(cx, cy - 4);
-      glVertex2i(cx, cy + 4);  glVertex2i(cx, cy + 14);
+      glVertex2i(cx - 10, cy); glVertex2i(cx - 3, cy);
+      glVertex2i(cx + 3,  cy); glVertex2i(cx + 10, cy);
+      glVertex2i(cx, cy - 10); glVertex2i(cx, cy - 3);
+      glVertex2i(cx, cy + 3);  glVertex2i(cx, cy + 10);
       glEnd();
       glLineWidth(1.0f);
 
-      // ── 2. Health & Kevlar Armor Panel (Bottom Left) ───────────────────────
-      glEnable(GL_BLEND);
-      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      // Background badge
-      glColor4f(0.02f, 0.10f, 0.03f, 0.85f);
+      // ── 2. HP & Armor bars — bottom left (authentic IGI style) ─────────────
+      float hp  = std::clamp(task_tree_view.player_health_, 0.0f, 100.0f);
+      float arm = std::clamp(task_tree_view.player_armor_,  0.0f, 100.0f);
+      const int BAR_W = 150, BAR_H = 12;
+      const int bx = 20, by_hp = 46, by_arm = 26;
+
+      // HP background (dark red)
+      glColor4f(0.15f, 0.0f, 0.0f, 0.85f);
       glBegin(GL_QUADS);
-      glVertex2i(16, 15); glVertex2i(236, 15);
-      glVertex2i(236, 80); glVertex2i(16, 80);
+      glVertex2i(bx, by_hp); glVertex2i(bx + BAR_W, by_hp);
+      glVertex2i(bx + BAR_W, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
       glEnd();
-      // Border outline
-      glColor4f(0.0f, 0.8f, 0.2f, 0.9f);
+      // HP fill (green → yellow → red)
+      if (hp > 50.f)      glColor4f(0.05f, 0.8f, 0.15f, 0.9f);
+      else if (hp > 25.f) glColor4f(0.9f, 0.75f, 0.0f, 0.9f);
+      else                glColor4f(0.9f, 0.1f, 0.05f, 0.9f);
+      int hpw = (int)(hp / 100.0f * BAR_W);
+      glBegin(GL_QUADS);
+      glVertex2i(bx, by_hp); glVertex2i(bx + hpw, by_hp);
+      glVertex2i(bx + hpw, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
+      glEnd();
+      glColor4f(0.5f, 0.5f, 0.5f, 0.6f);
       glBegin(GL_LINE_LOOP);
-      glVertex2i(16, 15); glVertex2i(236, 15);
-      glVertex2i(236, 80); glVertex2i(16, 80);
+      glVertex2i(bx, by_hp); glVertex2i(bx + BAR_W, by_hp);
+      glVertex2i(bx + BAR_W, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
       glEnd();
+      char hpbuf[32]; snprintf(hpbuf, sizeof(hpbuf), "HP: %d", (int)hp);
+      draw_text_sys(bx, vh - (by_hp + BAR_H + 2), hpbuf, 0.1f, 1.0f, 0.2f);
 
-      // Health Bar
-      float hp = std::clamp(task_tree_view.player_health_, 0.0f, 100.0f);
-      float arm = std::clamp(task_tree_view.player_armor_, 0.0f, 100.0f);
-
-      // Health Bar background
-      glColor4f(0.2f, 0.0f, 0.0f, 0.8f);
+      // Armor background (dark blue)
+      glColor4f(0.0f, 0.05f, 0.2f, 0.85f);
       glBegin(GL_QUADS);
-      glVertex2i(70, 52); glVertex2i(220, 52);
-      glVertex2i(220, 68); glVertex2i(70, 68);
+      glVertex2i(bx, by_arm); glVertex2i(bx + BAR_W, by_arm);
+      glVertex2i(bx + BAR_W, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
       glEnd();
-      // Health Bar fill (Green -> Yellow -> Red)
-      if (hp > 50.0f)      glColor4f(0.0f, 0.95f, 0.2f, 0.9f);
-      else if (hp > 25.0f) glColor4f(0.95f, 0.85f, 0.0f, 0.9f);
-      else                 glColor4f(0.95f, 0.15f, 0.1f, 0.9f);
+      // Armor fill (cyan)
+      glColor4f(0.15f, 0.65f, 0.95f, 0.9f);
+      int armw = (int)(arm / 100.0f * BAR_W);
       glBegin(GL_QUADS);
-      glVertex2i(70, 52); glVertex2i(70 + (int)(hp * 1.5f), 52);
-      glVertex2i(70 + (int)(hp * 1.5f), 68); glVertex2i(70, 68);
+      glVertex2i(bx, by_arm); glVertex2i(bx + armw, by_arm);
+      glVertex2i(bx + armw, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
       glEnd();
-
-      // Armor Bar background
-      glColor4f(0.0f, 0.1f, 0.25f, 0.8f);
-      glBegin(GL_QUADS);
-      glVertex2i(70, 24); glVertex2i(220, 24);
-      glVertex2i(220, 38); glVertex2i(70, 38);
-      glEnd();
-      // Armor Bar fill (Cyan)
-      glColor4f(0.2f, 0.75f, 1.0f, 0.9f);
-      glBegin(GL_QUADS);
-      glVertex2i(70, 24); glVertex2i(70 + (int)(arm * 1.5f), 24);
-      glVertex2i(70 + (int)(arm * 1.5f), 38); glVertex2i(70, 38);
-      glEnd();
-
-      // Labels
-      char hp_lbl[32], arm_lbl[32];
-      snprintf(hp_lbl, sizeof(hp_lbl), "HP  %3d", (int)hp);
-      snprintf(arm_lbl, sizeof(arm_lbl), "ARM %3d", (int)arm);
-      draw_text_sys(24, vh - 66, hp_lbl, 0.1f, 1.0f, 0.2f);
-      draw_text_sys(24, vh - 36, arm_lbl, 0.3f, 0.85f, 1.0f);
-
-      // ── 3. Weapon & Ammo Counter Panel (Bottom Right) ──────────────────────
-      int pan_w = 260;
-      int pan_x = vw - pan_w - 16;
-      // Background badge
-      glColor4f(0.02f, 0.10f, 0.03f, 0.85f);
-      glBegin(GL_QUADS);
-      glVertex2i(pan_x, 15); glVertex2i(vw - 16, 15);
-      glVertex2i(vw - 16, 80); glVertex2i(pan_x, 80);
-      glEnd();
-      // Border outline
-      glColor4f(0.0f, 0.8f, 0.2f, 0.9f);
+      glColor4f(0.5f, 0.5f, 0.5f, 0.6f);
       glBegin(GL_LINE_LOOP);
-      glVertex2i(pan_x, 15); glVertex2i(vw - 16, 15);
-      glVertex2i(vw - 16, 80); glVertex2i(pan_x, 80);
+      glVertex2i(bx, by_arm); glVertex2i(bx + BAR_W, by_arm);
+      glVertex2i(bx + BAR_W, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
       glEnd();
+      char armbuf[32]; snprintf(armbuf, sizeof(armbuf), "ARM: %d", (int)arm);
+      draw_text_sys(bx, vh - (by_arm + BAR_H + 2), armbuf, 0.2f, 0.7f, 1.0f);
 
-      // Active weapon name (gold/amber)
-      draw_text_sys(pan_x + 14, vh - 66, task_tree_view.active_weapon_name_.c_str(), 1.0f, 0.9f, 0.2f);
+      // ── 3. Weapon & Ammo — bottom right ────────────────────────────────────
+      const int wbx = vw - 200, wby = 20;
+      glColor4f(0.0f, 0.0f, 0.0f, 0.6f);
+      glBegin(GL_QUADS);
+      glVertex2i(wbx - 4, wby); glVertex2i(vw - 8, wby);
+      glVertex2i(vw - 8, wby + 52); glVertex2i(wbx - 4, wby + 52);
+      glEnd();
+      draw_text_sys(wbx, vh - (wby + 16), task_tree_view.active_weapon_name_.c_str(), 1.0f, 0.85f, 0.1f);
+      char ammobuf[32];
+      snprintf(ammobuf, sizeof(ammobuf), "%d / %d", task_tree_view.clip_ammo_, task_tree_view.reserve_ammo_);
+      draw_text_sys(wbx, vh - (wby + 36), ammobuf, 1.0f, 1.0f, 1.0f);
 
-      // Ammo digits
-      char ammo_str[64];
-      snprintf(ammo_str, sizeof(ammo_str), "AMMO:  %2d / %3d", task_tree_view.clip_ammo_, task_tree_view.reserve_ammo_);
-      draw_text_sys(pan_x + 14, vh - 36, ammo_str, 0.0f, 1.0f, 0.4f);
-
-      // ── 4. Tactical Mission Objective (Top Center) ─────────────────────────
+      // ── 4. Objective banner — top center ───────────────────────────────────
       if (!task_tree_view.objective_text_.empty()) {
-        char obj_str[256];
-        snprintf(obj_str, sizeof(obj_str), "OBJECTIVE: %s", task_tree_view.objective_text_.c_str());
-        int ob_w = (int)strlen(obj_str) * 8;
-        int ob_x = (vw - ob_w) / 2;
-
-        glColor4f(0.02f, 0.10f, 0.03f, 0.80f);
+        const char* obj_txt = task_tree_view.objective_text_.c_str();
+        int otw = (int)strlen(obj_txt) * 6;
+        int ox = (vw - otw) / 2;
+        glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
         glBegin(GL_QUADS);
-        glVertex2i(ob_x - 14, vh - 44); glVertex2i(ob_x + ob_w + 14, vh - 44);
-        glVertex2i(ob_x + ob_w + 14, vh - 16); glVertex2i(ob_x - 14, vh - 16);
+        glVertex2i(ox - 8, vh - 18); glVertex2i(ox + otw + 8, vh - 18);
+        glVertex2i(ox + otw + 8, vh - 4); glVertex2i(ox - 8, vh - 4);
         glEnd();
-
-        glColor4f(0.0f, 0.8f, 0.2f, 0.85f);
-        glBegin(GL_LINE_LOOP);
-        glVertex2i(ob_x - 14, vh - 44); glVertex2i(ob_x + ob_w + 14, vh - 44);
-        glVertex2i(ob_x + ob_w + 14, vh - 16); glVertex2i(ob_x - 14, vh - 16);
-        glEnd();
-
-        draw_text_sys(ob_x, 34, obj_str, 1.0f, 1.0f, 1.0f);
+        draw_text_sys(ox, 10, obj_txt, 1.0f, 1.0f, 0.3f);
       }
 
-      // ── 5. Quick Controls Help (Top Left) ──────────────────────────────────
-      draw_text_sys(16, 20, "[WASD] Move  [SPACE] Jump  [L-CLICK] Fire  [R] Reload  [1-6] Armory  [ESC] Menu", 0.5f, 0.7f, 0.5f);
       glDisable(GL_BLEND);
     }
 

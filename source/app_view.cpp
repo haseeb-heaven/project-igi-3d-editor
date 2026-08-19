@@ -4,6 +4,7 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include <unordered_set>
 
 void App::ProcessInput(float delta_seconds) {
 	// Safety check: ensure level is loaded before processing movement
@@ -393,52 +394,48 @@ void App::EditorProcessClick() {
 }
 
 bool App::CheckCollision(const glm::vec3& nextPos) {
-    if (noclip_mode_) return false; // Bypass collision
+    if (noclip_mode_) return false;
+    if (level_.GetLevelNo() == 0) return false;
 
-    // Safety check: ensure level is loaded
-    if (level_.GetLevelNo() == 0) {
-        return false; // No collision when level not loaded
-    }
-    
     auto& objects = level_.GetLevelObjects().GetObjects();
-    
-    float playerRadius = 400.0f; 
-    constexpr float BASE_SCALE = 40.96f;
-    constexpr float FALLBACK_RADIUS_MODEL = 200.0f; // fallback collision radius in model units (tight)
-    
+
+    // Only test objects that have real physical geometry in the world.
+    // Skip all non-collidable task types (terrain meta, AI, lightmaps etc.)
+    static const std::unordered_set<std::string> PHYSICAL_TYPES = {
+        "Building", "ExplodeObject", "Door", "SCamera", "SCameraControl",
+        "AlarmControl", "Switch", "Terminal", "Wire", "Fence"
+    };
+
+    constexpr float BASE_SCALE   = 40.96f;
+    constexpr float PLAYER_RADIUS = 200.0f; // ~0.05m in model units
+
     for (const auto& obj : objects) {
+        if (obj.deleted) continue;
+        // Only Buildings and named physical collidable task types
+        if (!obj.isBuilding && PHYSICAL_TYPES.find(obj.type) == PHYSICAL_TYPES.end()) continue;
+
         float dist = glm::distance(nextPos, glm::vec3(obj.pos));
-        if (dist > 150000.0f) continue;
+        if (dist > 100000.0f) continue;
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
         model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
         model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
         model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
-
         model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         glm::vec4 localPos = glm::inverse(model) * glm::vec4(nextPos, 1.0f);
         glm::vec3 extents = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
 
-        // Fallback: if mesh failed to load, use a minimum collision radius
-        float ex = extents.x;
-        float ey = extents.y;
-        float ez = extents.z;
-        if (ex < 1.0f && ey < 1.0f && ez < 1.0f) {
-            ex = ey = ez = FALLBACK_RADIUS_MODEL;
-        }
+        // If no mesh data available, skip (don't guess collision)
+        if (extents.x < 1.0f && extents.y < 1.0f && extents.z < 1.0f) continue;
 
-        if (std::abs(localPos.x) < (ex + playerRadius/BASE_SCALE) &&
-            std::abs(localPos.y) < (ey + playerRadius/BASE_SCALE) &&
-            std::abs(localPos.z) < (ez + playerRadius/BASE_SCALE)) 
+        float pr = PLAYER_RADIUS / BASE_SCALE;
+        if (std::abs(localPos.x) < (extents.x + pr) &&
+            std::abs(localPos.y) < (extents.y + pr) &&
+            std::abs(localPos.z) < (extents.z + pr))
         {
-            static int collisionLogCount = 0;
-            if (collisionLogCount < 50) {
-                Logger::Get().Log(LogLevel::INFO, "[App] Collision with model=" + obj.modelId + " type=" + (obj.isBuilding ? "building" : "object"));
-                collisionLogCount++;
-            }
             return true;
         }
     }

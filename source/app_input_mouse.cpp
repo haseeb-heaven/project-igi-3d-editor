@@ -330,7 +330,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			if (pause_mode_) {
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
-				const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
+				const int menu_h = 714; // matches renderer_draw.cpp (Bake All Lightmaps row added)
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
 

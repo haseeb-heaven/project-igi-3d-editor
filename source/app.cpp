@@ -933,11 +933,14 @@ void App::ToggleGamePlayMode() {
 		const auto& objects = level_.GetLevelObjects().GetObjects();
 		for (const auto& obj : objects) {
 			if (!obj.deleted && (obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
-			    obj.modelId == "000_01_1" || obj.name.find("HumanPlayer") != std::string::npos ||
-			    obj.taskId == "0")) {
+			    obj.name.find("HumanPlayer") != std::string::npos)) {
 				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
 				spawn_yaw = (float)obj.rot.z;
 				found_spawn = true;
+				Logger::Get().Log(LogLevel::INFO, "[App] HumanPlayer spawn: pos=(" +
+					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
+					"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw) +
+					" type=" + obj.type + " name=" + obj.name);
 				break;
 			}
 		}
