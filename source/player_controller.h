@@ -15,8 +15,11 @@ struct PlayerInputCmd {
     float pitch_delta = 0.0f; // Look pitch delta degrees
     bool jump = false;        // Jump key triggered
     bool crouch = false;      // Crouch key held
+    bool sprint = false;      // Sprint key held
     bool fire = false;        // Primary fire held
+    bool zoom = false;        // Secondary fire / zoom held
     bool reload = false;      // Reload key pressed
+    int switch_weapon = -1;   // -1 or weapon index 0..5
 };
 
 enum class PlayerStanceState {
@@ -44,7 +47,7 @@ public:
     void ApplyTuning(float max_health, float max_armor);
 
     // Fixed 30 Hz simulation tick
-    void Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles = {});
+    void Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles = {}, bool (*check_collision)(float x, float y, float z) = nullptr);
 
     // Damage & Health
     void ApplyDamage(float amount);

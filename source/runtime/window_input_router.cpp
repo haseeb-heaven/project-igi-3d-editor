@@ -48,36 +48,42 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         current_cmd_.crouch = is_down;
     } else if (up_key == k_rld || up_key == 'R') {
         current_cmd_.reload = is_down;
+    } else if (key >= '1' && key <= '6') {
+        if (is_down) current_cmd_.switch_weapon = key - '1';
     }
 }
 
 void WindowInputRouter::OnMouseMove(float delta_x, float delta_y) {
     if (focus_target_ != WindowFocusTarget::GameplayWindow) return;
 
-    float sensitivity = profile_.mouse_sensitivity * 0.4f;
+    float sensitivity = profile_.mouse_sensitivity * 0.35f;
     if (sensitivity <= 0.001f) sensitivity = 0.15f;
 
-    current_cmd_.yaw_delta += delta_x * sensitivity;
-    float y_dir = profile_.invert_mouse ? 1.0f : -1.0f;
-    current_cmd_.pitch_delta += delta_y * sensitivity * y_dir;
+    // Standard FPS mouse orientation (moving mouse right turns right, moving mouse up looks up)
+    current_cmd_.yaw_delta += -delta_x * sensitivity;
+    float y_dir = profile_.invert_mouse ? -1.0f : 1.0f;
+    current_cmd_.pitch_delta += -delta_y * sensitivity * y_dir;
 }
 
 void WindowInputRouter::OnMouseButton(int button, bool is_down) {
     if (focus_target_ != WindowFocusTarget::GameplayWindow) return;
 
     int fire_btn = profile_.GetMouseButtonForAction("Fire", 0);
-    if (button == fire_btn) {
+    if (button == fire_btn || button == 0) { // 0 = Left click
         current_cmd_.fire = is_down;
+    } else if (button == 2) { // 2 = Right click (Zoom / Aim down sights)
+        current_cmd_.zoom = is_down;
     }
 }
 
 PlayerInputCmd WindowInputRouter::ConsumeGameplayInput() {
     PlayerInputCmd cmd = current_cmd_;
-    // Clear momentary deltas
+    // Clear momentary deltas and single-trigger events
     current_cmd_.yaw_delta = 0.0f;
     current_cmd_.pitch_delta = 0.0f;
     current_cmd_.jump = false;
     current_cmd_.reload = false;
+    current_cmd_.switch_weapon = -1;
     return cmd;
 }
 

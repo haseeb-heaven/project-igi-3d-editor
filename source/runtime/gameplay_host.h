@@ -16,7 +16,7 @@ public:
     ~GameplayHost();
 
     // Lifecycle
-    void Initialize(float (*get_terrain_z)(float x, float y));
+    void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Shutdown();
 
     // Mode Transitions (Editor <-> Gameplay)

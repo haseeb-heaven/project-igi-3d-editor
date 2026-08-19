@@ -10,9 +10,9 @@ GameplayHost::~GameplayHost() {
     Shutdown();
 }
 
-void GameplayHost::Initialize(float (*get_terrain_z)(float x, float y)) {
+void GameplayHost::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
     get_terrain_z_ = get_terrain_z;
-    world_.Initialize(get_terrain_z);
+    world_.Initialize(get_terrain_z, check_collision);
 }
 
 void GameplayHost::Shutdown() {

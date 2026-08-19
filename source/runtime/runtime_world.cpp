@@ -7,8 +7,9 @@ namespace igi {
 RuntimeWorld::RuntimeWorld() = default;
 RuntimeWorld::~RuntimeWorld() = default;
 
-void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y)) {
+void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
     get_terrain_z_ = get_terrain_z;
+    check_collision_ = check_collision;
     Reset();
 }
 
@@ -49,10 +50,13 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         obstacles.push_back(obs);
     }
 
-    // 1. Tick player physics, obstacle collision, and movement
-    player_.Tick(input_cmd, get_terrain_z_, obstacles);
+    // 1. Tick player physics, obstacle & 3D building collision, and movement
+    player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
 
-    // 2. Weapon firing & cooldowns
+    // 2. Weapon switching, firing & cooldowns
+    if (input_cmd.switch_weapon >= 0 && input_cmd.switch_weapon <= 5) {
+        weapons_.SelectWeapon(input_cmd.switch_weapon);
+    }
     weapons_.Update(dt);
     if (input_cmd.fire) {
         BulletTrace trace;

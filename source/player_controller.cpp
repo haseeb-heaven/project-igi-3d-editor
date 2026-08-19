@@ -49,7 +49,7 @@ glm::vec3 PlayerController::GetEyePosition() const {
     return glm::vec3(position_.x, position_.y, position_.z + current_eye_height_);
 }
 
-void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles) {
+void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles, bool (*check_collision)(float x, float y, float z)) {
     if (!IsAlive()) return;
 
     // 1. Look orientation integration
@@ -84,7 +84,7 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
         position_.z = gq.ground_height;
 
         // Ground movement from input
-        float move_speed = wants_crouch ? CROUCH_SPEED : RUN_SPEED;
+        float move_speed = wants_crouch ? CROUCH_SPEED : (cmd.sprint ? (RUN_SPEED * 1.5f) : RUN_SPEED);
         glm::vec3 wish_vel = (forward_dir * cmd.forward + right_dir * cmd.strafe) * move_speed;
         velocity_.x = wish_vel.x;
         velocity_.y = wish_vel.y;
@@ -107,9 +107,22 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
         velocity_.y = air_nudge.y;
     }
 
-    // 5. Apply delta translation (Fixed 30Hz tick)
+    // 5. Apply delta translation with collision test and sliding (Fixed 30Hz tick)
     glm::vec3 step = velocity_ * dt;
-    position_ += step;
+    glm::vec3 next_pos = position_ + step;
+
+    if (check_collision && check_collision(next_pos.x, next_pos.y, next_pos.z)) {
+        // Try X slide
+        if (!check_collision(position_.x + step.x, position_.y, position_.z)) {
+            position_.x += step.x;
+        }
+        // Try Y slide
+        else if (!check_collision(position_.x, position_.y + step.y, position_.z)) {
+            position_.y += step.y;
+        }
+    } else {
+        position_ = next_pos;
+    }
 
     // Resolve collision against obstacles & enemies
     if (!obstacles.empty()) {

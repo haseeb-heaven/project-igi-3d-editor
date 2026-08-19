@@ -189,7 +189,11 @@ bool App::Init(int argc, char** argv) {
 		g_app.GetLevelZ(x, y, z);
 		return z;
 	};
-	gameplay_host_.Initialize(s_terrain_cb);
+	static auto s_collision_cb = [](float x, float y, float z) -> bool {
+		extern App g_app;
+		return g_app.CheckCollision(glm::vec3(x, y, z));
+	};
+	gameplay_host_.Initialize(s_terrain_cb, s_collision_cb);
 
 	return true;
 }

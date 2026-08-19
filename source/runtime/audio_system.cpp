@@ -27,20 +27,33 @@ void AudioSystem::Play(SoundEffect sfx) {
     std::string path;
     switch (sfx) {
         case SoundEffect::Gunshot:
+            path = "MISSIONS\\location0\\level10\\sounds\\m10o_ak1.wav";
+            if (!std::filesystem::exists(path)) path = "D:\\IGI1\\MISSIONS\\location0\\level10\\sounds\\m10o_ak1.wav";
+            if (!std::filesystem::exists(path)) path = "Assets\\sounds\\bullet-impact.wav";
+            if (!std::filesystem::exists(path)) path = "D:\\IGI1\\Assets\\sounds\\bullet-impact.wav";
+            break;
         case SoundEffect::BulletImpact:
+        case SoundEffect::Pain:
             path = "Assets\\sounds\\bullet-impact.wav";
             if (!std::filesystem::exists(path)) path = "D:\\IGI1\\Assets\\sounds\\bullet-impact.wav";
             break;
         case SoundEffect::Jump:
         case SoundEffect::Footstep:
         case SoundEffect::Reload:
-        case SoundEffect::Pain:
-            path = "Assets\\sounds\\bullet-impact.wav";
+            path = "MISSIONS\\location0\\level1\\sounds\\m1_beeps01.wav";
+            if (!std::filesystem::exists(path)) path = "D:\\IGI1\\MISSIONS\\location0\\level1\\sounds\\m1_beeps01.wav";
+            if (!std::filesystem::exists(path)) path = "Assets\\sounds\\bullet-impact.wav";
             if (!std::filesystem::exists(path)) path = "D:\\IGI1\\Assets\\sounds\\bullet-impact.wav";
             break;
     }
 
-    PlayWavFile(path);
+    if (std::filesystem::exists(path)) {
+        PlayWavFile(path);
+    } else {
+#if defined(_WIN32)
+        MessageBeep(MB_OK);
+#endif
+    }
 }
 
 } // namespace igi

@@ -39,8 +39,14 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (in_game_mode_ && !pause_mode_) {
 		if (button == GLUT_LEFT_BUTTON) {
 			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
-		} else if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-			gameplay_host_.GetWorld().GetWeapons().Reload();
+		} else if (button == GLUT_RIGHT_BUTTON) {
+			gameplay_host_.GetInputRouter().OnMouseButton(2, state == GLUT_DOWN);
+		} else if (button == 3 && state == GLUT_DOWN) { // Wheel Up: Next weapon
+			int cur = (int)gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().id;
+			gameplay_host_.GetWorld().GetWeapons().SelectWeapon((cur + 1) % 6);
+		} else if (button == 4 && state == GLUT_DOWN) { // Wheel Down: Prev weapon
+			int cur = (int)gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().id;
+			gameplay_host_.GetWorld().GetWeapons().SelectWeapon((cur + 5) % 6);
 		}
 		return;
 	}

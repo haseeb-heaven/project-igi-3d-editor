@@ -21,7 +21,7 @@ public:
     ~RuntimeWorld();
 
     // Lifecycle
-    void Initialize(float (*get_terrain_z)(float x, float y));
+    void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Reset();
 
     // Simulation tick
@@ -49,6 +49,7 @@ public:
 
 private:
     float (*get_terrain_z_)(float x, float y) = nullptr;
+    bool (*check_collision_)(float x, float y, float z) = nullptr;
 
     PlayerController player_;
     WeaponSystem weapons_;
