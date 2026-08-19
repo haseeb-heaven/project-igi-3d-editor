@@ -10,7 +10,8 @@ namespace igi {
 enum class LightmapRenderMode {
     Baked = 0,
     Hybrid = 1,
-    Dynamic = 2
+    Dynamic = 2,
+    Off = 3
 };
 
 struct LightmapPage {

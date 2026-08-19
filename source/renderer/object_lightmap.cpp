@@ -34,7 +34,8 @@ void ObjectLightmapManager::CycleRenderMode() {
     switch (render_mode_) {
         case LightmapRenderMode::Baked:   render_mode_ = LightmapRenderMode::Hybrid; break;
         case LightmapRenderMode::Hybrid:  render_mode_ = LightmapRenderMode::Dynamic; break;
-        case LightmapRenderMode::Dynamic: render_mode_ = LightmapRenderMode::Baked; break;
+        case LightmapRenderMode::Dynamic: render_mode_ = LightmapRenderMode::Off; break;
+        case LightmapRenderMode::Off:     render_mode_ = LightmapRenderMode::Baked; break;
     }
 }
 
@@ -43,6 +44,7 @@ const char* ObjectLightmapManager::GetRenderModeName() const {
         case LightmapRenderMode::Baked:   return "Baked";
         case LightmapRenderMode::Hybrid:  return "Hybrid";
         case LightmapRenderMode::Dynamic: return "Dynamic";
+        case LightmapRenderMode::Off:     return "Disabled";
         default: return "Unknown";
     }
 }
