@@ -4,6 +4,7 @@
  *          font/text helpers + cursor unproject. Split from renderer.cpp.
  *****************************************************************************/
 #include "renderer_internal.h"
+#include "object_lightmap.h"
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -1349,7 +1350,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 480;
+      const int menu_h = 520;
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1397,6 +1398,9 @@ void Renderer::Draw(const draw_params_s &params,
       char mode_btn_label[64];
       snprintf(mode_btn_label, sizeof(mode_btn_label), "Mode: [%s]",
                task_tree_view.in_game_mode_ ? "Game Play" : "Editor");
+      char lightmap_btn_label[64];
+      snprintf(lightmap_btn_label, sizeof(lightmap_btn_label), "Lightmap: [%s]",
+               igi::ObjectLightmapManager::Get().GetRenderModeName());
 
       int mods = task_tree_view.terrain_mod_options_;
       bool tex = (mods & TERRAIN_TEXTURE_MOD) != 0;
@@ -1418,6 +1422,8 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Select Level");
       const int SEARCH_ROW = btn_labels.size();
       btn_labels.push_back("Model Search");
+      const int LIGHTMAP_ROW = btn_labels.size();
+      btn_labels.push_back(lightmap_btn_label);
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;

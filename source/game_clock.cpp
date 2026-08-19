@@ -15,21 +15,24 @@ void GameClock::Reset() {
     tick_count_ = 0;
     is_paused_ = false;
     in_excluded_scope_ = false;
+    has_last_time_ = false;
 }
 
 void GameClock::Update(int64_t now_milliseconds) {
     if (in_excluded_scope_ || is_paused_) {
         last_time_ms_ = now_milliseconds;
+        has_last_time_ = true;
         return;
     }
 
     int64_t delta_ms = 0;
-    if (last_time_ms_ != 0) {
+    if (has_last_time_) {
         delta_ms = now_milliseconds - last_time_ms_;
     } else {
         delta_ms = 0;
     }
     last_time_ms_ = now_milliseconds;
+    has_last_time_ = true;
 
     if (delta_ms < 0) {
         delta_ms = 0; // Handle clock jump / backwards skew
