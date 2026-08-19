@@ -39,6 +39,7 @@ endif()
 
 file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
+file(GLOB SOURCES_RUNTIME "source/runtime/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SOURCES_PARSERS "source/parsers/*.*")
 file(GLOB SOURCES_CLI "source/cli/*.*")
@@ -51,13 +52,14 @@ if (WIN32)
 endif()
 
 source_group("level" FILES ${SOURCES_LEVEL})
+source_group("runtime" FILES ${SOURCES_RUNTIME})
 source_group("renderer" FILES ${SOURCES_RENDERER})
 source_group("parsers" FILES ${SOURCES_PARSERS})
 source_group("cli" FILES ${SOURCES_CLI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_PARSERS} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RUNTIME} ${SOURCES_RENDERER} ${SOURCES_PARSERS} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
   set_target_properties(igi-editor PROPERTIES
@@ -124,6 +126,7 @@ target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/runtime)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
@@ -244,6 +247,7 @@ add_executable(igi_tests
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
+    tests/test_runtime_subsystems.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -254,6 +258,7 @@ if (MSVC)
 endif()
 
 target_include_directories(igi_tests PRIVATE source)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/runtime)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
@@ -283,6 +288,21 @@ target_sources(igi_tests PRIVATE
     source/parsers/tex_parser.cpp
     source/parsers/mtp_parser.cpp
     source/parsers/fnt_parser.cpp
+    source/game_clock.cpp
+    source/level/qvm_native_registry.cpp
+    source/level/qvm_interpreter.cpp
+    source/level/task_tree.cpp
+    source/player_collision.cpp
+    source/player_controller.cpp
+    source/weapon_system.cpp
+    source/ai_events.cpp
+    source/ai_system.cpp
+    source/level_flow.cpp
+    source/runtime/runtime_world.cpp
+    source/runtime/editor_snapshot.cpp
+    source/runtime/window_input_router.cpp
+    source/runtime/simulation_scheduler.cpp
+    source/runtime/gameplay_host.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies
