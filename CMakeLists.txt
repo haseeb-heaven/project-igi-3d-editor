@@ -121,6 +121,7 @@ set_source_files_properties(
   source/cli/verify_level.cpp
   source/runtime/config_qvm.cpp
   source/runtime/human_player_config.cpp
+  source/runtime/audio_system.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -144,7 +145,7 @@ if (WIN32)
   message("Selected GL library path: ${GL_LIB_DIR}")
 
   target_link_directories(igi-editor PRIVATE ${GL_LIB_DIR})
-  target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32)
+  target_link_libraries(igi-editor PRIVATE freeglut glew32 OpenGL32 winmm)
 
   # Increase PCH memory limit to fix compiler heap errors
   if (MSVC)

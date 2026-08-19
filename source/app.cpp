@@ -706,33 +706,44 @@ void App::ToggleGamePlayMode() {
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
 		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.max_health, tuning.max_armor);
 
-		// 2. Find HumanPlayer (Task_New(0, ...)) spawn position from level objects
-		glm::vec3 spawn_pos = viewer_.pos_;
-		float spawn_yaw = viewer_.yaw_;
-		float spawn_pitch = 0.0f;
-		bool found_spawn = false;
+		// 3. Find HumanPlayer spawn position from level start pos or objects
+		glm::vec3 spawn_pos = level_.GetStartPos();
+		float spawn_yaw = level_.GetStartYaw();
+		bool found_spawn = (spawn_pos.z < 100000000.0f && (spawn_pos.x != 0.0f || spawn_pos.y != 0.0f));
 
-		const auto& objects = level_.GetLevelObjects().GetObjects();
-		for (const auto& obj : objects) {
-			if (obj.taskId == "0" || obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
-			    obj.name.find("HumanPlayer") != std::string::npos) {
-				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
-				spawn_yaw = (float)obj.rot.z;
-				found_spawn = true;
-				break;
+		if (!found_spawn) {
+			const auto& objects = level_.GetLevelObjects().GetObjects();
+			for (const auto& obj : objects) {
+				if (obj.taskId == "0" || obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
+				    obj.modelId == "000_01_1" || obj.name.find("HumanPlayer") != std::string::npos) {
+					spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
+					spawn_yaw = (float)obj.rot.z;
+					found_spawn = true;
+					break;
+				}
 			}
+		}
+
+		if (!found_spawn) {
+			spawn_pos = viewer_.pos_;
+			spawn_yaw = viewer_.yaw_;
+		}
+
+		// Snap to terrain height if available
+		float tz = 0.0f;
+		if (level_.GetTerrainZ(spawn_pos.x, spawn_pos.y, tz)) {
+			spawn_pos.z = tz;
 		}
 
 		gameplay_host_.OpenGameplay(snap);
 
-		if (found_spawn) {
-			gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
-			gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
-			viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
-			viewer_.yaw_ = spawn_yaw;
-			viewer_.pitch_ = 0.0f;
-			UpdateViewerVectors();
-		}
+		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
+		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
+		viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
+		viewer_.yaw_ = spawn_yaw;
+		viewer_.pitch_ = 0.0f;
+		viewer_.roll_ = 0.0f;
+		UpdateViewerVectors();
 
 		// Disable all editor modes and editor tools
 		edit_mode_ = false;

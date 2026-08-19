@@ -10,9 +10,9 @@ struct PlayerGroundQuery {
     bool is_grounded = false;
     float ground_height = 0.0f;
     glm::vec3 surface_normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    float step_down_budget = 40.0f; // Max step down snap distance
+    float step_down_budget = 4096.0f; // Max step down snap distance (1m in IGI world units)
     bool is_under_roof = false;
-    float ceiling_height = 10000.0f;
+    float ceiling_height = 100000.0f;
 };
 
 struct PlayerWallSweepResult {
@@ -20,6 +20,12 @@ struct PlayerWallSweepResult {
     glm::vec3 slide_velocity = glm::vec3(0.0f);
     glm::vec3 wall_normal = glm::vec3(0.0f);
     float hit_fraction = 1.0f;
+};
+
+struct ObstacleCollider {
+    glm::vec3 center = glm::vec3(0.0f);
+    float radius = 1638.4f; // in world units
+    float height = 7372.8f;
 };
 
 class PlayerCollision {
@@ -34,6 +40,9 @@ public:
 
     // Tests if current stance can stand up without hitting ceiling
     bool CanStandUp(const glm::vec3& position, float standing_height, float (*get_terrain_z)(float x, float y));
+
+    // Resolves circular cylinder collisions against obstacles (enemies, structures, boxes)
+    void ResolveObstacles(glm::vec3& position, const std::vector<ObstacleCollider>& obstacles, float player_radius = 1638.4f);
 };
 
 } // namespace igi

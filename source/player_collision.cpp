@@ -21,7 +21,7 @@ PlayerGroundQuery PlayerCollision::QueryGround(const glm::vec3& position, float 
     float tz = get_terrain_z(position.x, position.y);
 
     // Also sample cross pattern for normal extraction
-    float step = 10.0f;
+    float step = 2048.0f;
     float tz_px = get_terrain_z(position.x + step, position.y);
     float tz_nx = get_terrain_z(position.x - step, position.y);
     float tz_py = get_terrain_z(position.x, position.y + step);
@@ -39,7 +39,7 @@ PlayerGroundQuery PlayerCollision::QueryGround(const glm::vec3& position, float 
     float foot_z = position.z;
     float diff = foot_z - tz;
 
-    if (diff >= -5.0f && diff <= query.step_down_budget) {
+    if (diff >= -500.0f && diff <= query.step_down_budget) {
         query.is_grounded = true;
     } else {
         query.is_grounded = false;
@@ -62,7 +62,28 @@ PlayerWallSweepResult PlayerCollision::SweepWalls(const glm::vec3& current_pos, 
 }
 
 bool PlayerCollision::CanStandUp(const glm::vec3& position, float standing_height, float (*get_terrain_z)(float x, float y)) {
-    return true; // Clearance granted by default
+    return (position.z >= standing_height);
+}
+
+void PlayerCollision::ResolveObstacles(glm::vec3& position, const std::vector<ObstacleCollider>& obstacles, float player_radius) {
+    for (const auto& obs : obstacles) {
+        float dz = std::abs(position.z - obs.center.z);
+        if (dz > obs.height) continue;
+
+        float dx = position.x - obs.center.x;
+        float dy = position.y - obs.center.y;
+        float dist_sq = dx * dx + dy * dy;
+        float min_dist = player_radius + obs.radius;
+
+        if (dist_sq < min_dist * min_dist && dist_sq > 0.001f) {
+            float dist = std::sqrt(dist_sq);
+            float overlap = min_dist - dist;
+            float nx = dx / dist;
+            float ny = dy / dist;
+            position.x += nx * overlap;
+            position.y += ny * overlap;
+        }
+    }
 }
 
 } // namespace igi

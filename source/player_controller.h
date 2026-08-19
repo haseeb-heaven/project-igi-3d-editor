@@ -28,15 +28,15 @@ enum class PlayerStanceState {
 
 class PlayerController {
 public:
-    static constexpr float GRAVITY_PER_TICK = 84.741692f; // IGI 1 gravity constant (~18.6 m/s^2)
-    static constexpr float JUMP_VERTICAL_SPEED = 1024.0f; // Jump launch impulse
-    static constexpr float JUMP_HORIZONTAL_SPEED = 350.0f;
-    static constexpr float AIR_CONTROL_SPEED = 120.0f;
-    static constexpr float STANDING_EYE_HEIGHT = 180.0f;
-    static constexpr float CROUCHING_EYE_HEIGHT = 90.0f;
-    static constexpr float RUN_SPEED = 350.0f;
-    static constexpr float WALK_SPEED = 180.0f;
-    static constexpr float CROUCH_SPEED = 100.0f;
+    static constexpr float WORLD_METER = 4096.0f;
+    static constexpr float GRAVITY = 18.6f * WORLD_METER;          // 76185.6 units/s^2
+    static constexpr float JUMP_SPEED = 7.5f * WORLD_METER;        // 27.0 km/h = 30720.0 units/s
+    static constexpr float STANDING_EYE_HEIGHT = 1.75f * WORLD_METER; // 7168.0 units (1.75m)
+    static constexpr float CROUCHING_EYE_HEIGHT = 0.95f * WORLD_METER;// 3891.2 units (0.95m)
+    static constexpr float RUN_SPEED = 8.5f * WORLD_METER;         // 34816.0 units/s (8.5 m/s)
+    static constexpr float WALK_SPEED = 4.5f * WORLD_METER;        // 18432.0 units/s (4.5 m/s)
+    static constexpr float CROUCH_SPEED = 2.5f * WORLD_METER;      // 10240.0 units/s (2.5 m/s)
+    static constexpr float AIR_CONTROL_SPEED = 6.0f * WORLD_METER; // 24576.0 units/s
 
     PlayerController();
 
@@ -44,7 +44,7 @@ public:
     void ApplyTuning(float max_health, float max_armor);
 
     // Fixed 30 Hz simulation tick
-    void Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const glm::vec3& anim_root_delta);
+    void Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const std::vector<ObstacleCollider>& obstacles = {});
 
     // Damage & Health
     void ApplyDamage(float amount);

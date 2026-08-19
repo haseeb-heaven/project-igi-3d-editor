@@ -1,5 +1,6 @@
-// runtime_world.cpp - Isolated simulation world and entity snapshot manager implementation
 #include "runtime_world.h"
+#include "audio_system.h"
+#include <cmath>
 
 namespace igi {
 
@@ -39,9 +40,17 @@ void RuntimeWorld::Reset() {
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
+    std::vector<ObstacleCollider> obstacles;
+    for (const auto& guard : ai_.GetGuards()) {
+        ObstacleCollider obs;
+        obs.center = guard.position;
+        obs.radius = 0.4f * PlayerController::WORLD_METER;
+        obs.height = 1.8f * PlayerController::WORLD_METER;
+        obstacles.push_back(obs);
+    }
 
-    // 1. Tick player physics and movement
-    player_.Tick(input_cmd, get_terrain_z_, glm::vec3(0.0f));
+    // 1. Tick player physics, obstacle collision, and movement
+    player_.Tick(input_cmd, get_terrain_z_, obstacles);
 
     // 2. Weapon firing & cooldowns
     weapons_.Update(dt);
@@ -49,13 +58,14 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         BulletTrace trace;
         float yaw_rad = glm::radians(player_.GetYaw());
         float pitch_rad = glm::radians(player_.GetPitch());
-        glm::vec3 aim_dir(
-            std::sin(yaw_rad) * std::cos(pitch_rad),
-            std::cos(yaw_rad) * std::cos(pitch_rad),
-            std::sin(pitch_rad)
-        );
+        float sin_y = std::sin(yaw_rad);
+        float cos_y = std::cos(yaw_rad);
+        float sin_p = std::sin(pitch_rad);
+        float cos_p = std::cos(pitch_rad);
+        glm::vec3 aim_dir(-sin_y * cos_p, cos_y * cos_p, sin_p);
 
         if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, trace)) {
+            AudioSystem::Play(SoundEffect::Gunshot);
             // Post gunshot stimulus to AI
             AiStimulusEvent gunshot;
             gunshot.type = AiEventType::Gunshot;
@@ -69,6 +79,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
 
     if (input_cmd.reload) {
         weapons_.Reload();
+        AudioSystem::Play(SoundEffect::Reload);
     }
 
     // 3. Tick AI perception & state machine
