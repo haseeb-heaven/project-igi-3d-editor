@@ -127,13 +127,8 @@ set_source_files_properties(
 
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source)
-<<<<<<< HEAD
-=======
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/runtime)
-target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
->>>>>>> eb4ca04 (feat(runtime): implement Game Mode runtime subsystems and twin-window architecture per PORTING_SPECIFICATION.md)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi-editor PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
 
@@ -254,14 +249,10 @@ add_executable(igi_tests
     tests/test_fnt_parser.cpp
     tests/test_pickup_resolve.cpp
     tests/test_res_model_set.cpp
-    tests/test_res_stream_append.cpp
-<<<<<<< HEAD
     tests/test_mef_native_lightmap.cpp
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
-=======
     tests/test_runtime_subsystems.cpp
->>>>>>> eb4ca04 (feat(runtime): implement Game Mode runtime subsystems and twin-window architecture per PORTING_SPECIFICATION.md)
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -272,11 +263,7 @@ if (MSVC)
 endif()
 
 target_include_directories(igi_tests PRIVATE source)
-<<<<<<< HEAD
-=======
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/runtime)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parsers)
->>>>>>> eb4ca04 (feat(runtime): implement Game Mode runtime subsystems and twin-window architecture per PORTING_SPECIFICATION.md)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
@@ -301,17 +288,12 @@ target_sources(igi_tests PRIVATE
     source/renderer/res_writer.cpp
     source/renderer/res_compiler.cpp
     source/level/res_model_set.cpp
-<<<<<<< HEAD
     source/renderer/tex_writer.cpp
     source/level/mtp_writer.cpp
     source/renderer/fnt_parser.cpp
     source/level/terrain_files.cpp
     source/renderer/mef_native.cpp
     source/utils_igi1conv.cpp
-=======
-    source/parsers/tex_parser.cpp
-    source/parsers/mtp_parser.cpp
-    source/parsers/fnt_parser.cpp
     source/game_clock.cpp
     source/level/qvm_native_registry.cpp
     source/level/qvm_interpreter.cpp
@@ -326,6 +308,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/editor_snapshot.cpp
     source/runtime/window_input_router.cpp
     source/runtime/simulation_scheduler.cpp
+    source/runtime/gameplay_host.cpp
     source/runtime/audio_system.cpp
     source/runtime/config_qvm.cpp
     source/runtime/human_player_config.cpp

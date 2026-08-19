@@ -1,5 +1,5 @@
 #include "config_qvm.h"
-#include "../parsers/qvm_parser.h"
+#include "../level/qvm_parser.h"
 #include "../utils.h"
 #include "../logger.h"
 #include <filesystem>

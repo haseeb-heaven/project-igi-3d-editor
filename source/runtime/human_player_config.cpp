@@ -1,5 +1,5 @@
 #include "human_player_config.h"
-#include "../parsers/qvm_parser.h"
+#include "../level/qvm_parser.h"
 #include <filesystem>
 #include <vector>
 #include <string>
