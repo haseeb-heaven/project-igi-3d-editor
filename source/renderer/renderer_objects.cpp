@@ -936,6 +936,7 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
                         float dirI = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
                         float ambI = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirI = 0.6f; ambI = 0.6f; }
 
                         glUniform3f(loc_dirlight, dirI, dirI, dirI);
                         glUniform3f(loc_ambient,  ambI, ambI, ambI);
@@ -953,18 +954,16 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
                         float dirMult = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
                         float ambMult = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirMult = 0.6f; ambMult = 0.6f; }
 
                         glUniform3f(loc_dirlight, color.r * dirMult, color.g * dirMult, color.b * dirMult);
                         glUniform3f(loc_ambient,  color.r * ambMult, color.g * ambMult, color.b * ambMult);
                         glUniform1i(loc_useTex, 0);
                     }
 
-                    // Lightmap: bind unit 1 if this submesh has a baked lightmap. It is
-                    // applied as a STATIC bake, scaled LIVE by u_lightmapScale = how much
-                    // this block's surface now faces the sun vs at bake time — so moving/
-                    // rotating the object adjusts its lighting smoothly instead of deleting
-                    // the lightmap. When unmoved the scale is 1.0 (the original bake).
-                    if (hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
+                    // Lightmap: bind unit 1 if this submesh has a baked lightmap and mode is not Off.
+                    auto curMode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                    if (curMode != igi::LightmapRenderMode::Off && hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
                         glm::vec3 scale = blockScale(sub.avgNormal);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
