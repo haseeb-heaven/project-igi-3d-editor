@@ -373,6 +373,14 @@ public:
 		int  find_result_idx_ = -1;
 		bool selected_obj_is_ai    = false;
 
+		bool in_game_mode_ = false;
+		float player_health_ = 100.0f;
+		float player_armor_ = 100.0f;
+		std::string active_weapon_name_ = "M16A2";
+		uint32_t clip_ammo_ = 30;
+		uint32_t reserve_ammo_ = 120;
+		std::string objective_text_ = "";
+
 		// Help panel (keybindings from qedkeybindings.qsc)
 		int  help_scroll_offset_    = 0;
 		const std::vector<std::string>* help_entries_ = nullptr;

@@ -16,7 +16,7 @@
  global variables & constants
 ================================================================================
 */
-static App g_app;
+App g_app;
 
 // menu ids
 
