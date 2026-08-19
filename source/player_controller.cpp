@@ -21,6 +21,11 @@ void PlayerController::Reset(const glm::vec3& spawn_pos, float spawn_yaw) {
     stance_ = PlayerStanceState::Standing;
 }
 
+void PlayerController::ApplyTuning(float max_health, float max_armor) {
+    health_ = max_health;
+    armor_ = max_armor;
+}
+
 void PlayerController::ApplyDamage(float amount) {
     if (amount <= 0.0f || health_ <= 0.0f) return;
 
@@ -52,8 +57,10 @@ void PlayerController::Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(fl
     pitch_ = std::clamp(pitch_ + cmd.pitch_delta, -89.0f, 89.0f);
 
     float yaw_rad = glm::radians(yaw_);
-    glm::vec3 forward_dir(std::sin(yaw_rad), std::cos(yaw_rad), 0.0f);
-    glm::vec3 right_dir(std::cos(yaw_rad), -std::sin(yaw_rad), 0.0f);
+    float cos_y = (float)std::cos(yaw_rad);
+    float sin_y = (float)std::sin(yaw_rad);
+    glm::vec3 forward_dir(-sin_y, cos_y, 0.0f);
+    glm::vec3 right_dir(cos_y, sin_y, 0.0f);
 
     // 2. Stance and eye height interpolation
     bool wants_crouch = cmd.crouch;

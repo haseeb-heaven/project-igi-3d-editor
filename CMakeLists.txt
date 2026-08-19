@@ -118,6 +118,8 @@ set_source_files_properties(
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
+  source/runtime/config_qvm.cpp
+  source/runtime/human_player_config.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 

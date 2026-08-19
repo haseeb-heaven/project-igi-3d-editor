@@ -41,6 +41,7 @@ public:
     PlayerController();
 
     void Reset(const glm::vec3& spawn_pos, float spawn_yaw = 0.0f);
+    void ApplyTuning(float max_health, float max_armor);
 
     // Fixed 30 Hz simulation tick
     void Tick(const PlayerInputCmd& cmd, float (*get_terrain_z)(float x, float y), const glm::vec3& anim_root_delta);
@@ -62,6 +63,7 @@ public:
 
     void SetPosition(const glm::vec3& pos) { position_ = pos; }
     void SetRotation(float yaw, float pitch) { yaw_ = yaw; pitch_ = pitch; }
+    void SetOrientation(float yaw, float pitch) { yaw_ = yaw; pitch_ = pitch; }
 
 private:
     glm::vec3 position_ = glm::vec3(0.0f);
