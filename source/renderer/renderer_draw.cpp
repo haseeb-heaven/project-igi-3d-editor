@@ -6,9 +6,97 @@
 #include "renderer_internal.h"
 #include "graph_overlay.h"
 #include "object_lightmap.h"
+#include "tex_writer.h"
+#include "../utils.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
+#include <cctype>
+
+struct HudSprite {
+  GLuint tex_id = 0;
+  int width = 0;
+  int height = 0;
+  bool valid = false;
+};
+
+static std::unordered_map<std::string, HudSprite> g_hudSprites;
+
+static HudSprite GetOrLoadHudSprite(const std::string& spr_name) {
+  auto it = g_hudSprites.find(spr_name);
+  if (it != g_hudSprites.end()) return it->second;
+
+  std::vector<std::string> paths = {
+    Utils::GetIGIRootPath() + "\\screens\\game\\status\\STATUS_unpacked\\" + spr_name,
+    "screens\\game\\status\\STATUS_unpacked\\" + spr_name,
+    Utils::GetExeDirectory() + "\\screens\\game\\status\\STATUS_unpacked\\" + spr_name,
+    "D:\\IGI1\\screens\\game\\status\\STATUS_unpacked\\" + spr_name
+  };
+
+  HudSprite res;
+  for (const auto& p : paths) {
+    if (File_Exists(p.c_str())) {
+      TEXFile tex = TEX_Parse(p);
+      if (tex.valid && !tex.images.empty()) {
+        const TEXImage& img = tex.images[0];
+        std::vector<uint8_t> rgba;
+        if (img.mode == 2) {
+          rgba.reserve(img.width * img.height * 4);
+          for (size_t i = 0; i + 1 < img.pixels.size(); i += 2) {
+            uint16_t p16 = img.pixels[i] | ((uint16_t)img.pixels[i + 1] << 8);
+            uint8_t r = ((p16 >> 11) & 0x1F) << 3;
+            uint8_t g = ((p16 >> 5)  & 0x3F) << 2;
+            uint8_t b =  (p16        & 0x1F) << 3;
+            uint8_t a = (r < 25 && g < 25 && b < 25) ? 0 : 255;
+            rgba.push_back(r); rgba.push_back(g); rgba.push_back(b); rgba.push_back(a);
+          }
+        } else {
+          rgba.resize(img.pixels.size());
+          for (size_t i = 0; i + 3 < img.pixels.size(); i += 4) {
+            rgba[i + 0] = img.pixels[i + 2]; // R <- B
+            rgba[i + 1] = img.pixels[i + 1]; // G
+            rgba[i + 2] = img.pixels[i + 0]; // B <- R
+            rgba[i + 3] = img.pixels[i + 3]; // A
+          }
+        }
+        pic_s pic;
+        pic.width_  = (int)img.width;
+        pic.height_ = (int)img.height;
+        pic.pixels_ = rgba.data();
+        res.tex_id = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_LINEAR, GL_LINEAR, false);
+        res.width  = (int)img.width;
+        res.height = (int)img.height;
+        res.valid  = (res.tex_id != 0);
+        break;
+      }
+    }
+  }
+  g_hudSprites[spr_name] = res;
+  return res;
+}
+
+static std::string GetWeaponSpriteName(const std::string& weapon_name) {
+  std::string lower;
+  for (char c : weapon_name) lower += (char)std::tolower((unsigned char)c);
+  if (lower.find("m16") != std::string::npos) return "M16.spr";
+  if (lower.find("ak") != std::string::npos) return "ak47.spr";
+  if (lower.find("colt") != std::string::npos || lower.find("anaconda") != std::string::npos) return "colt.spr";
+  if (lower.find("glock") != std::string::npos) return "glock.spr";
+  if (lower.find("eagle") != std::string::npos) return "deserteagle.spr";
+  if (lower.find("mp5") != std::string::npos) return "Mp5.spr";
+  if (lower.find("uzi") != std::string::npos) return "uzi.spr";
+  if (lower.find("spas") != std::string::npos || lower.find("spaz") != std::string::npos) return "spaz.spr";
+  if (lower.find("jackhammer") != std::string::npos) return "jackhammer.spr";
+  if (lower.find("saw") != std::string::npos || lower.find("minimi") != std::string::npos || lower.find("m249") != std::string::npos) return "SAW.spr";
+  if (lower.find("dragunov") != std::string::npos || lower.find("druganov") != std::string::npos || lower.find("svd") != std::string::npos) return "druganov.spr";
+  if (lower.find("law") != std::string::npos) return "LAW80.spr";
+  if (lower.find("rpg") != std::string::npos || lower.find("rocket") != std::string::npos) return "rocket.spr";
+  if (lower.find("knife") != std::string::npos) return "knife.spr";
+  if (lower.find("flash") != std::string::npos) return "flashgrenade.spr";
+  if (lower.find("grenade") != std::string::npos) return "spl_grenade.spr";
+  if (lower.find("binocular") != std::string::npos) return "binoculars.spr";
+  return "weapon.spr";
+}
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -1519,7 +1607,7 @@ void Renderer::Draw(const draw_params_s &params,
       const int LIGHTMAPS_ROW = btn_labels.size();
       btn_labels.push_back(lightmap_btn_label);
       const int LIGHTMAPS_CALC_ROW = btn_labels.size();
-      btn_labels.push_back("Bake All Lightmaps");
+      btn_labels.push_back("Calculate Lightmaps");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1696,9 +1784,9 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-          const char* bake_lbl = "Bake All Lightmaps";
-          int btw = (int)strlen(bake_lbl) * 6;
-          draw_text_sys(menu_x + (menu_w - btw) / 2, screen_btn_y, bake_lbl,
+          const char* calc_lbl = "Calculate Lightmaps";
+          int btw = (int)strlen(calc_lbl) * 6;
+          draw_text_sys(menu_x + (menu_w - btw) / 2, screen_btn_y, calc_lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
@@ -2807,98 +2895,217 @@ void Renderer::Draw(const draw_params_s &params,
       draw_text(px + 4, vh - ftr_h + 4, "[Enter] Insert  [Esc] Cancel  [Type] Filter", 0.5f, 0.5f, 0.5f);
     }
 
-    // ── In-Game HUD overlay (Authentic IGI-style) ────────────────────────────
+    // ── In-Game HUD overlay (Authentic OpenIGI / Retail IGI StatusScreen) ──
     if (task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_) {
       int vw = params.view_define_->viewport_width_;
       int vh = params.view_define_->viewport_height_;
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-      // ── 1. Tactical Crosshair (center, small green dot-crosshair like IGI) ─
-      int cx = vw / 2, cy = vh / 2;
-      glColor4f(0.0f, 1.0f, 0.2f, 0.9f);
-      glLineWidth(1.5f);
+      // ── 1. Tactical Reticle / Crosshair (Center) ─────────────────────────
+      HudSprite cross_spr = GetOrLoadHudSprite("cross.spr");
+      if (cross_spr.valid) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, cross_spr.tex_id);
+        glColor4f(1.0f, 1.0f, 1.0f, 0.95f);
+        int cx = vw / 2 - cross_spr.width / 2;
+        int cy = vh / 2 - cross_spr.height / 2;
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + cross_spr.width, cy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + cross_spr.width, cy + cross_spr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy + cross_spr.height);
+        glEnd();
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+      } else {
+        int cx = vw / 2, cy = vh / 2;
+        glColor4f(0.0f, 1.0f, 0.2f, 0.9f);
+        glLineWidth(1.5f);
+        glBegin(GL_LINES);
+        glVertex2i(cx - 10, cy); glVertex2i(cx - 3, cy);
+        glVertex2i(cx + 3,  cy); glVertex2i(cx + 10, cy);
+        glVertex2i(cx, cy - 10); glVertex2i(cx, cy - 3);
+        glVertex2i(cx, cy + 3);  glVertex2i(cx, cy + 10);
+        glEnd();
+        glLineWidth(1.0f);
+      }
+
+      // ── 2. Authentic Health Powerbar (Bottom Left) ─────────────────────────
+      float hp  = std::clamp(task_tree_view.player_health_, 0.0f, 100.0f);
+      float arm = std::clamp(task_tree_view.player_armor_,  0.0f, 100.0f);
+
+      HudSprite pb_bg = GetOrLoadHudSprite("powerbarbackground.spr");
+      HudSprite pb_fg = GetOrLoadHudSprite("powerbar.spr");
+      HudSprite hp_icon = GetOrLoadHudSprite("health.spr");
+
+      int hx = (int)(vw * 0.035f);
+      int hy = (int)(vh * 0.04f);
+
+      if (pb_bg.valid && pb_fg.valid) {
+        glEnable(GL_TEXTURE_2D);
+        // Background frame
+        glBindTexture(GL_TEXTURE_2D, pb_bg.tex_id);
+        glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(hx, hy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(hx + pb_bg.width, hy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(hx + pb_bg.width, hy + pb_bg.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(hx, hy + pb_bg.height);
+        glEnd();
+
+        // Foreground health fill (bottom-to-top by player health percentage)
+        float hp_frac = hp / 100.0f;
+        int fill_h = (int)(pb_fg.height * hp_frac);
+        glBindTexture(GL_TEXTURE_2D, pb_fg.tex_id);
+        if (hp > 50.0f)      glColor4f(0.05f, 1.0f, 0.2f, 0.95f);
+        else if (hp > 25.0f) glColor4f(1.0f, 0.85f, 0.0f, 0.95f);
+        else                 glColor4f(1.0f, 0.15f, 0.1f, 0.95f);
+
+        int fx = hx + 2, fy = hy + 2;
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f);    glVertex2i(fx, fy);
+        glTexCoord2f(1.0f, 0.0f);    glVertex2i(fx + pb_fg.width, fy);
+        glTexCoord2f(1.0f, hp_frac); glVertex2i(fx + pb_fg.width, fy + fill_h);
+        glTexCoord2f(0.0f, hp_frac); glVertex2i(fx, fy + fill_h);
+        glEnd();
+
+        // Green health cross icon
+        if (hp_icon.valid) {
+          glBindTexture(GL_TEXTURE_2D, hp_icon.tex_id);
+          glColor4f(1.0f, 1.0f, 1.0f, 0.95f);
+          int ix = hx + pb_bg.width + 6;
+          int iy = hy + pb_bg.height - hp_icon.height;
+          glBegin(GL_QUADS);
+          glTexCoord2f(0.0f, 0.0f); glVertex2i(ix, iy);
+          glTexCoord2f(1.0f, 0.0f); glVertex2i(ix + hp_icon.width, iy);
+          glTexCoord2f(1.0f, 1.0f); glVertex2i(ix + hp_icon.width, iy + hp_icon.height);
+          glTexCoord2f(0.0f, 1.0f); glVertex2i(ix, iy + hp_icon.height);
+          glEnd();
+        }
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+
+        // Numeric HP & Armor readouts
+        char hp_buf[32], arm_buf[32];
+        snprintf(hp_buf, sizeof(hp_buf), "%d", (int)hp);
+        snprintf(arm_buf, sizeof(arm_buf), "ARM %d", (int)arm);
+        int text_x = hx + pb_bg.width + (hp_icon.valid ? (hp_icon.width + 12) : 10);
+        draw_text_sys(text_x, vh - (hy + pb_bg.height - 2), hp_buf, 0.0f, 1.0f, 0.3f);
+        draw_text_sys(text_x, vh - (hy + pb_bg.height - 22), arm_buf, 0.2f, 0.75f, 1.0f);
+
+      } else {
+        // High-fidelity fallback powerbar
+        const int BAR_W = 22, BAR_H = 80;
+        int bx = 24, by = 24;
+        glColor4f(0.08f, 0.08f, 0.08f, 0.85f);
+        glBegin(GL_QUADS);
+        glVertex2i(bx, by); glVertex2i(bx + BAR_W, by);
+        glVertex2i(bx + BAR_W, by + BAR_H); glVertex2i(bx, by + BAR_H);
+        glEnd();
+
+        int fill_h = (int)(BAR_H * (hp / 100.0f));
+        if (hp > 50.0f)      glColor4f(0.0f, 0.95f, 0.25f, 0.9f);
+        else if (hp > 25.0f) glColor4f(0.95f, 0.8f, 0.0f, 0.9f);
+        else                 glColor4f(0.95f, 0.15f, 0.1f, 0.9f);
+        glBegin(GL_QUADS);
+        glVertex2i(bx + 2, by + 2); glVertex2i(bx + BAR_W - 2, by + 2);
+        glVertex2i(bx + BAR_W - 2, by + 2 + fill_h); glVertex2i(bx + 2, by + 2 + fill_h);
+        glEnd();
+
+        glColor4f(0.0f, 0.8f, 0.2f, 0.8f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(bx, by); glVertex2i(bx + BAR_W, by);
+        glVertex2i(bx + BAR_W, by + BAR_H); glVertex2i(bx, by + BAR_H);
+        glEnd();
+
+        char hp_buf[32], arm_buf[32];
+        snprintf(hp_buf, sizeof(hp_buf), "HP  %d", (int)hp);
+        snprintf(arm_buf, sizeof(arm_buf), "ARM %d", (int)arm);
+        draw_text_sys(bx + BAR_W + 12, vh - (by + BAR_H - 4), hp_buf, 0.0f, 1.0f, 0.3f);
+        draw_text_sys(bx + BAR_W + 12, vh - (by + BAR_H - 24), arm_buf, 0.2f, 0.75f, 1.0f);
+      }
+
+      // ── 3. Authentic Weapon & Ammo Readout (Bottom Right) ───────────────────
+      std::string wname = task_tree_view.active_weapon_name_;
+      for (char& c : wname) c = (char)std::toupper((unsigned char)c);
+
+      std::string wspr_name = GetWeaponSpriteName(wname);
+      HudSprite wspr = GetOrLoadHudSprite(wspr_name);
+
+      int ry = (int)(vh * 0.04f);
+      int wname_w = (int)wname.length() * 8;
+      int name_x = vw - wname_w - 24;
+      int line_y = ry + 28;
+
+      // Weapon Icon Sprite
+      if (wspr.valid) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, wspr.tex_id);
+        glColor4f(1.0f, 1.0f, 1.0f, 0.95f);
+        int wx = vw - wspr.width - 24;
+        int wy = ry + 36;
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(wx, wy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(wx + wspr.width, wy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(wx + wspr.width, wy + wspr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(wx, wy + wspr.height);
+        glEnd();
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+      }
+
+      // Weapon name with authentic OpenIGI green underline
+      draw_text_sys(name_x, vh - (line_y + 14), wname.c_str(), 0.0f, 1.0f, 0.3f);
+      glColor4f(0.0f, 0.9f, 0.0f, 0.5f);
+      glLineWidth(2.0f);
       glBegin(GL_LINES);
-      glVertex2i(cx - 10, cy); glVertex2i(cx - 3, cy);
-      glVertex2i(cx + 3,  cy); glVertex2i(cx + 10, cy);
-      glVertex2i(cx, cy - 10); glVertex2i(cx, cy - 3);
-      glVertex2i(cx, cy + 3);  glVertex2i(cx, cy + 10);
+      glVertex2i(name_x - 6, line_y);
+      glVertex2i(vw - 20, line_y);
       glEnd();
       glLineWidth(1.0f);
 
-      // ── 2. HP & Armor bars — bottom left (authentic IGI style) ─────────────
-      float hp  = std::clamp(task_tree_view.player_health_, 0.0f, 100.0f);
-      float arm = std::clamp(task_tree_view.player_armor_,  0.0f, 100.0f);
-      const int BAR_W = 150, BAR_H = 12;
-      const int bx = 20, by_hp = 46, by_arm = 26;
-
-      // HP background (dark red)
-      glColor4f(0.15f, 0.0f, 0.0f, 0.85f);
-      glBegin(GL_QUADS);
-      glVertex2i(bx, by_hp); glVertex2i(bx + BAR_W, by_hp);
-      glVertex2i(bx + BAR_W, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
-      glEnd();
-      // HP fill (green → yellow → red)
-      if (hp > 50.f)      glColor4f(0.05f, 0.8f, 0.15f, 0.9f);
-      else if (hp > 25.f) glColor4f(0.9f, 0.75f, 0.0f, 0.9f);
-      else                glColor4f(0.9f, 0.1f, 0.05f, 0.9f);
-      int hpw = (int)(hp / 100.0f * BAR_W);
-      glBegin(GL_QUADS);
-      glVertex2i(bx, by_hp); glVertex2i(bx + hpw, by_hp);
-      glVertex2i(bx + hpw, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
-      glEnd();
-      glColor4f(0.5f, 0.5f, 0.5f, 0.6f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(bx, by_hp); glVertex2i(bx + BAR_W, by_hp);
-      glVertex2i(bx + BAR_W, by_hp + BAR_H); glVertex2i(bx, by_hp + BAR_H);
-      glEnd();
-      char hpbuf[32]; snprintf(hpbuf, sizeof(hpbuf), "HP: %d", (int)hp);
-      draw_text_sys(bx, vh - (by_hp + BAR_H + 2), hpbuf, 0.1f, 1.0f, 0.2f);
-
-      // Armor background (dark blue)
-      glColor4f(0.0f, 0.05f, 0.2f, 0.85f);
-      glBegin(GL_QUADS);
-      glVertex2i(bx, by_arm); glVertex2i(bx + BAR_W, by_arm);
-      glVertex2i(bx + BAR_W, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
-      glEnd();
-      // Armor fill (cyan)
-      glColor4f(0.15f, 0.65f, 0.95f, 0.9f);
-      int armw = (int)(arm / 100.0f * BAR_W);
-      glBegin(GL_QUADS);
-      glVertex2i(bx, by_arm); glVertex2i(bx + armw, by_arm);
-      glVertex2i(bx + armw, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
-      glEnd();
-      glColor4f(0.5f, 0.5f, 0.5f, 0.6f);
-      glBegin(GL_LINE_LOOP);
-      glVertex2i(bx, by_arm); glVertex2i(bx + BAR_W, by_arm);
-      glVertex2i(bx + BAR_W, by_arm + BAR_H); glVertex2i(bx, by_arm + BAR_H);
-      glEnd();
-      char armbuf[32]; snprintf(armbuf, sizeof(armbuf), "ARM: %d", (int)arm);
-      draw_text_sys(bx, vh - (by_arm + BAR_H + 2), armbuf, 0.2f, 0.7f, 1.0f);
-
-      // ── 3. Weapon & Ammo — bottom right ────────────────────────────────────
-      const int wbx = vw - 200, wby = 20;
-      glColor4f(0.0f, 0.0f, 0.0f, 0.6f);
-      glBegin(GL_QUADS);
-      glVertex2i(wbx - 4, wby); glVertex2i(vw - 8, wby);
-      glVertex2i(vw - 8, wby + 52); glVertex2i(wbx - 4, wby + 52);
-      glEnd();
-      draw_text_sys(wbx, vh - (wby + 16), task_tree_view.active_weapon_name_.c_str(), 1.0f, 0.85f, 0.1f);
-      char ammobuf[32];
-      snprintf(ammobuf, sizeof(ammobuf), "%d / %d", task_tree_view.clip_ammo_, task_tree_view.reserve_ammo_);
-      draw_text_sys(wbx, vh - (wby + 36), ammobuf, 1.0f, 1.0f, 1.0f);
-
-      // ── 4. Objective banner — top center ───────────────────────────────────
-      if (!task_tree_view.objective_text_.empty()) {
-        const char* obj_txt = task_tree_view.objective_text_.c_str();
-        int otw = (int)strlen(obj_txt) * 6;
-        int ox = (vw - otw) / 2;
-        glColor4f(0.0f, 0.0f, 0.0f, 0.55f);
+      // Ammunition Readout
+      HudSprite clip_spr = GetOrLoadHudSprite("clip20.spr");
+      if (clip_spr.valid) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, clip_spr.tex_id);
+        glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
+        int cx = vw - 170;
+        int cy = ry + 4;
         glBegin(GL_QUADS);
-        glVertex2i(ox - 8, vh - 18); glVertex2i(ox + otw + 8, vh - 18);
-        glVertex2i(ox + otw + 8, vh - 4); glVertex2i(ox - 8, vh - 4);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(cx, cy);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(cx + clip_spr.width, cy);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(cx + clip_spr.width, cy + clip_spr.height);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(cx, cy + clip_spr.height);
         glEnd();
-        draw_text_sys(ox, 10, obj_txt, 1.0f, 1.0f, 0.3f);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+      }
+
+      char ammobuf[32];
+      snprintf(ammobuf, sizeof(ammobuf), "%2d  /  %3d", task_tree_view.clip_ammo_, task_tree_view.reserve_ammo_);
+      draw_text_sys(vw - 120, vh - (ry + 10), ammobuf, 0.0f, 1.0f, 0.4f);
+
+      // ── 4. Tactical Status / Objective Card (Top Left - StatusScreen style) ─
+      if (!task_tree_view.objective_text_.empty()) {
+        int ox = (int)(vw * 0.015625f);
+        int oy = vh - 52;
+        int pw = 280, ph = 38;
+
+        glColor4f(0.02f, 0.10f, 0.03f, 0.80f);
+        glBegin(GL_QUADS);
+        glVertex2i(ox, oy); glVertex2i(ox + pw, oy);
+        glVertex2i(ox + pw, oy + ph); glVertex2i(ox, oy + ph);
+        glEnd();
+
+        glColor4f(0.0f, 0.8f, 0.2f, 0.85f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(ox, oy); glVertex2i(ox + pw, oy);
+        glVertex2i(ox + pw, oy + ph); glVertex2i(ox, oy + ph);
+        glEnd();
+
+        draw_text_sys(ox + 8, 22, task_tree_view.objective_text_.c_str(), 0.0f, 0.95f, 0.25f);
       }
 
       glDisable(GL_BLEND);

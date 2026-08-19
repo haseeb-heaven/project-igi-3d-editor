@@ -428,8 +428,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
 					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
 					else if (btn_hit2(LIGHTMAPS_CALC_ROW)) {
-						igi::ObjectLightmapManager::Get().BakeAllLightmaps(level_.GetLevelNo());
-						status_message_ = "Lightmaps calculated for level " + std::to_string(level_.GetLevelNo());
+						CalculateLightmapsForAllObjects();
 					}
 					else if (btn_hit2(TERRAIN_HEADER_ROW)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }

@@ -935,7 +935,9 @@ void App::ToggleGamePlayMode() {
 			if (!obj.deleted && (obj.type == "HumanPlayer" || obj.name == "HumanPlayer" ||
 			    obj.name.find("HumanPlayer") != std::string::npos)) {
 				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
-				spawn_yaw = (float)obj.rot.z;
+				spawn_yaw = glm::degrees((float)obj.rot.z);
+				while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
+				while (spawn_yaw >= 360.0f) spawn_yaw -= 360.0f;
 				found_spawn = true;
 				Logger::Get().Log(LogLevel::INFO, "[App] HumanPlayer spawn: pos=(" +
 					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
@@ -947,9 +949,11 @@ void App::ToggleGamePlayMode() {
 
 		if (!found_spawn) {
 			glm::vec3 l_start = level_.GetStartPos();
-			if (l_start.z < 100000000.0f && (l_start.x != 0.0f || l_start.y != 0.0f || l_start.z != 0.0f)) {
+			if (l_start.z != 175000000.0f && (l_start.x != 0.0f || l_start.y != 0.0f)) {
 				spawn_pos = l_start;
-				spawn_yaw = level_.GetStartYaw();
+				spawn_yaw = glm::degrees(level_.GetStartYaw());
+				while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
+				while (spawn_yaw >= 360.0f) spawn_yaw -= 360.0f;
 				found_spawn = true;
 			}
 		}
