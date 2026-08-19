@@ -22,14 +22,17 @@ uniform float u_boxSize;     // footprint around the camera that drops are scatt
 uniform float u_heightStart; // world units, where drops spawn
 uniform float u_heightEnd;   // world units, where drops disappear
 uniform float u_streakLen;   // world units
+uniform float u_isSnow;      // 0.0 = rain, 1.0 = snow
 
 void main() {
     float fallRange = max(u_heightStart - u_heightEnd, 1.0);
-    float speed = (0.6 + a_seed.z * 0.8) * fallRange; // world units / second
+    float speedMultiplier = mix(0.6 + a_seed.z * 0.8, 0.15 + a_seed.z * 0.20, u_isSnow);
+    float speed = speedMultiplier * fallRange; // world units / second
     float z = u_heightStart - mod(u_time * speed + a_seed.y * fallRange + u_cameraPos.z, fallRange);
 
     vec2 cell = mod(a_seed.xy * u_boxSize - u_cameraPos.xy, u_boxSize) - u_boxSize * 0.5;
-    vec3 worldPos = vec3(u_cameraPos.x + cell.x, u_cameraPos.y + cell.y, z + a_isTop * u_streakLen);
+    vec2 drift = vec2(sin(u_time * 1.5 + a_seed.x * 6.28), cos(u_time * 1.2 + a_seed.y * 6.28)) * 120.0 * u_isSnow;
+    vec3 worldPos = vec3(u_cameraPos.x + cell.x + drift.x, u_cameraPos.y + cell.y + drift.y, z + a_isTop * u_streakLen);
 
     gl_Position = u_mvp * vec4(worldPos, 1.0);
 }
@@ -38,13 +41,12 @@ void main() {
 static const char* RAIN_FRAG_SRC = R"(
 #version 330 core
 uniform float u_alpha;
+uniform float u_isSnow;
 out vec4 fragColor;
 void main() {
-    // RainEffect's "Rain Alpha" (e.g. 0.13) is the per-droplet sample weight the
-    // game accumulates over many overlapping raycast samples — a single thin
-    // streak at that alpha is invisible, so boost it into a visible streak alpha
-    // while keeping it scaled by the level's own value (0 alpha = no rain at all).
-    fragColor = vec4(0.8, 0.85, 0.9, clamp(u_alpha * 4.0, 0.0, 0.85));
+    vec4 rainColor = vec4(0.8, 0.85, 0.9, clamp(u_alpha * 4.0, 0.0, 0.85));
+    vec4 snowColor = vec4(0.96, 0.98, 1.0, clamp(u_alpha * 5.0, 0.0, 0.95));
+    fragColor = mix(rainColor, snowColor, u_isSnow);
 }
 )";
 
@@ -121,8 +123,9 @@ void Renderer_Rain::Shutdown() {
     if (shader_program_) { glDeleteProgram(shader_program_); shader_program_ = 0; }
 }
 
-void Renderer_Rain::SetParams(bool active, float startMeters, float endMeters, float alpha) {
+void Renderer_Rain::SetParams(bool active, bool is_snow, float startMeters, float endMeters, float alpha) {
     active_ = active;
+    is_snow_ = is_snow;
     start_meters_ = startMeters;
     end_meters_ = endMeters;
     alpha_ = alpha;
@@ -147,8 +150,10 @@ void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
     glUniform1f(glGetUniformLocation(shader_program_, "u_boxSize"), 50.0f * WORLD_UNITS_PER_METER);
     glUniform1f(glGetUniformLocation(shader_program_, "u_heightStart"), heightStart);
     glUniform1f(glGetUniformLocation(shader_program_, "u_heightEnd"), heightEnd);
-    glUniform1f(glGetUniformLocation(shader_program_, "u_streakLen"), 0.35f * WORLD_UNITS_PER_METER);
+    float streakLen = is_snow_ ? (0.08f * WORLD_UNITS_PER_METER) : (0.35f * WORLD_UNITS_PER_METER);
+    glUniform1f(glGetUniformLocation(shader_program_, "u_streakLen"), streakLen);
     glUniform1f(glGetUniformLocation(shader_program_, "u_alpha"), alpha_);
+    glUniform1f(glGetUniformLocation(shader_program_, "u_isSnow"), is_snow_ ? 1.0f : 0.0f);
 
     GLboolean depthMaskWas;
     glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWas);
@@ -157,7 +162,7 @@ void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
 
-    glLineWidth(1.5f);
+    glLineWidth(is_snow_ ? 2.5f : 1.5f);
     glBindVertexArray(vao_);
     glDrawArrays(GL_LINES, 0, num_drops_ * 2);
     glBindVertexArray(0);

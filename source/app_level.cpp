@@ -176,7 +176,7 @@ void App::LoadLevel(int level_no) {
 		// The renderer GL caches are torn down by BeginLoadLevel()/ClearCaches().
 		// BeginLoadLevel also calls ClearResCache(), so LoadResCache must come AFTER it.
 		renderer_.SetLevel(level_no);
-		renderer_.SetRainEffect(false, 0, 0, 0); // reset rain — prevent carryover from previous level
+		renderer_.SetRainEffect(false, false, 0, 0, 0); // reset weather — prevent carryover from previous level
 		renderer_.BeginLoadLevel();
 		// Build in-memory .res index AFTER BeginLoadLevel so ClearCaches() doesn't wipe it.
 		renderer_.LoadResCache(level_no, Utils::GetIGIRootPath());
@@ -408,46 +408,45 @@ void App::LoadLevel(int level_no) {
 
 		// RainEffect (Task_DeclareParameters("RainEffect","Is Rain","bool8",
 		// "Traceline start","Real32","Traceline end","Real32","Is Active","VarString",
-		// "Rain Alpha","Real32")) is per-level: present+active on levels with rain
-		// (e.g. level3), entirely absent on levels without it (e.g. level2) — absence
-		// just means no rain, not a parse failure. argTokens: [0]=taskId,
-		// [1]="RainEffect",[2]=name,[3]=IsRain(BOOL "TRUE"/"FALSE"),
-		// [4]=TracelineStart(meters),[5]=TracelineEnd(meters),
-		// [6]=IsActive(quoted VarString "0"/"1"),[7]=RainAlpha.
+		// "Rain Alpha","Real32")) is per-level: present on levels with rain/snow
+		// (e.g. level3 for rain, level4/7/11 for snow), absent on levels without weather.
+		// "Is Rain" TRUE = Rain streaks, FALSE = Drifting Snowflakes.
 		{
-			bool rainActive = false;
-			float rainStartM = 0.0f, rainEndM = 0.0f, rainAlpha = 0.0f;
-			bool foundRainEffect = false;
+			bool weatherActive = false;
+			bool isSnow = false;
+			float weatherStartM = 0.0f, weatherEndM = 0.0f, weatherAlpha = 0.0f;
+			bool foundWeatherEffect = false;
 			for (const auto& re : objects) {
 				if (re.type != "RainEffect" || re.argTokens.size() < 8) continue;
-				foundRainEffect = true;
+				foundWeatherEffect = true;
 				try {
-					// IsRain stored as bare TRUE/FALSE in QSC (not quoted)
 					std::string isRainTok = re.argTokens[3];
 					if (!isRainTok.empty() && isRainTok.front() == '"')
 						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
-					bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
+					bool isRain = (isRainTok == "TRUE" || isRainTok == "true" || isRainTok == "1");
+					isSnow = !isRain;
 					std::string isActiveTok = re.argTokens[6];
 					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
 						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
 					bool isActive = !isActiveTok.empty() && isActiveTok != "0";
-					rainStartM = std::stof(re.argTokens[4]);
-					rainEndM = std::stof(re.argTokens[5]);
-					rainAlpha = std::stof(re.argTokens[7]);
-					rainActive = isRain && isActive;
-					Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
-						std::to_string(rainActive) + " isRain=" + isRainTok +
+					weatherStartM = std::stof(re.argTokens[4]);
+					weatherEndM = std::stof(re.argTokens[5]);
+					weatherAlpha = std::stof(re.argTokens[7]);
+					weatherActive = isActive;
+					Logger::Get().Log(LogLevel::INFO, "[App] WeatherEffect resolved: active=" +
+						std::to_string(weatherActive) + (isSnow ? " (SNOW)" : " (RAIN)") +
+						" isRain=" + isRainTok +
 						" isActive=" + isActiveTok +
-						" start=" + std::to_string(rainStartM) +
-						"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
+						" start=" + std::to_string(weatherStartM) +
+						"m end=" + std::to_string(weatherEndM) + "m alpha=" + std::to_string(weatherAlpha));
 				} catch (const std::exception& e) {
 					Logger::Get().Log(LogLevel::WARNING, std::string("[App] RainEffect unparsable (") + e.what() + ")");
 				}
-				break; // first RainEffect task only
+				break;
 			}
-			if (!foundRainEffect)
-				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — rain disabled");
-			renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
+			if (!foundWeatherEffect)
+				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — weather disabled");
+			renderer_.SetRainEffect(weatherActive, isSnow, weatherStartM, weatherEndM, weatherAlpha);
 		}
 
 		// Log all loaded objects for verification script

@@ -15,7 +15,7 @@ public:
 
     // startMeters/endMeters come from RainEffect's "Traceline start"/"Traceline
     // end" fields (height above ground, in meters, where rain begins/ends falling).
-    void SetParams(bool active, float startMeters, float endMeters, float alpha);
+    void SetParams(bool active, bool is_snow, float startMeters, float endMeters, float alpha);
 
     void Draw(GLuint ubo_mats, const glm::vec3& cameraPos);
     void SetIndoors(bool indoors) { indoors_ = indoors; }
@@ -28,6 +28,7 @@ private:
     int num_drops_ = 0;
 
     bool active_ = false;
+    bool is_snow_ = false;
     bool indoors_ = false;
     float start_meters_ = 0.0f;
     float end_meters_ = 0.0f;

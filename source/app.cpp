@@ -973,6 +973,9 @@ void App::ToggleGamePlayMode() {
 		if (current_lvl <= 0) current_lvl = 1;
 		gameplay_host_.GetWorld().GetLevelFlow().InitializeMission((uint32_t)current_lvl);
 
+		// Start authentic background music for the level
+		PlayLevelMusic(current_lvl);
+
 		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
 		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
 		viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();

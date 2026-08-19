@@ -398,43 +398,37 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     if (level_.GetLevelNo() == 0) return false;
 
     auto& objects = level_.GetLevelObjects().GetObjects();
-
-    // Only test objects that have real physical geometry in the world.
-    // Skip all non-collidable task types (terrain meta, AI, lightmaps etc.)
-    static const std::unordered_set<std::string> PHYSICAL_TYPES = {
-        "Building", "ExplodeObject", "Door", "SCamera", "SCameraControl",
-        "AlarmControl", "Switch", "Terminal", "Wire", "Fence"
-    };
-
     constexpr float BASE_SCALE   = 40.96f;
-    constexpr float PLAYER_RADIUS = 200.0f; // ~0.05m in model units
+    constexpr float PLAYER_RADIUS = 300.0f; // ~0.075m
 
     for (const auto& obj : objects) {
         if (obj.deleted) continue;
-        // Only Buildings and named physical collidable task types
-        if (!obj.isBuilding && PHYSICAL_TYPES.find(obj.type) == PHYSICAL_TYPES.end()) continue;
+        std::string mId = !obj.modelId.empty() ? obj.modelId : obj.segmentModelId;
+        if (mId.empty()) continue;
 
         float dist = glm::distance(nextPos, glm::vec3(obj.pos));
-        if (dist > 100000.0f) continue;
+        if (dist > 150000.0f) continue;
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(obj.pos.x, obj.pos.y, obj.pos.z));
         model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
         model = glm::rotate(model, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
         model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(BASE_SCALE * obj.scale));
+        float s = (obj.scale > 0.0f) ? obj.scale : 1.0f;
+        model = glm::scale(model, glm::vec3(BASE_SCALE * s));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         glm::vec4 localPos = glm::inverse(model) * glm::vec4(nextPos, 1.0f);
-        glm::vec3 extents = renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
+        glm::vec3 extents = renderer_.GetMeshExtents(mId, obj.isBuilding);
+        glm::vec3 center = renderer_.GetMeshCenter(mId, obj.isBuilding);
 
-        // If no mesh data available, skip (don't guess collision)
         if (extents.x < 1.0f && extents.y < 1.0f && extents.z < 1.0f) continue;
 
         float pr = PLAYER_RADIUS / BASE_SCALE;
-        if (std::abs(localPos.x) < (extents.x + pr) &&
-            std::abs(localPos.y) < (extents.y + pr) &&
-            std::abs(localPos.z) < (extents.z + pr))
+        glm::vec3 rel = glm::vec3(localPos) - center;
+        if (std::abs(rel.x) < (extents.x + pr) &&
+            std::abs(rel.y) < (extents.y + pr) &&
+            std::abs(rel.z) < (extents.z + pr))
         {
             return true;
         }

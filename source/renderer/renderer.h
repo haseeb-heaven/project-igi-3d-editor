@@ -721,10 +721,10 @@ public:
 	void SetIndoorAmbientForTask(const std::string& taskId, const glm::vec3& rgb) {
 		objects_.SetIndoorAmbientForTask(taskId, rgb);
 	}
-	// RainEffect QSC task (per-level, absent on levels with no rain like level2).
+	// RainEffect QSC task (per-level, absent on levels with no rain/snow like level2).
 	// startMeters/endMeters are the "Traceline start"/"Traceline end" fields.
-	void SetRainEffect(bool active, float startMeters, float endMeters, float alpha) {
-		rain_.SetParams(active, startMeters, endMeters, alpha);
+	void SetRainEffect(bool active, bool is_snow, float startMeters, float endMeters, float alpha) {
+		rain_.SetParams(active, is_snow, startMeters, endMeters, alpha);
 	}
 	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {

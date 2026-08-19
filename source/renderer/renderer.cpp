@@ -99,7 +99,7 @@ void Renderer::BeginLoadLevel() {
   objects_.ClearCaches();
   // Disable rain until the new level's QSC is parsed — prevents rain from a
   // prior level bleeding into a level that has no RainEffect task.
-  rain_.SetParams(false, 0.0f, 0.0f, 0.0f);
+  rain_.SetParams(false, false, 0.0f, 0.0f, 0.0f);
   graph_overlay_ = GraphFile{};
   graph_overlay_visible_ = false;
   graph_overlay_dirty_ = false;
