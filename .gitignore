@@ -137,3 +137,4 @@ node_modules/
 package.json
 package-lock.json
 !assets/editor/tools/igi1conv/**
+build2/

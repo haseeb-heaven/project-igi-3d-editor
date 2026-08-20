@@ -541,7 +541,12 @@ int main(int argc, char **argv) {
     g_isCLIMode = true;
     int result = CLIHandler::Process(argc, argv);
 #if defined(_WIN32) && defined(_DEBUG)
-    system("pause");
+    // Do not pause in CLI mode: automated invocations (e.g. the level
+    // verification test) spawn with a new console and would block forever
+    // waiting for a keystroke.
+    if (!g_isCLIMode) {
+      system("pause");
+    }
 #endif
     return result;
   }

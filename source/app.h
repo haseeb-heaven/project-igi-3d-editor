@@ -576,6 +576,13 @@ private:
   // current objects list, copy that task's world pos into the renderer's
   // overlay offset so the 3D nodes/edges follow the task live (F7 view).
   void SyncGraphOverlayOffsetFromAIGraph();
+  // Registers every in-level enemy (soldier family) into the runtime AiSystem
+  // using its AIGraph waypoints, and records their original positions so the
+  // edited level can be restored on exit.
+  void SetupLevelAiGuards();
+  void RestoreAiGuardObjectPositions();
+  std::vector<int>       ai_guard_level_indices_;
+  std::vector<glm::dvec3> ai_guard_original_pos_;
   void PushTaskEditorUndoState();
   void UndoTaskEditorChange();
   void RedoTaskEditorChange();

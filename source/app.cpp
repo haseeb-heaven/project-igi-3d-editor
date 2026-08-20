@@ -467,10 +467,12 @@ void App::Frame(float delta_seconds) {
 					       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 				 }())),
 			.in_game_mode_         = in_game_mode_,
+			.noclip_mode_          = noclip_mode_,
 			.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
 			.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
 			.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
 			.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
+			.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
 			.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
 			.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
 			.help_scroll_offset_   = help_scroll_offset_,
@@ -546,6 +548,17 @@ void App::Frame(float delta_seconds) {
 		viewer_.yaw_ = player.GetYaw();
 		viewer_.pitch_ = player.GetPitch();
 		UpdateViewerVectors();
+
+		// Write AI guard positions back to the level objects so enemies visibly
+		// patrol in the editor/rendered world.
+		const auto& guards = gameplay_host_.GetWorld().GetAi().GetGuards();
+		auto& objects = level_.GetLevelObjects().GetObjects();
+		for (const auto& g : guards) {
+			if ((int)g.id < (int)objects.size()) {
+				objects[g.id].pos = glm::dvec3(g.position.x, g.position.y, g.position.z);
+				objects[g.id].rot.z = glm::radians((double)g.yaw);
+			}
+		}
 	} else {
 		ProcessInput(delta_seconds);
 	}
@@ -681,10 +694,12 @@ void App::Frame(float delta_seconds) {
 				       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 			 }())),
 		.in_game_mode_         = in_game_mode_,
+		.noclip_mode_          = noclip_mode_,
 		.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
 		.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
 		.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
 		.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
+		.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
 		.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
 		.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
 		.help_scroll_offset_   = help_scroll_offset_,
@@ -925,24 +940,40 @@ void App::ToggleGamePlayMode() {
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
 		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.max_health, tuning.max_armor);
 
-		// 3. Find HumanPlayer spawn position exactly from level objects or start pos
+		// 3. Spawn exactly at the editor camera position (primary), falling back to
+		//    HumanPlayer level object / level start pos when the camera is at origin
 		glm::vec3 spawn_pos(0.0f);
 		float spawn_yaw = 0.0f;
+		float spawn_pitch = 0.0f;
 		bool found_spawn = false;
 
-		const auto& objects = level_.GetLevelObjects().GetObjects();
-		for (const auto& obj : objects) {
-			if (!obj.deleted && obj.type == "HumanPlayer") {
-				spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
-				spawn_yaw = glm::degrees((float)obj.rot.z);
-				while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
-				while (spawn_yaw >= 360.0f) spawn_yaw -= 360.0f;
-				found_spawn = true;
-				Logger::Get().Log(LogLevel::INFO, "[App] HumanPlayer spawn: pos=(" +
-					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
-					"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw) +
-					" type=" + obj.type + " name=" + obj.name);
-				break;
+		const float kSpawnSnapEps = 1.0f;
+		if (glm::length(viewer_.pos_) > kSpawnSnapEps ||
+		    fabsf(viewer_.yaw_) > kSpawnSnapEps) {
+			spawn_pos = viewer_.pos_;
+			spawn_yaw = viewer_.yaw_;
+			spawn_pitch = viewer_.pitch_;
+			found_spawn = true;
+			Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera: pos=(" +
+				std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
+				"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
+		}
+
+		if (!found_spawn) {
+			const auto& objects = level_.GetLevelObjects().GetObjects();
+			for (const auto& obj : objects) {
+				if (!obj.deleted && obj.type == "HumanPlayer") {
+					spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
+					spawn_yaw = glm::degrees((float)obj.rot.z);
+					while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
+					while (spawn_yaw >= 360.0f) spawn_yaw -= 360.0f;
+					found_spawn = true;
+					Logger::Get().Log(LogLevel::INFO, "[App] HumanPlayer spawn: pos=(" +
+						std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
+						"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw) +
+						" type=" + obj.type + " name=" + obj.name);
+					break;
+				}
 			}
 		}
 
@@ -957,16 +988,11 @@ void App::ToggleGamePlayMode() {
 			}
 		}
 
-		if (!found_spawn) {
-			spawn_pos = viewer_.pos_;
-			spawn_yaw = viewer_.yaw_;
-			float tz = 0.0f;
-			if (level_.GetTerrainZ(spawn_pos.x, spawn_pos.y, tz)) {
-				spawn_pos.z = tz;
-			}
-		}
-
 		gameplay_host_.OpenGameplay(snap);
+
+		// Register in-level enemies into the runtime AI system (patrol waypoints
+		// come from each enemy's AIGraph). Restores positions on exit.
+		SetupLevelAiGuards();
 
 		// Initialize mission objectives for this specific level
 		int current_lvl = level_.GetLevelNo();
@@ -977,10 +1003,10 @@ void App::ToggleGamePlayMode() {
 		PlayLevelMusic(current_lvl);
 
 		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
-		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, 0.0f);
+		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, spawn_pitch);
 		viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
 		viewer_.yaw_ = spawn_yaw;
-		viewer_.pitch_ = 0.0f;
+		viewer_.pitch_ = spawn_pitch;
 		viewer_.roll_ = 0.0f;
 		UpdateViewerVectors();
 
@@ -998,6 +1024,7 @@ void App::ToggleGamePlayMode() {
 	} else {
 		igi::EditorSnapshot snap;
 		gameplay_host_.CloseGameplay(snap);
+		RestoreAiGuardObjectPositions();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
@@ -1012,6 +1039,155 @@ void App::ToggleGamePlayMode() {
 		UpdateViewerVectors();
 		status_message_ = "Editor Mode Restored";
 	}
+}
+
+// Registers every in-level enemy (soldier family) into the runtime AiSystem so
+// they patrol along their AIGraph waypoints during Game Play mode. Guard ids
+// equal the level-object index, which the frame loop uses to write patrol
+// positions back into the rendered level. Original positions are kept so
+// exiting game mode restores the edited level untouched.
+static bool LastTwoIntArgs(const std::string& qscLine, int& a, int& b);
+
+void App::SetupLevelAiGuards() {
+	auto& ai = gameplay_host_.GetWorld().GetAi();
+	ai.Clear();
+	ai_guard_level_indices_.clear();
+	ai_guard_original_pos_.clear();
+
+	auto& objects = level_.GetLevelObjects().GetObjects();
+
+	// Build a lookup of AIGraph taskId -> world pos (node coords in the .dat are
+	// local to the AIGraph task's own position).
+	std::map<std::string, glm::dvec3> graph_world_offsets;
+	for (const auto& obj : objects) {
+		if (!obj.deleted && obj.type == "AIGraph" && !obj.taskId.empty()) {
+			graph_world_offsets[obj.taskId] = obj.pos;
+		}
+	}
+
+	// Cache parsed nav graphs per graph id so soldiers sharing a graph (most of
+	// them) don't re-parse the route table for every guard.
+	std::map<int, std::shared_ptr<const GraphFile>> graph_cache;
+
+	int level_no = (last_loaded_level_ >= 1) ? last_loaded_level_ : 1;
+
+	for (int i = 0; i < (int)objects.size(); ++i) {
+		const auto& obj = objects[i];
+		if (obj.deleted) continue;
+		bool isEnemy = (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
+		                obj.type == "HumanSoldierRPG");
+		if (!isEnemy) continue;
+
+		igi::AiGuardEntity guard;
+		guard.id = (uint32_t)i;
+		guard.name = obj.name.empty() ? obj.type : obj.name;
+		guard.position = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
+		guard.yaw = glm::degrees((float)obj.rot.z);
+
+		// Resolve the AIGraph this enemy patrols (from its HumanAI child) and the
+		// AI behavior script task id (ai/<taskId>.qvm).
+		int aiGraphTaskId = -1;
+		int aiTaskId = -1;
+		for (int ci : obj.childrenIndices) {
+			if (ci < 0 || ci >= (int)objects.size()) continue;
+			if (!objects[ci].deleted && objects[ci].type == "HumanAI") {
+				aiGraphTaskId = objects[ci].aiGraphTaskId;
+				try { aiTaskId = std::stoi(objects[ci].taskId); }
+				catch (...) { aiTaskId = -1; }
+				break;
+			}
+		}
+
+		if (aiGraphTaskId >= 0) {
+			std::string tid = std::to_string(aiGraphTaskId);
+			auto offIt = graph_world_offsets.find(tid);
+			if (offIt != graph_world_offsets.end()) {
+				auto cached = graph_cache.find(aiGraphTaskId);
+				if (cached == graph_cache.end()) {
+					std::string graphPath = Utils::GetIGIRootPath() +
+						"\\missions\\location0\\level" + std::to_string(level_no) +
+						"\\graphs\\graph" + tid + ".dat";
+					auto g = std::make_shared<const GraphFile>(GRAPH_Parse(graphPath));
+					graph_cache[aiGraphTaskId] = g;
+					cached = graph_cache.find(aiGraphTaskId);
+				}
+				if (cached->second->valid && !cached->second->nodes.empty()) {
+					guard.graph = cached->second;
+					guard.graph_offset = glm::vec3((float)offIt->second.x,
+					                               (float)offIt->second.y,
+					                               (float)offIt->second.z);
+					// Snapshot the graph nodes as waypoints too, so the Suspicious
+					// investigation path keeps its existing behaviour.
+					for (const auto& n : guard.graph->nodes) {
+						guard.waypoints.push_back(glm::vec3(
+							(float)(offIt->second.x + n.x),
+							(float)(offIt->second.y + n.y),
+							(float)(offIt->second.z + n.z)));
+					}
+					// The guard starts at the graph node nearest its spawn (local coords).
+					guard.current_node = GRAPH_NearestNode(*guard.graph,
+						obj.pos.x - offIt->second.x,
+						obj.pos.y - offIt->second.y,
+						obj.pos.z - offIt->second.z);
+				}
+			}
+		}
+		if (guard.waypoints.empty()) {
+			// No usable AIGraph — stand guard in place (still hears/sees player).
+			guard.waypoints.push_back(guard.position);
+		}
+
+		// Build the OpenIGI patrol command list from the AI script's
+		// AIAction_Patrol(pathId) plus that PatrolPath task's children.
+		if (aiTaskId >= 0) {
+			std::string qvmPath = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
+				std::to_string(level_no) + "\\ai\\" + std::to_string(aiTaskId) + ".qvm";
+			int pathId = FindAiScriptPatrolPathId(qvmPath);
+			if (pathId >= 0) {
+				// Find the PatrolPath task the script names (a child of this soldier
+				// in retail data), then collect its PatrolPathCommand children in order.
+				int ppIndex = -1;
+				for (int ci : obj.childrenIndices) {
+					if (ci < 0 || ci >= (int)objects.size()) continue;
+					const auto& child = objects[ci];
+					if (child.deleted || child.type != "PatrolPath") continue;
+					try {
+						if (std::stoi(child.taskId) == pathId) { ppIndex = ci; break; }
+					} catch (...) {}
+				}
+				if (ppIndex >= 0) {
+					for (int pci : objects[ppIndex].childrenIndices) {
+						if (pci < 0 || pci >= (int)objects.size()) continue;
+						const auto& pcmd = objects[pci];
+						if (pcmd.deleted || pcmd.type != "PatrolPathCommand") continue;
+						int cmdCode = -1, param = -1;
+						if (LastTwoIntArgs(pcmd.qscLine, cmdCode, param)) {
+							guard.patrol_commands.push_back(
+								igi::AiPatrolCommand{ (igi::AiPatrolCommandKind)cmdCode, param });
+						}
+					}
+				}
+			}
+		}
+
+		ai.RegisterGuard(guard);
+		ai_guard_level_indices_.push_back(i);
+		ai_guard_original_pos_.push_back(obj.pos);
+	}
+	Logger::Get().Log(LogLevel::INFO, "[App] Registered " +
+		std::to_string(ai_guard_level_indices_.size()) + " enemy guards for Game Play");
+}
+
+void App::RestoreAiGuardObjectPositions() {
+	auto& objects = level_.GetLevelObjects().GetObjects();
+	for (size_t k = 0; k < ai_guard_level_indices_.size(); ++k) {
+		const int idx = ai_guard_level_indices_[k];
+		if (idx >= 0 && idx < (int)objects.size()) {
+			objects[idx].pos = ai_guard_original_pos_[k];
+		}
+	}
+	ai_guard_level_indices_.clear();
+	ai_guard_original_pos_.clear();
 }
 
 void App::SetEditBrush(int brush) {

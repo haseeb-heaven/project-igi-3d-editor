@@ -128,6 +128,81 @@ const GraphNode* GRAPH_FindNode(const GraphFile& graph, int id) {
     return nullptr;
 }
 
+bool GRAPH_RouteStep(const GraphFile& graph, int from, int to,
+                     int& next, float& cost) {
+    if (from < 0 || to < 0 || from >= graph.max_nodes || to >= graph.max_nodes)
+        return false;
+    const size_t slot = static_cast<size_t>(from) + static_cast<size_t>(to) * graph.max_nodes;
+    if (slot >= graph.route_table.size()) return false;
+    const GraphRouteEntry& e = graph.route_table[slot];
+    next = e.next;
+    cost = e.cost;
+    return next != -1;
+}
+
+std::vector<int> GRAPH_EnumerateRoute(const GraphFile& graph, int from, int to) {
+    std::vector<int> route;
+    if (from < 0 || to < 0 || from >= graph.max_nodes || to >= graph.max_nodes)
+        return route;
+    int at = from;
+    for (int guard = 0; guard <= graph.max_nodes; guard++) {
+        if (at == to) return route;
+        int next; float cost;
+        if (!GRAPH_RouteStep(graph, at, to, next, cost)) return {};
+        route.push_back(next);
+        at = next;
+    }
+    return {};
+}
+
+int GRAPH_NearestNode(const GraphFile& graph, double x, double y, double z,
+                      GraphNearestResult* out_result) {
+    constexpr int kCandidateCount = 3;
+    constexpr double kNoCandidateScore = 67108864.0;  // 2^26 units, ~16 km
+    const double target[3] = { x, y, z };
+
+    const GraphNode* best[kCandidateCount] = {};
+    double     scores[kCandidateCount] = { kNoCandidateScore, kNoCandidateScore, kNoCandidateScore };
+
+    for (const GraphNode& node : graph.nodes) {
+        // Retail skips VIEW-criteria nodes entirely (they can never be the answer).
+        if (GRAPH_NodeKind(node) == GraphNodeKind::View) continue;
+
+        double dx = node.x - target[0];
+        double dy = node.y - target[1];
+        double dz = node.z - target[2];
+        double score = std::sqrt((dx * dx) + (dy * dy) + (dz * dz))
+                     - static_cast<double>(node.radius) * 4096.0;
+
+        for (int slot = 0; slot < kCandidateCount; slot++) {
+            if (!best[slot]) {
+                best[slot] = &node;
+                scores[slot] = score;
+                break;
+            }
+            if (score < scores[slot]) {
+                for (int shift = kCandidateCount - 1; shift > slot; shift--) {
+                    best[shift] = best[shift - 1];
+                    scores[shift] = scores[shift - 1];
+                }
+                best[slot] = &node;
+                scores[slot] = score;
+                break;
+            }
+        }
+    }
+
+    if (!best[0]) {
+        if (out_result) *out_result = GraphNearestResult::None;
+        return -1;
+    }
+    if (out_result) {
+        *out_result = scores[0] >= 0.0 ? GraphNearestResult::Outside
+                                       : GraphNearestResult::Inside;
+    }
+    return best[0]->id;
+}
+
 // Record codeids (uint32 LE) and typeids, matching the bytes GRAPH_Parse reads.
 namespace {
     constexpr uint32_t CODE_NODE_ID    = 0x0735CE04;
@@ -855,8 +930,10 @@ GraphFile GRAPH_Parse(const std::string& filepath) {
     result.max_nodes = maxNodes;
 
     // ------------------------------------------------------------------
-    // 4. Skip adjacency table
-    //    Starts at offset 30, size = MaxNodes * MaxNodes * 8 bytes
+    // 4. Read the adjacency / all-pairs route table
+    //    Starts at offset 30, size = MaxNodes * MaxNodes * 8 bytes.
+    //    Entry layout (LE): int32 nextNode, float cost; indexed
+    //    from + to*maxNodes (destination major axis). {-1,-1} = no route.
     // ------------------------------------------------------------------
     const size_t adjTableBytes = static_cast<size_t>(maxNodes) * maxNodes * 8;
     const size_t nodeDataStart = HEADER_SIZE + adjTableBytes;
@@ -865,6 +942,15 @@ GraphFile GRAPH_Parse(const std::string& filepath) {
         result.error = "Adjacency table overruns file size in: " + filepath;
         Logger::Get().Log(LogLevel::ERR, "[GRAPH] " + result.error);
         return result;
+    }
+
+    result.route_table.resize(static_cast<size_t>(maxNodes) * maxNodes);
+    if (adjTableBytes + HEADER_SIZE <= fileSize) {
+        for (size_t s = 0; s < result.route_table.size(); ++s) {
+            const size_t off = HEADER_SIZE + s * 8;
+            result.route_table[s].next = b.read<int32_t>(off);
+            result.route_table[s].cost = b.read<float>(off + 4);
+        }
     }
 
     Logger::Get().Log(LogLevel::INFO,

@@ -156,16 +156,21 @@ TEST(RuntimeAiTest, VisionConeDirectAndPeripheral) {
     guard.yaw = 0.0f; // Facing +Y
     ai.RegisterGuard(guard);
 
+    // Unit scale: 1 world meter = 4096 units (PlayerController::WORLD_METER).
+    const float kMeters = 4096.0f;
+    const float kEyeHeight = 1.7f * kMeters; // eye sits ~1.7m above the feet
+
     // Target directly in front (30m ahead at eye level) -> Primary cone (0x101)
-    AiVisionResult res1 = ai.CheckVision(guard, glm::vec3(0.0f, 3000.0f, 180.0f), false);
+    AiVisionResult res1 = ai.CheckVision(guard, glm::vec3(0.0f, 30.0f * kMeters, kEyeHeight), false);
     EXPECT_EQ(res1, AiVisionResult::Primary);
 
     // Target behind guard -> None
-    AiVisionResult res2 = ai.CheckVision(guard, glm::vec3(0.0f, -2000.0f, 180.0f), false);
+    AiVisionResult res2 = ai.CheckVision(guard, glm::vec3(0.0f, -20.0f * kMeters, kEyeHeight), false);
     EXPECT_EQ(res2, AiVisionResult::None);
 
-    // Target in wide peripheral angle (approx 59 degrees) -> Peripheral
-    AiVisionResult res3 = ai.CheckVision(guard, glm::vec3(2000.0f, 1200.0f, 180.0f), false);
+    // Target in wide peripheral angle (approx 60 degrees, past the 45-degree
+    // primary yaw cone) -> Peripheral
+    AiVisionResult res3 = ai.CheckVision(guard, glm::vec3(17.32f * kMeters, 10.0f * kMeters, kEyeHeight), false);
     EXPECT_EQ(res3, AiVisionResult::Peripheral);
 }
 

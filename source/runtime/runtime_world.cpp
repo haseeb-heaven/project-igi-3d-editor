@@ -24,19 +24,6 @@ void RuntimeWorld::Reset() {
     ai_.Clear();
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
-
-    // Create demo patrol guard
-    AiGuardEntity guard;
-    guard.id = 101;
-    guard.name = "PatrolGuard1";
-    guard.position = glm::vec3(200.0f, 300.0f, spawn_pos.z);
-    guard.waypoints = {
-        glm::vec3(200.0f, 300.0f, spawn_pos.z),
-        glm::vec3(400.0f, 300.0f, spawn_pos.z),
-        glm::vec3(400.0f, 500.0f, spawn_pos.z),
-        glm::vec3(200.0f, 500.0f, spawn_pos.z)
-    };
-    ai_.RegisterGuard(guard);
 }
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {

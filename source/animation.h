@@ -128,6 +128,11 @@ private:
 // the unique animation ids in first-seen order (empty on any failure).
 std::vector<int> FindAiScriptAnimationIds(const std::string& qvmPath);
 
+// Decompiles ai/<aiTaskId>.qvm to a temp .qsc (via igi1conv), scans it for the
+// first AIAction_Patrol(<id>, ...) call, and deletes the temp file. Returns the
+// patrol path (PatrolPath task) id, or -1 when the script has no patrol action.
+int FindAiScriptPatrolPathId(const std::string& qvmPath);
+
 // ── Per-object animation playback state ─────────────────────────────────────
 struct AnimPlayback {
     const AnimationClip* clip = nullptr;

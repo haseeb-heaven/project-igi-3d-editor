@@ -253,6 +253,7 @@ add_executable(igi_tests
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
     tests/test_runtime_subsystems.cpp
+    tests/test_ai_patrol_port.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).

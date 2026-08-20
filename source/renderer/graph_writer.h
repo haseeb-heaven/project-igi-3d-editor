@@ -42,10 +42,21 @@ struct GraphEdge {
     int link_type = 0;
 };
 
+// One entry of the precomputed all-pairs route table (APSP). Mirrors the retail
+// graph<N>.dat layout: { next node on the path from `from` to `to`, remaining
+// cost }. {-1, -1.0f} is the sentinel meaning "no route".
+struct GraphRouteEntry {
+    int   next = -1;
+    float cost = -1.0f;
+};
+
 struct GraphFile {
     int                     max_nodes = 0;
     std::vector<GraphNode>  nodes;
     std::vector<GraphEdge>  edges;
+    // max_nodes^2 entries, indexed from + to*max_nodes (destination major axis),
+    // exactly as the game walks it. Empty for legacy-format graphs.
+    std::vector<GraphRouteEntry> route_table;
     bool                    valid = false;
     std::string             error;
     bool                    is_legacy = false;  // alternate tagged format (no magic)
@@ -62,6 +73,27 @@ GraphNodeKind GRAPH_NodeKind(const GraphNode& node);
 // Find a node by id. Returns nullptr if absent.
 GraphNode*       GRAPH_FindNode(GraphFile& graph, int id);
 const GraphNode* GRAPH_FindNode(const GraphFile& graph, int id);
+
+// Query the precomputed route table. `from`/`to` are node ids in [0, max_nodes).
+// Returns true and sets `next`/`cost` when a route exists, false for the
+// {-1,-1} sentinel (self, unreachable, or absent table).
+bool GRAPH_RouteStep(const GraphFile& graph, int from, int to,
+                     int& next, float& cost);
+
+// Walk the route table from `from` to `to`, yielding every node along the way
+// (destination last; `from` not included). Empty when no route exists. Bounded
+// by max_nodes steps so a malformed table cannot hang the caller.
+std::vector<int> GRAPH_EnumerateRoute(const GraphFile& graph, int from, int to);
+
+// Result of a nearest-node query (GRAPH_NearestNode).
+enum class GraphNearestResult { None, Outside, Inside };
+
+// Find the graph node nearest a world position (retail 0x5096F0): linear scan
+// scoring distance - radius*4096, skipping VIEW-criteria nodes, keeping the
+// best three insertion-sorted. Returns the best node id, or -1 when none
+// qualifies.
+int GRAPH_NearestNode(const GraphFile& graph, double x, double y, double z,
+                      GraphNearestResult* out_result = nullptr);
 
 // Parse a navigation graph .dat file.
 // Filepath example: missions/location0/level1/graphs/graph1.dat

@@ -340,9 +340,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					int clicked_input = -1;
 
 					int btn_idx = 0;
-					int RESUME_ROW = btn_idx++;
-					int MODE_ROW = btn_idx++;
-					int FONT_ROW = btn_idx++;
+int RESUME_ROW = btn_idx++;
+				int MODE_ROW = btn_idx++;
+				int CLIP_ROW = btn_idx++;
+				int FONT_ROW = btn_idx++;
 					int LEVEL_ROW = btn_idx++;
 					int AUTOSAVE_ROW = btn_idx++;
 					int SEARCH_ROW = btn_idx++;
@@ -370,8 +371,9 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					};
 
 					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
-					else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
-					else if (btn_hit2(FONT_ROW)) {
+else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
+				else if (btn_hit2(CLIP_ROW))  { noclip_mode_ = !noclip_mode_; }
+				else if (btn_hit2(FONT_ROW)) {
 						// Layout MUST match renderer: dynamic label width, val_w=44
 						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
 						char font_lbl[32];

@@ -474,10 +474,12 @@ public:
 		bool selected_obj_is_ai    = false;
 
 		bool in_game_mode_ = false;
+		bool noclip_mode_ = true;
 		float player_health_ = 100.0f;
 		float player_armor_ = 100.0f;
 		std::string active_weapon_name_ = "M16A2";
 		uint32_t clip_ammo_ = 30;
+		uint32_t clip_capacity_ = 30;
 		uint32_t reserve_ammo_ = 120;
 		std::string objective_text_ = "";
 
