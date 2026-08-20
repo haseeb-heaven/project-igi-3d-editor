@@ -2,6 +2,7 @@
 #include "qvm_native_registry.h"
 #include "qvm_interpreter.h"
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 namespace igi {
@@ -159,27 +160,34 @@ bool QvmNativeRegistry::TryExecuteDeferredByName(
         return false;
     }
 
-    if (symbol->second.deferred_function) {
-        QvmNativeCallArguments arguments(ctx, argument_addresses);
-        out_result = symbol->second.deferred_function(ctx, arguments);
-        return true;
-    }
+    try {
+        if (symbol->second.deferred_function) {
+            QvmNativeCallArguments arguments(ctx, argument_addresses);
+            out_result = symbol->second.deferred_function(ctx, arguments);
+            return true;
+        }
 
-    if (!symbol->second.function) {
-        return false;
-    }
-
-    std::vector<QvmRuntimeValue> evaluated_arguments;
-    evaluated_arguments.reserve(argument_addresses.size());
-    for (const uint32_t address : argument_addresses) {
-        QvmRuntimeValue argument;
-        if (!ctx.EvaluateArgumentAtAddress(address, QvmValueType::Null, argument)) {
+        if (!symbol->second.function) {
             return false;
         }
-        evaluated_arguments.push_back(std::move(argument));
+
+        std::vector<QvmRuntimeValue> evaluated_arguments;
+        evaluated_arguments.reserve(argument_addresses.size());
+        for (const uint32_t address : argument_addresses) {
+            QvmRuntimeValue argument;
+            if (!ctx.EvaluateArgumentAtAddress(address, QvmValueType::Null, argument)) {
+                return false;
+            }
+            evaluated_arguments.push_back(std::move(argument));
+        }
+        out_result = symbol->second.function(ctx, evaluated_arguments);
+        return true;
+    } catch (const std::exception& exception) {
+        ctx.SetError(std::string("QVM native function threw: ") + exception.what());
+    } catch (...) {
+        ctx.SetError("QVM native function threw an unknown exception");
     }
-    out_result = symbol->second.function(ctx, evaluated_arguments);
-    return true;
+    return false;
 }
 
 bool QvmNativeRegistry::TryGetConstant(uint32_t symbol_id, QvmRuntimeValue& out_val) const {

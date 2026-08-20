@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "../source/game_clock.h"
@@ -297,6 +298,49 @@ TEST(RuntimeQvmTest, ExecutesRetailLoopArithmeticAndDeferredNativeArguments) {
     ASSERT_EQ(context->StackSize(), 1U);
     EXPECT_EQ(context->Pop().int_val, 9);
     EXPECT_EQ(native_evaluation_count, 1);
+}
+
+TEST(RuntimeQvmTest, ConvertsDeferredNativeExceptionsToDeterministicVmFaults) {
+    QvmNativeRegistry registry;
+    registry.RegisterDeferredFunctionByName(
+        "Explode",
+        [](QvmExecutionContext&, const QvmNativeCallArguments&) -> QvmRuntimeValue {
+            throw std::runtime_error("native failure");
+        });
+
+    QVMFile parsed_file;
+    parsed_file.valid = true;
+    parsed_file.identifiers = {"Explode"};
+
+    QVMInstruction push_symbol{};
+    push_symbol.type = QVMOpType::PUSHIIB;
+    push_symbol.operand = 0;
+    push_symbol.address = 0;
+    push_symbol.size = 2;
+
+    QVMInstruction call{};
+    call.type = QVMOpType::CALL;
+    call.operand = 0;
+    call.signed_operand = 0;
+    call.address = 2;
+    call.size = 5;
+
+    QVMInstruction program_end{};
+    program_end.type = QVMOpType::BRK;
+    program_end.address = 7;
+    program_end.size = 1;
+
+    parsed_file.instructions = {push_symbol, call, program_end};
+
+    QvmInterpreter interpreter(registry);
+    QvmProgram program;
+    ASSERT_TRUE(interpreter.LoadProgram(parsed_file, program))
+        << interpreter.GetLastError();
+
+    auto context = interpreter.CreateContext(program);
+    EXPECT_FALSE(context->Run());
+    EXPECT_TRUE(context->HasErrored());
+    EXPECT_NE(context->GetLastError().find("native failure"), std::string::npos);
 }
 
 // 3. Task Tree & Messaging Tests

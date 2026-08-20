@@ -574,7 +574,9 @@ bool QvmExecutionContext::StepLoopInstruction() {
                     *this,
                     instruction.argument_addresses,
                     result)) {
-                SetError("Unknown QVM function: " + function_name);
+                if (!errored_) {
+                    SetError("Unknown QVM function: " + function_name);
+                }
                 break;
             }
 
