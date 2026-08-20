@@ -240,6 +240,24 @@ bool RuntimeWorld::FindWorldShotImpact(
     return false;
 }
 
+bool RuntimeWorld::IsWorldLineBlocked(
+    const glm::vec3& line_origin,
+    const glm::vec3& line_target) const {
+    const glm::vec3 line_delta = line_target - line_origin;
+    const float line_length = glm::length(line_delta);
+    if (line_length <= 0.0001f) {
+        return false;
+    }
+
+    BulletTrace visibility_trace;
+    visibility_trace.origin = line_origin;
+    visibility_trace.direction = line_delta;
+    visibility_trace.distance = line_length;
+
+    float impact_distance = line_length;
+    return FindWorldShotImpact(visibility_trace, impact_distance);
+}
+
 void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
     constexpr float combat_range = 50.0f * PlayerController::WORLD_METER;
     constexpr uint64_t attack_interval_ticks = 30;
@@ -254,6 +272,14 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
             continue;
         }
         if (glm::distance(guard.position, player_.GetPosition()) > combat_range) {
+            continue;
+        }
+
+        const glm::vec3 guard_eye_position = guard.position + glm::vec3(
+            0.0f,
+            0.0f,
+            1.7f * PlayerController::WORLD_METER);
+        if (IsWorldLineBlocked(guard_eye_position, player_.GetEyePosition())) {
             continue;
         }
 

@@ -403,6 +403,15 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
 
     for (const auto& obj : objects) {
         if (obj.deleted) continue;
+        if (in_game_mode_ &&
+            (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
+             obj.type == "HumanSoldierRPG" || obj.type == "HumanPlayer" ||
+             obj.type == "HumanAI")) {
+            // Runtime AI is simulated as dynamic entities. The injected
+            // collision callback must represent static level geometry only;
+            // guards are handled by RuntimeWorld's obstacle and hit queries.
+            continue;
+        }
         std::string mId = !obj.modelId.empty() ? obj.modelId : obj.segmentModelId;
         if (mId.empty()) continue;
 
@@ -787,4 +796,3 @@ void App::UpdateMarkerManipulation() {
 		level_.GetLevelObjects().UpdateCoordinatesInLine(obj);
 	}
 }
-
