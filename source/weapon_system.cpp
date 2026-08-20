@@ -99,10 +99,12 @@ void WeaponSystem::SelectWeapon(uint32_t weapon_id) {
 }
 
 bool WeaponSystem::TryFire(const glm::vec3& muzzle_pos, const glm::vec3& aim_dir, BulletTrace& out_trace) {
-    if (is_reloading_ || shot_cooldown_ > 0.0 || current_clip_ammo_ == 0) {
+    if (is_reloading_ || shot_cooldown_ > 0.0 || current_clip_ammo_ == 0 ||
+        glm::dot(aim_dir, aim_dir) <= 0.0001f) {
         return false;
     }
 
+    out_trace = BulletTrace();
     current_clip_ammo_--;
     shot_cooldown_ = 60.0 / active_weapon_.rounds_per_minute;
 

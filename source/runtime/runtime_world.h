@@ -51,6 +51,7 @@ public:
 
 private:
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
+    bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
 

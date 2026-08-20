@@ -44,6 +44,10 @@ float FlatTerrain(float, float) {
     return 0.0f;
 }
 
+bool WallAtOneMeter(float, float y, float) {
+    return y >= PlayerController::WORLD_METER;
+}
+
 } // namespace
 
 // 1. Game Clock Determinism & Tick Tests
@@ -576,6 +580,27 @@ TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
 
     ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
     EXPECT_LT(world.GetAi().GetGuards()[0].health, 100.0f);
+}
+
+TEST(RuntimeWorldTest, SolidGeometryOccludesPlayerFire) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain, WallAtOneMeter);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+    world.GetPlayer().SetOrientation(0.0f, 0.0f);
+
+    AiGuardEntity guard;
+    guard.id = 18;
+    guard.position = glm::vec3(0.0f, 2.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.yaw = 180.0f;
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    PlayerInputCmd input;
+    input.fire = true;
+    world.UpdateSimulationTick(0, input);
+
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_FLOAT_EQ(world.GetAi().GetGuards()[0].health, 100.0f);
 }
 
 TEST(RuntimeWorldTest, CombatGuardDamagesPlayerAtFixedCadence) {

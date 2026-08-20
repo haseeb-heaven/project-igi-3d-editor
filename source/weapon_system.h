@@ -27,6 +27,7 @@ struct BulletTrace {
     glm::vec3 direction = glm::vec3(0.0f);
     glm::vec3 hit_position = glm::vec3(0.0f);
     bool hit = false;
+    bool hit_world_geometry = false;
     uint32_t hit_entity_id = 0;
     float distance = 0.0f;
     float damage = 0.0f;

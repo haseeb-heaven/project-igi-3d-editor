@@ -86,7 +86,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, trace)) {
             const bool hit_guard = ApplyPlayerShotDamage(trace);
             AudioSystem::Play(SoundEffect::Gunshot);
-            if (hit_guard) {
+            if (hit_guard || trace.hit_world_geometry) {
                 AudioSystem::Play(SoundEffect::BulletImpact);
             }
             // Post gunshot stimulus to AI
@@ -141,6 +141,14 @@ bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {
     glm::vec3 closest_hit_position = bullet_trace.hit_position;
     bool found_guard = false;
 
+    float world_impact_distance = bullet_trace.distance;
+    if (FindWorldShotImpact(bullet_trace, world_impact_distance)) {
+        closest_hit_distance = world_impact_distance;
+        bullet_trace.distance = world_impact_distance;
+        bullet_trace.hit_position = bullet_trace.origin + shot_direction * world_impact_distance;
+        bullet_trace.hit_world_geometry = true;
+    }
+
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {
             continue;
@@ -175,6 +183,61 @@ bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {
     bullet_trace.hit_position = closest_hit_position;
     ai_.ApplyDamage(closest_guard_id, bullet_trace.damage);
     return true;
+}
+
+bool RuntimeWorld::FindWorldShotImpact(
+    const BulletTrace& bullet_trace,
+    float& impact_distance) const {
+    if (!check_collision_ || bullet_trace.distance <= 0.0f) {
+        return false;
+    }
+
+    constexpr int sample_count = 512;
+    constexpr int refinement_iterations = 12;
+    const float direction_length = glm::length(bullet_trace.direction);
+    if (direction_length <= 0.0001f) {
+        return false;
+    }
+    const glm::vec3 shot_direction = bullet_trace.direction / direction_length;
+
+    const auto is_solid = [this, &bullet_trace, &shot_direction](float distance) {
+        const glm::vec3 sample_position =
+            bullet_trace.origin + shot_direction * distance;
+        return check_collision_(sample_position.x, sample_position.y, sample_position.z);
+    };
+
+    float previous_distance = 0.0f;
+    if (is_solid(previous_distance)) {
+        impact_distance = 0.0f;
+        return true;
+    }
+
+    for (int sample_index = 1; sample_index <= sample_count; ++sample_index) {
+        const float sample_fraction = static_cast<float>(sample_index) /
+            static_cast<float>(sample_count);
+        const float current_distance = bullet_trace.distance * sample_fraction;
+        if (!is_solid(current_distance)) {
+            previous_distance = current_distance;
+            continue;
+        }
+
+        float lower_distance = previous_distance;
+        float upper_distance = current_distance;
+        for (int refinement_index = 0;
+             refinement_index < refinement_iterations;
+             ++refinement_index) {
+            const float middle_distance = (lower_distance + upper_distance) * 0.5f;
+            if (is_solid(middle_distance)) {
+                upper_distance = middle_distance;
+            } else {
+                lower_distance = middle_distance;
+            }
+        }
+        impact_distance = upper_distance;
+        return true;
+    }
+
+    return false;
 }
 
 void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
