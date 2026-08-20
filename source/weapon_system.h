@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "runtime/projectile_types.h"
+
 namespace igi {
 
 struct WeaponDefinition {
@@ -32,6 +34,7 @@ struct WeaponDefinition {
     int32_t calibre_id = 919;
     std::string fire_sound;
     std::string fire_loop_end_sound;
+    ProjectileType projectile_type = ProjectileType::None;
     bool uses_ammunition = true;
     bool is_automatic = true;
 };

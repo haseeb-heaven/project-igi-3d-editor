@@ -716,6 +716,22 @@ TEST(RuntimeWeaponTest, ResolvesAuthoredWeaponIdentifiersWithDecorativeText) {
     EXPECT_EQ(weapons.GetActiveWeapon().id, 7U);
 }
 
+TEST(RuntimeWeaponTest, ClassifiesVanillaThrownWeaponsForProjectileRuntime) {
+    WeaponSystem weapons;
+
+    ASSERT_TRUE(weapons.SelectWeapon(14));
+    EXPECT_EQ(weapons.GetActiveWeapon().projectile_type, ProjectileType::FragGrenade);
+
+    ASSERT_TRUE(weapons.SelectWeapon(15));
+    EXPECT_EQ(weapons.GetActiveWeapon().projectile_type, ProjectileType::Flashbang);
+
+    ASSERT_TRUE(weapons.SelectWeapon(16));
+    EXPECT_EQ(weapons.GetActiveWeapon().projectile_type, ProjectileType::ProximityMine);
+
+    ASSERT_TRUE(weapons.SelectWeapon(12));
+    EXPECT_EQ(weapons.GetActiveWeapon().projectile_type, ProjectileType::Rocket);
+}
+
 TEST(RuntimeWeaponTest, UsesRetailAutomaticCadenceAndResetsBurstOnRelease) {
     WeaponSystem weapons;
     ASSERT_TRUE(weapons.SelectWeaponSlot(6)); // MP5SD: 700 RPM -> 2 fixed ticks
@@ -966,6 +982,48 @@ TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
 
     ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
     EXPECT_LT(world.GetAi().GetGuards()[0].health, 100.0f);
+}
+
+TEST(RuntimeWorldTest, ProjectileDetonationAppliesBlastDamageToNearbyGuard) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 28;
+    guard.position = glm::vec3(0.0f, 1.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(0.0f);
+    launch.type = ProjectileType::FragGrenade;
+    launch.fuse_ticks = 1;
+    launch.damage = 100.0f;
+    launch.explosion_radius_units = 5.0f * PlayerController::WORLD_METER;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_LE(world.GetAi().GetGuards()[0].health, 0.0f);
+    EXPECT_EQ(world.GetProjectiles().GetDetonations().size(), 1U);
+}
+
+TEST(RuntimeWorldTest, ProjectileWeaponLaunchesOncePerTriggerPress) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    ASSERT_TRUE(world.GetWeapons().SelectWeapon(14));
+
+    PlayerInputCmd fire_command;
+    fire_command.fire = true;
+    world.UpdateSimulationTick(0, fire_command);
+    world.UpdateSimulationTick(1, fire_command);
+
+    EXPECT_EQ(world.GetProjectiles().GetProjectiles().size(), 1U);
+    EXPECT_EQ(world.GetWeapons().GetCurrentClipAmmo(), 0U);
+
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    EXPECT_EQ(world.GetProjectiles().GetProjectiles().size(), 1U);
 }
 
 TEST(RuntimeWorldTest, MissionRestartRestoresTheInitialWeaponLoadout) {

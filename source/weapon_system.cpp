@@ -37,7 +37,8 @@ WeaponDefinition CreateVanillaWeapon(
     int32_t calibre_id,
     const char* fire_sound,
     const char* fire_loop_end_sound,
-    bool uses_ammunition = true) {
+    bool uses_ammunition = true,
+    ProjectileType projectile_type = ProjectileType::None) {
     WeaponDefinition definition;
     definition.id = weapon_id;
     definition.script_id = script_id;
@@ -60,6 +61,7 @@ WeaponDefinition CreateVanillaWeapon(
     definition.calibre_id = calibre_id;
     definition.fire_sound = fire_sound;
     definition.fire_loop_end_sound = fire_loop_end_sound;
+    definition.projectile_type = projectile_type;
     definition.uses_ammunition = uses_ammunition;
     definition.is_automatic = maximum_rounds_per_burst > 1;
     return definition;
@@ -174,19 +176,23 @@ const std::vector<WeaponDefinition>& WeaponSystem::GetVanillaWeaponCatalog() {
             300.0f, 95.0f, 10004, "svddrag_shot_1", "svddrag_shot_1"),
         CreateVanillaWeapon(12, "WEAPON_ID_RPG18", "LAW 80", "110_01_1",
             5.0f, 40.0f, 1, 1, 1, 0.0f, 0.0f, 12.0f, 0.0f, 0.0f, 0.0f,
-            600.0f, 100.0f, 1000, "rpg_launch_1", "rpg_launch_1"),
+            600.0f, 100.0f, 1000, "rpg_launch_1", "rpg_launch_1", true,
+            ProjectileType::Rocket),
         CreateVanillaWeapon(13, "WEAPON_ID_UZIX2", "Uzi x 2", "111_04_1",
             400.0f, 1400.0f, 64, 64, 1, -5.0f, 5.0f, 0.9f, 0.0f, 0.7f, 0.7f,
             50.0f, 28.0f, 919, "uzix2_loop", "uzi_loop_e"),
         CreateVanillaWeapon(14, "WEAPON_ID_GRENADE", "Hand Grenade", "135_01_1",
             15.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            1.0f, 100.0f, 10000, "grenade_throw", "grenade_throw"),
+            1.0f, 100.0f, 10000, "grenade_throw", "grenade_throw", true,
+            ProjectileType::FragGrenade),
         CreateVanillaWeapon(15, "WEAPON_ID_FLASHBANG", "FlashBang", "137_01_1",
             15.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            1.0f, 1.0f, 10003, "flashbang_throw", "flashbang_throw"),
+            1.0f, 1.0f, 10003, "flashbang_throw", "flashbang_throw", true,
+            ProjectileType::Flashbang),
         CreateVanillaWeapon(16, "WEAPON_ID_PROXIMITYMINE", "Proximitymine", "136_01_1",
             15.0f, 60.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-            1.5f, 100.0f, 10001, "mine_place", "mine_place"),
+            1.5f, 100.0f, 10001, "mine_place", "mine_place", true,
+            ProjectileType::ProximityMine),
         CreateVanillaWeapon(18, "WEAPON_ID_BINOCULARS", "Binoculars", "102_01_1",
             8.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
             1.0f, 0.0f, 919, "", "", false),

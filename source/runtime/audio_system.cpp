@@ -66,6 +66,11 @@ void AudioSystem::Play(SoundEffect sfx) {
         case SoundEffect::Footstep:
         case SoundEffect::Reload:
         case SoundEffect::ObjectiveComplete:
+        case SoundEffect::ProjectileLaunch:
+            relative_path = "missions/location0/level1/sounds/m1_beeps01.wav";
+            break;
+        case SoundEffect::Explosion:
+        case SoundEffect::Flashbang:
             relative_path = "missions/location0/level1/sounds/m1_beeps01.wav";
             break;
     }

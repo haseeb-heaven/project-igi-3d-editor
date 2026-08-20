@@ -11,7 +11,10 @@ enum class SoundEffect {
     Jump,
     Footstep,
     Pain,
-    ObjectiveComplete
+    ObjectiveComplete,
+    ProjectileLaunch,
+    Explosion,
+    Flashbang
 };
 
 class AudioSystem {

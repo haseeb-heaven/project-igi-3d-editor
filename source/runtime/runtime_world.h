@@ -15,6 +15,7 @@
 #include "../level_flow.h"
 #include "../level/task_tree.h"
 #include "../level/qvm_interpreter.h"
+#include "projectile_system.h"
 
 namespace igi {
 
@@ -56,6 +57,9 @@ public:
     WeaponSystem& GetWeapons() { return weapons_; }
     const WeaponSystem& GetWeapons() const { return weapons_; }
 
+    ProjectileSystem& GetProjectiles() { return projectiles_; }
+    const ProjectileSystem& GetProjectiles() const { return projectiles_; }
+
     AiSystem& GetAi() { return ai_; }
     const AiSystem& GetAi() const { return ai_; }
 
@@ -75,6 +79,18 @@ private:
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     bool IsWorldLineBlocked(const glm::vec3& line_origin, const glm::vec3& line_target) const;
     float FindWorldCeilingHeight(const glm::vec3& body_position) const;
+    bool FindProjectileCollision(
+        const glm::vec3& start_position,
+        const glm::vec3& end_position,
+        ProjectileCollisionHit& collision_hit) const;
+    bool IsProjectileTargetInRange(
+        const glm::vec3& center,
+        float radius_units) const;
+    void ApplyProjectileDetonations();
+    void LaunchPlayerProjectile(
+        const glm::vec3& origin,
+        const glm::vec3& direction,
+        const WeaponDefinition& weapon);
     void DispatchGuardScripts();
     void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
@@ -93,6 +109,7 @@ private:
 
     PlayerController player_;
     WeaponSystem weapons_;
+    ProjectileSystem projectiles_;
     AiSystem ai_;
     LevelFlow level_flow_;
     TaskTree task_tree_;
@@ -105,6 +122,7 @@ private:
 
     std::unordered_map<uint32_t, GuardCombatState> guard_combat_states_;
     InteractionQuery interaction_query_;
+    bool fire_was_held_ = false;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;

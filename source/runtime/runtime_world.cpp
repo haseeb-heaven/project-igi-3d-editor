@@ -34,6 +34,20 @@ void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*c
         ai_.SetMovementCollisionQuery({});
         ai_.SetLineOfSightQuery({});
     }
+    projectiles_.SetCollisionQuery(
+        [this](
+            const glm::vec3& start_position,
+            const glm::vec3& end_position,
+            ProjectileCollisionHit& collision_hit) {
+            return FindProjectileCollision(
+                start_position,
+                end_position,
+                collision_hit);
+        });
+    projectiles_.SetProximityTriggerQuery(
+        [this](const glm::vec3& center, float radius_units) {
+            return IsProjectileTargetInRange(center, radius_units);
+        });
     Reset();
 }
 
@@ -93,6 +107,237 @@ float RuntimeWorld::FindWorldCeilingHeight(const glm::vec3& body_position) const
     return std::numeric_limits<float>::max();
 }
 
+bool RuntimeWorld::FindProjectileCollision(
+    const glm::vec3& start_position,
+    const glm::vec3& end_position,
+    ProjectileCollisionHit& collision_hit) const {
+    const glm::vec3 movement = end_position - start_position;
+    if (glm::dot(movement, movement) <= 0.00000001f) {
+        return false;
+    }
+
+    const auto normalize_surface_normal = [](const glm::vec3& normal) {
+        const float length_squared = glm::dot(normal, normal);
+        if (length_squared <= 0.00000001f) {
+            return glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+        return normal / std::sqrt(length_squared);
+    };
+
+    const auto is_solid = [this](const glm::vec3& sample_position) {
+        if (get_terrain_z_ && sample_position.z <= get_terrain_z_(
+                sample_position.x,
+                sample_position.y)) {
+            return true;
+        }
+        return check_collision_ && check_collision_(
+            sample_position.x,
+            sample_position.y,
+            sample_position.z);
+    };
+
+    if (!is_solid(end_position)) {
+        return false;
+    }
+
+    float lower_fraction = 0.0f;
+    float upper_fraction = 1.0f;
+    if (is_solid(start_position)) {
+        upper_fraction = 0.0f;
+    } else {
+        for (int refinement_index = 0;
+             refinement_index < 12;
+             ++refinement_index) {
+            const float middle_fraction =
+                (lower_fraction + upper_fraction) * 0.5f;
+            const glm::vec3 middle_position = start_position +
+                movement * middle_fraction;
+            if (is_solid(middle_position)) {
+                upper_fraction = middle_fraction;
+            } else {
+                lower_fraction = middle_fraction;
+            }
+        }
+    }
+
+    collision_hit.position = start_position + movement * upper_fraction;
+
+    // A terrain crossing has an actual height-field normal. Static model
+    // collision only supplies a boolean in the existing editor callback, so
+    // use the incoming horizontal direction as a conservative wall normal.
+    bool crossed_terrain = false;
+    if (get_terrain_z_) {
+        const float start_terrain_height = get_terrain_z_(
+            start_position.x,
+            start_position.y);
+        const float end_terrain_height = get_terrain_z_(
+            end_position.x,
+            end_position.y);
+        crossed_terrain = start_position.z > start_terrain_height &&
+            end_position.z <= end_terrain_height;
+        if (crossed_terrain) {
+            constexpr float terrain_probe_spacing = 64.0f;
+            const float left_height = get_terrain_z_(
+                collision_hit.position.x - terrain_probe_spacing,
+                collision_hit.position.y);
+            const float right_height = get_terrain_z_(
+                collision_hit.position.x + terrain_probe_spacing,
+                collision_hit.position.y);
+            const float down_height = get_terrain_z_(
+                collision_hit.position.x,
+                collision_hit.position.y - terrain_probe_spacing);
+            const float up_height = get_terrain_z_(
+                collision_hit.position.x,
+                collision_hit.position.y + terrain_probe_spacing);
+            collision_hit.normal = normalize_surface_normal(
+                glm::vec3(
+                    -(right_height - left_height),
+                    -(up_height - down_height),
+                    terrain_probe_spacing * 2.0f));
+        }
+    }
+
+    if (!crossed_terrain) {
+        collision_hit.normal = normalize_surface_normal(
+            glm::vec3(-movement.x, -movement.y, 0.0f));
+        if (glm::dot(collision_hit.normal, collision_hit.normal) <= 0.00000001f) {
+            collision_hit.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        }
+    }
+    return true;
+}
+
+bool RuntimeWorld::IsProjectileTargetInRange(
+    const glm::vec3& center,
+    float radius_units) const {
+    if (player_.IsAlive() && glm::distance(
+            center,
+            player_.GetPosition()) <= radius_units) {
+        return true;
+    }
+
+    for (const AiGuardEntity& guard : ai_.GetGuards()) {
+        if (guard.state != AiGuardState::Dead && glm::distance(
+                center,
+                guard.position) <= radius_units) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RuntimeWorld::LaunchPlayerProjectile(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    const WeaponDefinition& weapon) {
+    const float direction_length = glm::length(direction);
+    if (direction_length <= 0.0001f) {
+        return;
+    }
+
+    ProjectileLaunch launch;
+    launch.position = origin;
+    launch.velocity = direction / direction_length * (
+        weapon.muzzle_velocity * PlayerController::WORLD_METER / 30.0f);
+    launch.type = weapon.projectile_type;
+    launch.owner_entity_id = 0;
+    launch.fuse_ticks = ProjectileSystem::ReferenceGrenadeFuseTicks;
+    launch.damage = weapon.damage;
+    launch.damage_factor = 1.0f;
+    launch.explosion_radius_units = 5.0f * PlayerController::WORLD_METER;
+    launch.explosion_falloff_units = 0.0f;
+
+    switch (weapon.projectile_type) {
+        case ProjectileType::ProximityMine:
+            launch.fuse_ticks = 0;
+            launch.proximity_trigger_radius_units =
+                1.5f * PlayerController::WORLD_METER;
+            break;
+        case ProjectileType::Rocket:
+            // OpenIGI's missile path is impact-driven and uses the fixed
+            // 2.5-metre/1.75-metre blast profile. Steering remains a later
+            // seam; the current launch is still a real moving projectile.
+            launch.damage_factor = 5.0f;
+            launch.explosion_radius_units = 2.5f * PlayerController::WORLD_METER;
+            launch.explosion_falloff_units = 1.75f * PlayerController::WORLD_METER;
+            launch.detonate_on_impact = true;
+            launch.affected_by_gravity = false;
+            break;
+        case ProjectileType::FragGrenade:
+        case ProjectileType::Flashbang:
+        case ProjectileType::None:
+            break;
+    }
+
+    projectiles_.Spawn(launch);
+}
+
+void RuntimeWorld::ApplyProjectileDetonations() {
+    constexpr float target_collision_radius = 0.6f * PlayerController::WORLD_METER;
+    constexpr float body_radius_scale = 0.33333334f;
+
+    const auto calculate_damage = [](const ProjectileDetonation& detonation,
+                                     float target_distance) {
+        const float effective_distance = target_distance -
+            target_collision_radius * body_radius_scale -
+            detonation.explosion_radius_units;
+        if (effective_distance < 0.0f) {
+            return detonation.damage * detonation.damage_factor;
+        }
+        if (effective_distance >= detonation.explosion_falloff_units ||
+            detonation.explosion_falloff_units <= 0.0f) {
+            return 0.0f;
+        }
+        const float dose = (detonation.explosion_falloff_units -
+            effective_distance) / detonation.explosion_falloff_units;
+        return detonation.damage * detonation.damage_factor * dose;
+    };
+
+    for (const ProjectileDetonation& detonation : projectiles_.GetDetonations()) {
+        if (detonation.type == ProjectileType::Flashbang) {
+            AudioSystem::Play(SoundEffect::Flashbang);
+            continue;
+        }
+
+        AudioSystem::Play(SoundEffect::Explosion);
+        if (player_.IsAlive()) {
+            const float player_distance = glm::distance(
+                detonation.position,
+                player_.GetPosition());
+            if (player_distance <= detonation.explosion_radius_units +
+                    detonation.explosion_falloff_units &&
+                !IsWorldLineBlocked(
+                    detonation.position,
+                    player_.GetEyePosition())) {
+                player_.ApplyDamage(calculate_damage(detonation, player_distance));
+            }
+        }
+
+        for (const AiGuardEntity& guard : ai_.GetGuards()) {
+            if (guard.state == AiGuardState::Dead ||
+                guard.id == detonation.owner_entity_id) {
+                continue;
+            }
+            const float guard_distance = glm::distance(
+                detonation.position,
+                guard.position);
+            if (guard_distance > detonation.explosion_radius_units +
+                    detonation.explosion_falloff_units ||
+                IsWorldLineBlocked(
+                    detonation.position,
+                    guard.position + glm::vec3(
+                        0.0f,
+                        0.0f,
+                        1.0f * PlayerController::WORLD_METER))) {
+                continue;
+            }
+            ai_.ApplyDamage(
+                guard.id,
+                calculate_damage(detonation, guard_distance));
+        }
+    }
+}
+
 void RuntimeWorld::Reset() {
     glm::vec3 spawn_pos(0.0f, 0.0f, 100.0f);
     if (get_terrain_z_) {
@@ -101,11 +346,13 @@ void RuntimeWorld::Reset() {
 
     player_.Reset(spawn_pos, 0.0f);
     weapons_ = WeaponSystem();
+    projectiles_.Clear();
     ai_.Clear();
     ClearGuardScripts();
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
     guard_combat_states_.clear();
+    fire_was_held_ = false;
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
@@ -183,8 +430,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         weapons_.SelectWeaponSlot(static_cast<uint32_t>(input_cmd.switch_weapon));
     }
     weapons_.Update(dt, input_cmd.fire);
-    if (input_cmd.fire) {
-        std::vector<BulletTrace> traces;
+    const WeaponDefinition& active_weapon = weapons_.GetActiveWeapon();
+    const bool is_projectile_weapon =
+        active_weapon.projectile_type != ProjectileType::None;
+    if (input_cmd.fire && (!is_projectile_weapon || !fire_was_held_)) {
         float yaw_rad = glm::radians(player_.GetYaw());
         float pitch_rad = glm::radians(player_.GetPitch());
         float sin_y = std::sin(yaw_rad);
@@ -193,33 +442,56 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         float cos_p = std::cos(pitch_rad);
         glm::vec3 aim_dir(-sin_y * cos_p, cos_y * cos_p, sin_p);
 
-        if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, traces)) {
+        const auto apply_recoil = [this]() {
             player_.SetOrientation(
                 player_.GetYaw() + weapons_.GetLastRecoilYawDegrees(),
                 std::clamp(
                     player_.GetPitch() + weapons_.GetLastRecoilPitchDegrees(),
                     -89.0f,
                     89.0f));
-            bool hit_guard = false;
-            bool hit_world_geometry = false;
-            for (BulletTrace& trace : traces) {
-                hit_guard = ApplyPlayerShotDamage(trace) || hit_guard;
-                hit_world_geometry = trace.hit_world_geometry || hit_world_geometry;
+        };
+        if (is_projectile_weapon) {
+            BulletTrace fired_trace;
+            if (weapons_.TryFire(
+                    player_.GetEyePosition(),
+                    aim_dir,
+                    fired_trace)) {
+                apply_recoil();
+                LaunchPlayerProjectile(
+                    player_.GetEyePosition(),
+                    fired_trace.direction,
+                    active_weapon);
+                AudioSystem::Play(SoundEffect::ProjectileLaunch);
             }
-            AudioSystem::Play(SoundEffect::Gunshot);
-            if (hit_guard || hit_world_geometry) {
-                AudioSystem::Play(SoundEffect::BulletImpact);
+        } else {
+            std::vector<BulletTrace> traces;
+            if (weapons_.TryFire(
+                    player_.GetEyePosition(),
+                    aim_dir,
+                    traces)) {
+                apply_recoil();
+                bool hit_guard = false;
+                bool hit_world_geometry = false;
+                for (BulletTrace& trace : traces) {
+                    hit_guard = ApplyPlayerShotDamage(trace) || hit_guard;
+                    hit_world_geometry = trace.hit_world_geometry || hit_world_geometry;
+                }
+                AudioSystem::Play(SoundEffect::Gunshot);
+                if (hit_guard || hit_world_geometry) {
+                    AudioSystem::Play(SoundEffect::BulletImpact);
+                }
+                // Post gunshot stimulus to AI
+                AiStimulusEvent gunshot;
+                gunshot.type = AiEventType::Gunshot;
+                gunshot.position = player_.GetPosition();
+                gunshot.loudness = 1.0f;
+                gunshot.originator_id = 0; // Player ID
+                gunshot.tick_timestamp = tick_number;
+                ai_.GetEventQueue().Post(gunshot);
             }
-            // Post gunshot stimulus to AI
-            AiStimulusEvent gunshot;
-            gunshot.type = AiEventType::Gunshot;
-            gunshot.position = player_.GetPosition();
-            gunshot.loudness = 1.0f;
-            gunshot.originator_id = 0; // Player ID
-            gunshot.tick_timestamp = tick_number;
-            ai_.GetEventQueue().Post(gunshot);
         }
     }
+    fire_was_held_ = input_cmd.fire;
 
     if (input_cmd.reload) {
         weapons_.Reload();
@@ -253,6 +525,8 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     ai_.Update(dt, player_.GetPosition(), player_.IsAlive());
     DispatchGuardScripts();
     ApplyGuardCombatDamage(tick_number);
+    projectiles_.Tick();
+    ApplyProjectileDetonations();
 
     // 4. Tick runtime task tree
     task_tree_.Update(dt);
