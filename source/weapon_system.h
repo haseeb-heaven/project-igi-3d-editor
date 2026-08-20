@@ -56,6 +56,10 @@ public:
     bool SelectNextWeapon();
     bool SelectPreviousWeapon();
     bool TryFire(const glm::vec3& muzzle_pos, const glm::vec3& aim_dir, BulletTrace& out_trace);
+    bool TryFire(
+        const glm::vec3& muzzle_pos,
+        const glm::vec3& aim_dir,
+        std::vector<BulletTrace>& out_traces);
     void Reload();
     void Update(double delta_seconds, bool trigger_held = false);
 

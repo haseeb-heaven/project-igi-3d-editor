@@ -1,5 +1,6 @@
 // test_runtime_subsystems.cpp - Unit and integration tests for C++ Game Mode Runtime Subsystems
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
@@ -688,6 +689,26 @@ TEST(RuntimeWeaponTest, PreservesAmmoWhenCyclingThePlayerLoadout) {
     ASSERT_TRUE(weapons.SelectWeaponSlot(0));
     ASSERT_TRUE(weapons.SelectWeaponSlot(6));
     EXPECT_EQ(weapons.GetCurrentClipAmmo(), 31U);
+}
+
+TEST(RuntimeWeaponTest, EmitsRetailShotgunPelletsAsOneAmmoConsumingShot) {
+    WeaponSystem weapons;
+    ASSERT_TRUE(weapons.SelectWeaponSlot(9)); // WEAPON_ID_SPAS12
+
+    std::vector<BulletTrace> traces;
+    ASSERT_TRUE(weapons.TryFire(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        traces));
+
+    EXPECT_EQ(traces.size(), 30U);
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 6U);
+    EXPECT_TRUE(std::any_of(
+        traces.begin() + 1,
+        traces.end(),
+        [&traces](const BulletTrace& trace) {
+            return trace.direction != traces.front().direction;
+        }));
 }
 
 TEST(RuntimeWeaponTest, FireAndRecoilCooldown) {

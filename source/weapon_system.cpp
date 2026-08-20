@@ -284,7 +284,20 @@ bool WeaponSystem::TryFire(
     const glm::vec3& muzzle_pos,
     const glm::vec3& aim_dir,
     BulletTrace& out_trace) {
-    out_trace = BulletTrace();
+    std::vector<BulletTrace> traces;
+    if (!TryFire(muzzle_pos, aim_dir, traces)) {
+        out_trace = BulletTrace();
+        return false;
+    }
+    out_trace = traces.front();
+    return true;
+}
+
+bool WeaponSystem::TryFire(
+    const glm::vec3& muzzle_pos,
+    const glm::vec3& aim_dir,
+    std::vector<BulletTrace>& out_traces) {
+    out_traces.clear();
     last_recoil_pitch_degrees_ = 0.0f;
     last_recoil_yaw_degrees_ = 0.0f;
 
@@ -310,24 +323,32 @@ bool WeaponSystem::TryFire(
         ? active_weapon_.maximum_spread_degrees
         : active_weapon_.minimum_spread_degrees;
     const float spread_radians = std::abs(spread_degrees) * kDegreesToRadians;
-    glm::vec3 shot_direction = forward;
-    if (spread_radians > 0.0f) {
-        float radius = NextRandomUnit() * NextRandomUnit() * NextRandomUnit() * spread_radians;
-        const float bearing = NextRandomUnit() * kTwoPi;
-        const float sine = std::sin(radius);
-        shot_direction = NormalizeOrFallback(
-            forward * std::cos(radius) +
-                right * (std::cos(bearing) * sine) +
-                up * (std::sin(bearing) * sine),
-            forward);
-    }
+    out_traces.reserve(active_weapon_.bullets_per_round);
+    for (uint32_t pellet_index = 0;
+         pellet_index < std::max(1U, active_weapon_.bullets_per_round);
+         ++pellet_index) {
+        glm::vec3 shot_direction = forward;
+        if (spread_radians > 0.0f) {
+            const float radius = NextRandomUnit() * NextRandomUnit() *
+                NextRandomUnit() * spread_radians;
+            const float bearing = NextRandomUnit() * kTwoPi;
+            const float sine = std::sin(radius);
+            shot_direction = NormalizeOrFallback(
+                forward * std::cos(radius) +
+                    right * (std::cos(bearing) * sine) +
+                    up * (std::sin(bearing) * sine),
+                forward);
+        }
 
-    out_trace.origin = muzzle_pos;
-    out_trace.direction = shot_direction;
-    out_trace.damage = active_weapon_.damage;
-    out_trace.hit = true;
-    out_trace.distance = active_weapon_.effective_range_meters * kWorldUnitsPerMeter;
-    out_trace.hit_position = muzzle_pos + shot_direction * out_trace.distance;
+        BulletTrace trace;
+        trace.origin = muzzle_pos;
+        trace.direction = shot_direction;
+        trace.damage = active_weapon_.damage;
+        trace.hit = true;
+        trace.distance = active_weapon_.effective_range_meters * kWorldUnitsPerMeter;
+        trace.hit_position = muzzle_pos + shot_direction * trace.distance;
+        out_traces.push_back(trace);
+    }
 
     if (active_weapon_.uses_ammunition && current_clip_ammo_ > 0) {
         --current_clip_ammo_;

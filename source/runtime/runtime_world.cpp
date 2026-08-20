@@ -179,7 +179,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
     weapons_.Update(dt, input_cmd.fire);
     if (input_cmd.fire) {
-        BulletTrace trace;
+        std::vector<BulletTrace> traces;
         float yaw_rad = glm::radians(player_.GetYaw());
         float pitch_rad = glm::radians(player_.GetPitch());
         float sin_y = std::sin(yaw_rad);
@@ -188,16 +188,21 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         float cos_p = std::cos(pitch_rad);
         glm::vec3 aim_dir(-sin_y * cos_p, cos_y * cos_p, sin_p);
 
-        if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, trace)) {
+        if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, traces)) {
             player_.SetOrientation(
                 player_.GetYaw() + weapons_.GetLastRecoilYawDegrees(),
                 std::clamp(
                     player_.GetPitch() + weapons_.GetLastRecoilPitchDegrees(),
                     -89.0f,
                     89.0f));
-            const bool hit_guard = ApplyPlayerShotDamage(trace);
+            bool hit_guard = false;
+            bool hit_world_geometry = false;
+            for (BulletTrace& trace : traces) {
+                hit_guard = ApplyPlayerShotDamage(trace) || hit_guard;
+                hit_world_geometry = trace.hit_world_geometry || hit_world_geometry;
+            }
             AudioSystem::Play(SoundEffect::Gunshot);
-            if (hit_guard || trace.hit_world_geometry) {
+            if (hit_guard || hit_world_geometry) {
                 AudioSystem::Play(SoundEffect::BulletImpact);
             }
             // Post gunshot stimulus to AI
