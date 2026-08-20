@@ -38,6 +38,7 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
     armor_ = maximum_armor_;
     is_grounded_ = false;
     stance_ = PlayerStanceState::Standing;
+    slope_slide_velocity_ = glm::vec3(0.0f);
 }
 
 void PlayerController::ApplyTuning(float maximum_health, float maximum_armor) {
@@ -214,7 +215,8 @@ void PlayerController::Tick(
         IntegrateAirMovement(input_command, movement_direction, false);
     }
 
-    const glm::vec3 requested_position = position_ + velocity_;
+    const glm::vec3 requested_position = position_ + velocity_ +
+        slope_slide_velocity_;
     const PlayerWallSweepResult wall_sweep_result = collision_.SweepWalls(
         position_,
         requested_position,
@@ -243,6 +245,11 @@ void PlayerController::Tick(
         is_grounded_ = false;
         stance_ = PlayerStanceState::Airborne;
     }
+
+    slope_slide_velocity_ = PlayerCollision::AccumulateSlopeSlide(
+        slope_slide_velocity_,
+        post_move_ground_query.surface_normal,
+        is_grounded_);
 
 }
 

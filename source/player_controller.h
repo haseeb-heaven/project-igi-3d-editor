@@ -131,6 +131,7 @@ private:
     float gravity_units_per_tick_ = GRAVITY;
     float standing_eye_height_units_ = STANDING_EYE_HEIGHT;
     float crouching_eye_height_units_ = CROUCHING_EYE_HEIGHT;
+    glm::vec3 slope_slide_velocity_ = glm::vec3(0.0f);
     bool is_grounded_ = true;
     PlayerStanceState stance_ = PlayerStanceState::Standing;
     PlayerCollision collision_;

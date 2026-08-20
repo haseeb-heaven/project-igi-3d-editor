@@ -50,6 +50,17 @@ public:
     static constexpr float SlidingStepDownInUnits = 8192.0f;
     static constexpr float RoofClearanceInUnits = 7372.8f;
 
+    // Verified-reference slope bands from OpenIGI HumanSlopeSlide.
+    static constexpr float VerySteepSlopeSpeedInUnitsPerTick = 1137.0f;
+    static constexpr float SteepSlopeSpeedInUnitsPerTick = 948.0f;
+    static constexpr float ModerateSlopeSpeedInUnitsPerTick = 56.888889f;
+    static constexpr float ShallowSlopeSpeedInUnitsPerTick = 18.962963f;
+    static constexpr float VerySteepSlopeDegrees = 80.0f;
+    static constexpr float SteepSlopeDegrees = 60.0f;
+    static constexpr float ModerateSlopeDegrees = 50.0f;
+    static constexpr float ShallowSlopeDegrees = 45.0f;
+    static constexpr float SlopeSlideDamping = 0.89999998f;
+
     PlayerCollision() = default;
 
     void SetSolidQuery(SolidGeometryQuery solid_geometry_query);
@@ -62,6 +73,11 @@ public:
         bool was_grounded = true,
         bool crouching = false,
         bool sliding = false) const;
+
+    static glm::vec3 AccumulateSlopeSlide(
+        const glm::vec3& current_slide_velocity,
+        const glm::vec3& ground_normal,
+        bool grounded);
 
     PlayerWallSweepResult SweepWalls(
         const glm::vec3& current_position,

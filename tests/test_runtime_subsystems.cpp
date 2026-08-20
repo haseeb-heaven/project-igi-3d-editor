@@ -532,6 +532,31 @@ TEST(RuntimeCollisionTest, GroundProbeHonorsStepBudgetAndSlopeNormal) {
     EXPECT_LT(query.surface_normal.x, 0.0f);
 }
 
+TEST(RuntimeCollisionTest, AccumulatesReferenceSlopeSlideOnlyWhileGrounded) {
+    const glm::vec3 moderate_slope_normal(-0.83205f, 0.0f, 0.55470f);
+
+    const glm::vec3 slide_velocity = PlayerCollision::AccumulateSlopeSlide(
+        glm::vec3(0.0f),
+        moderate_slope_normal,
+        true);
+    EXPECT_LT(slide_velocity.x, 0.0f);
+    EXPECT_FLOAT_EQ(slide_velocity.y, 0.0f);
+    EXPECT_FLOAT_EQ(slide_velocity.z, 0.0f);
+
+    EXPECT_EQ(
+        PlayerCollision::AccumulateSlopeSlide(
+            glm::vec3(100.0f, 20.0f, 0.0f),
+            moderate_slope_normal,
+            false),
+        glm::vec3(0.0f));
+    EXPECT_EQ(
+        PlayerCollision::AccumulateSlopeSlide(
+            glm::vec3(100.0f, 20.0f, 0.0f),
+            glm::vec3(0.0f, 0.0f, 1.0f),
+            true),
+        glm::vec3(0.0f));
+}
+
 TEST(RuntimeCollisionTest, WallSweepStopsAtSolidGeometryAndSlides) {
     PlayerCollision collision;
     collision.SetSolidQuery([](const glm::vec3& sample_position) {

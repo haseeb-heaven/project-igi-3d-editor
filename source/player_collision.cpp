@@ -41,6 +41,42 @@ void PlayerCollision::SetCeilingQuery(CeilingHeightQuery ceiling_height_query) {
     ceiling_height_query_ = std::move(ceiling_height_query);
 }
 
+glm::vec3 PlayerCollision::AccumulateSlopeSlide(
+    const glm::vec3& current_slide_velocity,
+    const glm::vec3& ground_normal,
+    bool grounded) {
+    if (!grounded) {
+        return glm::vec3(0.0f);
+    }
+
+    const float normal_length = std::sqrt(LengthSquared(ground_normal));
+    if (normal_length <= kMinimumDistance) {
+        return glm::vec3(0.0f);
+    }
+
+    const glm::vec3 unit_normal = ground_normal / normal_length;
+    const float clamped_normal_z = std::clamp(unit_normal.z, -1.0f, 1.0f);
+    const float slope_degrees = 90.0f - glm::degrees(std::asin(clamped_normal_z));
+
+    glm::vec3 accumulated_slide_velocity(0.0f);
+    if (slope_degrees > VerySteepSlopeDegrees) {
+        accumulated_slide_velocity = unit_normal * VerySteepSlopeSpeedInUnitsPerTick;
+    } else if (slope_degrees > SteepSlopeDegrees) {
+        accumulated_slide_velocity = unit_normal * SteepSlopeSpeedInUnitsPerTick;
+    } else if (slope_degrees > ModerateSlopeDegrees) {
+        accumulated_slide_velocity = current_slide_velocity;
+        accumulated_slide_velocity +=
+            unit_normal * ModerateSlopeSpeedInUnitsPerTick;
+    } else if (slope_degrees > ShallowSlopeDegrees) {
+        accumulated_slide_velocity = current_slide_velocity;
+        accumulated_slide_velocity +=
+            unit_normal * ShallowSlopeSpeedInUnitsPerTick;
+    }
+
+    accumulated_slide_velocity.z = 0.0f;
+    return accumulated_slide_velocity * SlopeSlideDamping;
+}
+
 PlayerGroundQuery PlayerCollision::QueryGround(
     const glm::vec3& body_position,
     float current_eye_height,
