@@ -24,6 +24,7 @@ public:
     // Lifecycle
     void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Reset();
+    void SetExtractionZone(const glm::vec3& center, float radius);
 
     // Simulation tick
     void UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd);
@@ -64,6 +65,8 @@ private:
     QvmNativeRegistry qvm_registry_;
     std::unordered_map<uint32_t, uint64_t> next_guard_attack_tick_;
     double footstep_timer_seconds_ = 0.0;
+    glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
+    float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
 };
 
 } // namespace igi

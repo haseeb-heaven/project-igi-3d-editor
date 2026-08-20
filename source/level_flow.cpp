@@ -93,6 +93,37 @@ void LevelFlow::SetObjectiveState(uint32_t id, ObjectiveState state) {
     }
 }
 
+bool LevelFlow::CompleteFirstPendingPrimaryObjective() {
+    if (status_ != MissionStatus::InProgress) {
+        return false;
+    }
+
+    for (auto& objective : objectives_) {
+        if (!objective.is_primary || objective.state != ObjectiveState::Pending) {
+            continue;
+        }
+        objective.state = ObjectiveState::Completed;
+        return true;
+    }
+    return false;
+}
+
+std::string LevelFlow::GetObjectiveDisplayText() const {
+    if (status_ == MissionStatus::Failed) {
+        return "MISSION FAILED";
+    }
+    if (status_ == MissionStatus::Success) {
+        return "MISSION COMPLETE";
+    }
+
+    for (const auto& objective : objectives_) {
+        if (objective.is_primary && objective.state == ObjectiveState::Pending) {
+            return objective.description;
+        }
+    }
+    return "Reach the extraction zone";
+}
+
 void LevelFlow::Update(bool player_alive, bool in_extraction_zone) {
     if (status_ != MissionStatus::InProgress) return;
 

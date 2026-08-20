@@ -2,6 +2,7 @@
 #include "ai_system.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace igi {
 
@@ -23,6 +24,10 @@ AiGuardEntity* AiSystem::FindGuard(uint32_t guard_id) {
         }
     }
     return nullptr;
+}
+
+void AiSystem::SetMovementCollisionQuery(MovementCollisionQuery movement_collision_query) {
+    movement_collision_query_ = std::move(movement_collision_query);
 }
 
 void AiSystem::ApplyDamage(uint32_t guard_id, float damage) {
@@ -391,6 +396,8 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
     for (auto& guard : guards_) {
         if (guard.state == AiGuardState::Dead) continue;
 
+        const glm::vec3 previous_position = guard.position;
+
         // 1. Process hearing
         for (const auto& evt : events) {
             float dist = glm::distance(guard.position, evt.position);
@@ -460,6 +467,10 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
             } else {
                 AdvanceFallbackPatrol(guard, delta_seconds);
             }
+        }
+
+        if (movement_collision_query_ && movement_collision_query_(guard.position)) {
+            guard.position = previous_position;
         }
     }
 

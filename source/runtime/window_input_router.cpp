@@ -33,6 +33,7 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
     unsigned char k_jmp = (unsigned char)std::toupper(profile_.GetKeyForAction("Jump", ' '));
     unsigned char k_crc = (unsigned char)std::toupper(profile_.GetKeyForAction("Crouch", 'C'));
     unsigned char k_rld = (unsigned char)std::toupper(profile_.GetKeyForAction("Reload", 'R'));
+    unsigned char k_act = (unsigned char)std::toupper(profile_.GetKeyForAction("Activate", 'E'));
 
     if (up_key == k_fwd) {
         current_cmd_.forward = is_down ? 1.0f : (current_cmd_.forward > 0.0f ? 0.0f : current_cmd_.forward);
@@ -46,6 +47,8 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         current_cmd_.jump = is_down;
     } else if (up_key == k_crc || up_key == 'C') {
         current_cmd_.crouch = is_down;
+    } else if (up_key == k_act || up_key == 'E') {
+        current_cmd_.interact = is_down;
     } else if (up_key == k_rld || up_key == 'R') {
         current_cmd_.reload = is_down;
     } else if (key >= '1' && key <= '6') {
@@ -83,6 +86,7 @@ PlayerInputCmd WindowInputRouter::ConsumeGameplayInput() {
     current_cmd_.pitch_delta = 0.0f;
     current_cmd_.jump = false;
     current_cmd_.reload = false;
+    current_cmd_.interact = false;
     current_cmd_.switch_weapon = -1;
     return cmd;
 }

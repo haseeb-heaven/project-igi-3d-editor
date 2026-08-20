@@ -16,6 +16,8 @@
 #include "../source/runtime/runtime_world.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
+#include "../source/runtime/window_input_router.h"
+#include "../source/runtime/human_player_config.h"
 
 using namespace igi;
 
@@ -367,6 +369,61 @@ TEST(RuntimePlayerTest, ControllerUsesCollisionBoundaryForFixedStepMovement) {
     EXPECT_TRUE(player.IsGrounded());
 }
 
+TEST(RuntimePlayerTest, AppliesExplicitMovementTuningToFixedStepController) {
+    PlayerController player;
+    PlayerController::Tuning tuning;
+    tuning.maximum_health = 75.0f;
+    tuning.maximum_armor = 25.0f;
+    tuning.walk_speed_units_per_tick = 123.0f;
+    tuning.jump_speed_units_per_tick = 456.0f;
+    tuning.gravity_units_per_tick = 12.0f;
+    tuning.standing_eye_height_units = 5000.0f;
+    tuning.crouching_eye_height_units = 3000.0f;
+    player.ApplyTuning(tuning);
+    player.Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    EXPECT_FLOAT_EQ(player.GetMaximumHealth(), 75.0f);
+    EXPECT_FLOAT_EQ(player.GetMaximumArmor(), 25.0f);
+    EXPECT_FLOAT_EQ(player.GetEyeHeight(), 5000.0f);
+
+    PlayerInputCmd move_command;
+    move_command.forward = 1.0f;
+    player.Tick(move_command, FlatTerrain);
+    EXPECT_FLOAT_EQ(player.GetVelocity().y, 123.0f);
+
+    player.Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+    move_command = PlayerInputCmd();
+    move_command.jump = true;
+    player.Tick(move_command, FlatTerrain);
+    EXPECT_FLOAT_EQ(player.GetVelocity().z, 456.0f);
+}
+
+TEST(RuntimePlayerTest, ConvertsHumanPlayerMetersToRuntimeUnitsPerTick) {
+    HumanPlayerTuning human_player_tuning;
+    human_player_tuning.walk_speed = 3.0f;
+    human_player_tuning.run_speed = 6.0f;
+    human_player_tuning.crouch_speed = 1.5f;
+    human_player_tuning.jump_impulse = 777.0f;
+    human_player_tuning.gravity = 18.0f;
+    human_player_tuning.eye_height_stand = 1.75f;
+    human_player_tuning.eye_height_crouch = 0.90f;
+
+    const PlayerController::Tuning controller_tuning =
+        human_player_tuning.ToControllerTuning();
+
+    EXPECT_FLOAT_EQ(
+        controller_tuning.walk_speed_units_per_tick,
+        3.0f * PlayerController::WORLD_METER / 30.0f);
+    EXPECT_FLOAT_EQ(
+        controller_tuning.run_speed_units_per_tick,
+        6.0f * PlayerController::WORLD_METER / 30.0f);
+    EXPECT_FLOAT_EQ(controller_tuning.jump_speed_units_per_tick, 777.0f);
+    EXPECT_FLOAT_EQ(controller_tuning.gravity_units_per_tick,
+                    18.0f * PlayerController::WORLD_METER / (30.0f * 30.0f));
+    EXPECT_FLOAT_EQ(controller_tuning.standing_eye_height_units, 1.75f * PlayerController::WORLD_METER);
+    EXPECT_FLOAT_EQ(controller_tuning.crouching_eye_height_units, 0.90f * PlayerController::WORLD_METER);
+}
+
 // 5. Weapon Fire & Ballistics Tests
 TEST(RuntimeWeaponTest, FireAndRecoilCooldown) {
     WeaponSystem weapons;
@@ -436,6 +493,28 @@ TEST(RuntimeAiTest, PatrolFallbackMovesGuardsWithoutScriptData) {
     EXPECT_GT(ai.GetGuards()[0].position.y, 0.0f);
 }
 
+TEST(RuntimeAiTest, PatrolMovementRespectsSolidGeometryBoundary) {
+    AiSystem ai;
+    ai.SetMovementCollisionQuery([](const glm::vec3& position) {
+        return position.y > 1.0f;
+    });
+
+    AiGuardEntity guard;
+    guard.id = 12;
+    guard.position = glm::vec3(0.0f);
+    guard.current_waypoint = 1;
+    guard.waypoints = {
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 100000.0f, 0.0f),
+    };
+    ai.RegisterGuard(guard);
+
+    ai.Update(GameClock::TICK_INTERVAL_SECONDS, glm::vec3(100000.0f), false);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_FLOAT_EQ(ai.GetGuards()[0].position.y, 0.0f);
+}
+
 // 7. Mission Flow & Objective Tests
 TEST(RuntimeLevelFlowTest, ObjectiveSuccessFlow) {
     LevelFlow flow;
@@ -451,6 +530,31 @@ TEST(RuntimeLevelFlowTest, ObjectiveSuccessFlow) {
     flow.SetObjectiveState(1, ObjectiveState::Completed);
     flow.Update(true, true); // Player alive in extraction
     EXPECT_EQ(flow.GetStatus(), MissionStatus::Success);
+}
+
+TEST(RuntimeLevelFlowTest, ActiveObjectiveAdvancesThroughInteraction) {
+    LevelFlow flow;
+    flow.InitializeMission(1);
+
+    EXPECT_EQ(flow.GetObjectiveDisplayText(),
+              "Infiltrate the trainyard and download train schedule");
+    EXPECT_TRUE(flow.CompleteFirstPendingPrimaryObjective());
+    EXPECT_EQ(flow.GetObjectiveDisplayText(), "Reach the extraction zone");
+    EXPECT_FALSE(flow.CompleteFirstPendingPrimaryObjective());
+}
+
+TEST(RuntimeInputTest, ActivateIsMomentaryAndFocusGated) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.OnKeyboardKey('E', true);
+
+    PlayerInputCmd command = router.ConsumeGameplayInput();
+    EXPECT_TRUE(command.interact);
+    EXPECT_FALSE(router.ConsumeGameplayInput().interact);
+
+    router.SetFocus(WindowFocusTarget::EditorWindow);
+    router.OnKeyboardKey('E', true);
+    EXPECT_FALSE(router.ConsumeGameplayInput().interact);
 }
 
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
@@ -493,6 +597,25 @@ TEST(RuntimeWorldTest, CombatGuardDamagesPlayerAtFixedCadence) {
     world.UpdateSimulationTick(30, input);
 
     EXPECT_LT(world.GetPlayer().GetHealth(), initial_health);
+}
+
+TEST(RuntimeWorldTest, ActivateCompletesTheCurrentMissionObjective) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetExtractionZone(glm::vec3(100000.0f, 0.0f, 0.0f), 100.0f);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    PlayerInputCmd input;
+    input.interact = true;
+    world.UpdateSimulationTick(0, input);
+
+    ASSERT_FALSE(world.GetLevelFlow().GetObjectives().empty());
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::InProgress);
+
+    world.GetPlayer().SetPosition(glm::vec3(100000.0f, 0.0f, 0.0f));
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
 }
 
 // 8. Twin-Window & Editor Snapshot Tests

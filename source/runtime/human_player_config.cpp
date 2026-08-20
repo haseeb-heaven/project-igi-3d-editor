@@ -1,10 +1,34 @@
 #include "human_player_config.h"
 #include "../level/qvm_parser.h"
+#include "../game_clock.h"
 #include <filesystem>
 #include <vector>
 #include <string>
 
 namespace igi {
+
+PlayerController::Tuning HumanPlayerTuning::ToControllerTuning() const {
+    constexpr float world_units_per_meter = PlayerController::WORLD_METER;
+    constexpr float ticks_per_second = static_cast<float>(GameClock::TICK_RATE_HZ);
+
+    PlayerController::Tuning controller_tuning;
+    controller_tuning.maximum_health = max_health;
+    controller_tuning.maximum_armor = max_armor;
+    controller_tuning.walk_speed_units_per_tick =
+        walk_speed * world_units_per_meter / ticks_per_second;
+    controller_tuning.run_speed_units_per_tick =
+        run_speed * world_units_per_meter / ticks_per_second;
+    controller_tuning.crouch_speed_units_per_tick =
+        crouch_speed * world_units_per_meter / ticks_per_second;
+    controller_tuning.jump_speed_units_per_tick = jump_impulse;
+    // jump_hspeed is launch metadata in humanplayer.qvm; airborne steering uses
+    // the verified HumanMotion per-tick air-control constant by default.
+    controller_tuning.gravity_units_per_tick =
+        gravity * world_units_per_meter / (ticks_per_second * ticks_per_second);
+    controller_tuning.standing_eye_height_units = eye_height_stand * world_units_per_meter;
+    controller_tuning.crouching_eye_height_units = eye_height_crouch * world_units_per_meter;
+    return controller_tuning;
+}
 
 HumanPlayerTuning HumanPlayerConfigLoader::Load(const std::string& custom_path) {
     HumanPlayerTuning tuning;

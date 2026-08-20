@@ -34,12 +34,14 @@ public:
     void InitializeMission(uint32_t mission_number);
     void AddObjective(uint32_t id, const std::string& desc, bool is_primary = true);
     void SetObjectiveState(uint32_t id, ObjectiveState state);
+    bool CompleteFirstPendingPrimaryObjective();
 
     void Update(bool player_alive, bool in_extraction_zone);
 
     MissionStatus GetStatus() const { return status_; }
     const std::vector<MissionObjective>& GetObjectives() const { return objectives_; }
     uint32_t GetMissionNumber() const { return mission_number_; }
+    std::string GetObjectiveDisplayText() const;
 
 private:
     uint32_t mission_number_ = 1;

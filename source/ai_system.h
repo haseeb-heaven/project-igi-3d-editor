@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <functional>
 #include "ai_events.h"
 #include "renderer/graph_writer.h"
 
@@ -98,11 +99,14 @@ struct AiGuardEntity {
 
 class AiSystem {
 public:
+    using MovementCollisionQuery = std::function<bool(const glm::vec3& position)>;
+
     AiSystem();
 
     void Clear();
     void RegisterGuard(const AiGuardEntity& guard);
     AiGuardEntity* FindGuard(uint32_t guard_id);
+    void SetMovementCollisionQuery(MovementCollisionQuery movement_collision_query);
 
     // Fixed-step simulation tick
     void Update(double delta_seconds, const glm::vec3& player_pos, bool player_alive);
@@ -118,6 +122,7 @@ public:
 private:
     std::vector<AiGuardEntity> guards_;
     AiEventQueue event_queue_;
+    MovementCollisionQuery movement_collision_query_;
     uint64_t tick_ = 0;  // 30 Hz simulation tick counter (monotonic across Update calls)
 };
 

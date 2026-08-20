@@ -21,6 +21,7 @@ struct PlayerInputCmd {
     bool fire = false;
     bool zoom = false;
     bool reload = false;
+    bool interact = false;
     int switch_weapon = -1;
 };
 
@@ -55,10 +56,25 @@ public:
     using SolidGeometryQuery = PlayerCollision::SolidGeometryQuery;
     using CeilingHeightQuery = PlayerCollision::CeilingHeightQuery;
 
+    struct Tuning {
+        float maximum_health = 100.0f;
+        float maximum_armor = 100.0f;
+        float walk_speed_units_per_tick = WALK_SPEED;
+        float run_speed_units_per_tick = RUN_SPEED;
+        float crouch_speed_units_per_tick = CROUCH_SPEED;
+        float sprint_multiplier = SPRINT_MULTIPLIER;
+        float jump_speed_units_per_tick = JUMP_SPEED;
+        float air_control_speed_units_per_tick = AIR_CONTROL_SPEED;
+        float gravity_units_per_tick = GRAVITY;
+        float standing_eye_height_units = STANDING_EYE_HEIGHT;
+        float crouching_eye_height_units = CROUCHING_EYE_HEIGHT;
+    };
+
     PlayerController();
 
     void Reset(const glm::vec3& spawn_position, float spawn_yaw = 0.0f);
     void ApplyTuning(float maximum_health, float maximum_armor);
+    void ApplyTuning(const Tuning& tuning);
 
     void SetCollisionQuery(SolidGeometryQuery solid_geometry_query);
     void SetCeilingQuery(CeilingHeightQuery ceiling_height_query);
@@ -106,6 +122,15 @@ private:
     float health_ = maximum_health_;
     float maximum_armor_ = 100.0f;
     float armor_ = maximum_armor_;
+    float walk_speed_units_per_tick_ = WALK_SPEED;
+    float run_speed_units_per_tick_ = RUN_SPEED;
+    float crouch_speed_units_per_tick_ = CROUCH_SPEED;
+    float sprint_multiplier_ = SPRINT_MULTIPLIER;
+    float jump_speed_units_per_tick_ = JUMP_SPEED;
+    float air_control_speed_units_per_tick_ = AIR_CONTROL_SPEED;
+    float gravity_units_per_tick_ = GRAVITY;
+    float standing_eye_height_units_ = STANDING_EYE_HEIGHT;
+    float crouching_eye_height_units_ = CROUCHING_EYE_HEIGHT;
     bool is_grounded_ = true;
     PlayerStanceState stance_ = PlayerStanceState::Standing;
     PlayerCollision collision_;

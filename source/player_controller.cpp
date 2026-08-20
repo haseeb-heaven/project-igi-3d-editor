@@ -33,7 +33,7 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
     velocity_ = glm::vec3(0.0f);
     yaw_ = spawn_yaw;
     pitch_ = 0.0f;
-    current_eye_height_ = STANDING_EYE_HEIGHT;
+    current_eye_height_ = standing_eye_height_units_;
     health_ = maximum_health_;
     armor_ = maximum_armor_;
     is_grounded_ = false;
@@ -41,10 +41,27 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
 }
 
 void PlayerController::ApplyTuning(float maximum_health, float maximum_armor) {
-    maximum_health_ = std::max(0.0f, maximum_health);
-    maximum_armor_ = std::max(0.0f, maximum_armor);
+    Tuning tuning;
+    tuning.maximum_health = maximum_health;
+    tuning.maximum_armor = maximum_armor;
+    ApplyTuning(tuning);
+}
+
+void PlayerController::ApplyTuning(const Tuning& tuning) {
+    maximum_health_ = std::max(0.0f, tuning.maximum_health);
+    maximum_armor_ = std::max(0.0f, tuning.maximum_armor);
+    walk_speed_units_per_tick_ = std::max(0.0f, tuning.walk_speed_units_per_tick);
+    run_speed_units_per_tick_ = std::max(0.0f, tuning.run_speed_units_per_tick);
+    crouch_speed_units_per_tick_ = std::max(0.0f, tuning.crouch_speed_units_per_tick);
+    sprint_multiplier_ = std::max(0.0f, tuning.sprint_multiplier);
+    jump_speed_units_per_tick_ = std::max(0.0f, tuning.jump_speed_units_per_tick);
+    air_control_speed_units_per_tick_ = std::max(0.0f, tuning.air_control_speed_units_per_tick);
+    gravity_units_per_tick_ = std::max(0.0f, tuning.gravity_units_per_tick);
+    standing_eye_height_units_ = std::max(0.0f, tuning.standing_eye_height_units);
+    crouching_eye_height_units_ = std::max(0.0f, tuning.crouching_eye_height_units);
     health_ = maximum_health_;
     armor_ = maximum_armor_;
+    current_eye_height_ = standing_eye_height_units_;
     stance_ = PlayerStanceState::Standing;
 }
 
@@ -106,15 +123,17 @@ bool PlayerController::ResolveRequestedStance(bool requested_crouch) const {
     if (stance_ != PlayerStanceState::Crouching) {
         return false;
     }
-    return !collision_.CanStandUp(position_, STANDING_EYE_HEIGHT, nullptr);
+    return !collision_.CanStandUp(position_, standing_eye_height_units_, nullptr);
 }
 
 void PlayerController::IntegrateGroundMovement(
     const PlayerInputCmd& input_command,
     const glm::vec3& movement_direction) {
     const float movement_speed = input_command.crouch
-        ? CROUCH_SPEED
-        : (input_command.sprint ? RUN_SPEED * SPRINT_MULTIPLIER : RUN_SPEED);
+        ? crouch_speed_units_per_tick_
+        : (input_command.sprint
+            ? run_speed_units_per_tick_ * sprint_multiplier_
+            : walk_speed_units_per_tick_);
     velocity_.x = movement_direction.x * movement_speed;
     velocity_.y = movement_direction.y * movement_speed;
     velocity_.z = 0.0f;
@@ -125,21 +144,21 @@ void PlayerController::IntegrateAirMovement(
     const glm::vec3& movement_direction,
     bool took_off) {
     if (!took_off) {
-        velocity_.z -= GRAVITY;
+        velocity_.z -= gravity_units_per_tick_;
     }
 
     const float input_magnitude = std::clamp(
         std::abs(input_command.forward) + std::abs(input_command.strafe),
         0.0f,
         1.0f);
-    velocity_.x += movement_direction.x * AIR_CONTROL_SPEED * input_magnitude;
-    velocity_.y += movement_direction.y * AIR_CONTROL_SPEED * input_magnitude;
+    velocity_.x += movement_direction.x * air_control_speed_units_per_tick_ * input_magnitude;
+    velocity_.y += movement_direction.y * air_control_speed_units_per_tick_ * input_magnitude;
 }
 
 void PlayerController::UpdateEyeHeight(bool crouching) {
     const float target_eye_height = crouching
-        ? CROUCHING_EYE_HEIGHT
-        : STANDING_EYE_HEIGHT;
+        ? crouching_eye_height_units_
+        : standing_eye_height_units_;
     const float eye_height_delta = std::clamp(
         target_eye_height - current_eye_height_,
         -CROUCH_EASE_UNITS_PER_TICK,
@@ -186,7 +205,7 @@ void PlayerController::Tick(
         IntegrateGroundMovement(input_command, movement_direction);
 
         if (input_command.jump && !should_crouch) {
-            velocity_.z = JUMP_SPEED;
+            velocity_.z = jump_speed_units_per_tick_;
             is_grounded_ = false;
             stance_ = PlayerStanceState::Airborne;
         }

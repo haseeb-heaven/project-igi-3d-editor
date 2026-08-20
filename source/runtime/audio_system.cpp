@@ -40,6 +40,7 @@ void AudioSystem::Play(SoundEffect sfx) {
         case SoundEffect::Jump:
         case SoundEffect::Footstep:
         case SoundEffect::Reload:
+        case SoundEffect::ObjectiveComplete:
             path = "MISSIONS\\location0\\level1\\sounds\\m1_beeps01.wav";
             if (!std::filesystem::exists(path)) path = "D:\\IGI1\\MISSIONS\\location0\\level1\\sounds\\m1_beeps01.wav";
             if (!std::filesystem::exists(path)) path = "Assets\\sounds\\bullet-impact.wav";

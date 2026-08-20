@@ -11,6 +11,16 @@ RuntimeWorld::~RuntimeWorld() = default;
 void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
     get_terrain_z_ = get_terrain_z;
     check_collision_ = check_collision;
+    if (check_collision_) {
+        ai_.SetMovementCollisionQuery([check_collision](const glm::vec3& position) {
+            return check_collision(
+                position.x,
+                position.y,
+                position.z + 0.9f * PlayerController::WORLD_METER);
+        });
+    } else {
+        ai_.SetMovementCollisionQuery({});
+    }
     Reset();
 }
 
@@ -27,6 +37,13 @@ void RuntimeWorld::Reset() {
     level_flow_.InitializeMission(1);
     next_guard_attack_tick_.clear();
     footstep_timer_seconds_ = 0.0;
+    extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
+    extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
+}
+
+void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
+    extraction_zone_center_ = center;
+    extraction_zone_radius_ = std::max(0.0f, radius);
 }
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
@@ -88,6 +105,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         AudioSystem::Play(SoundEffect::Reload);
     }
 
+    if (input_cmd.interact && level_flow_.CompleteFirstPendingPrimaryObjective()) {
+        AudioSystem::Play(SoundEffect::ObjectiveComplete);
+    }
+
     // 3. Tick AI perception & state machine
     ai_.Update(dt, player_.GetPosition(), player_.IsAlive());
     ApplyGuardCombatDamage(tick_number);
@@ -96,7 +117,12 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     task_tree_.Update(dt);
 
     // 5. Evaluate mission flow & objectives
-    bool in_extraction = (glm::distance(player_.GetPosition(), glm::vec3(1000.0f, 1000.0f, player_.GetPosition().z)) < 150.0f);
+    bool in_extraction = (glm::distance(
+        player_.GetPosition(),
+        glm::vec3(
+            extraction_zone_center_.x,
+            extraction_zone_center_.y,
+            player_.GetPosition().z)) < extraction_zone_radius_);
     level_flow_.Update(player_.IsAlive(), in_extraction);
 }
 

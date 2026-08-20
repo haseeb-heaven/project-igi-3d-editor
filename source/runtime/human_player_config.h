@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "../player_controller.h"
 
 namespace igi {
 
@@ -17,6 +18,8 @@ struct HumanPlayerTuning {
     float eye_height_stand = 1.68f;
     float eye_height_crouch = 0.95f;
     std::vector<int> weapon_cycle;
+
+    PlayerController::Tuning ToControllerTuning() const;
 };
 
 class HumanPlayerConfigLoader {

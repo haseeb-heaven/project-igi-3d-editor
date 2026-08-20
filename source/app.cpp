@@ -474,7 +474,7 @@ void App::Frame(float delta_seconds) {
 			.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
 			.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
 			.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
-			.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
+			.objective_text_       = gameplay_host_.GetWorld().GetLevelFlow().GetObjectiveDisplayText(),
 			.help_scroll_offset_   = help_scroll_offset_,
 			.help_entries_         = &help_entries_,
 			.show_task_type_       = show_task_type_,
@@ -701,7 +701,7 @@ void App::Frame(float delta_seconds) {
 		.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
 		.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
 		.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
-		.objective_text_       = (gameplay_host_.GetWorld().GetLevelFlow().GetObjectives().empty() ? "" : gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()[0].description),
+		.objective_text_       = gameplay_host_.GetWorld().GetLevelFlow().GetObjectiveDisplayText(),
 		.help_scroll_offset_   = help_scroll_offset_,
 		.help_entries_         = &help_entries_,
 		.show_task_type_       = show_task_type_,
@@ -948,7 +948,7 @@ void App::ToggleGamePlayMode() {
 
 		// 2. Read humanplayer.qvm tuning for player speed, jump impulse, health
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
-		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.max_health, tuning.max_armor);
+		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.ToControllerTuning());
 
 		// 3. Spawn exactly at the editor camera position (primary), falling back to
 		//    HumanPlayer level object / level start pos when the camera is at origin
@@ -956,6 +956,7 @@ void App::ToggleGamePlayMode() {
 		float spawn_yaw = 0.0f;
 		float spawn_pitch = 0.0f;
 		bool found_spawn = false;
+		bool spawned_from_camera = false;
 
 		const float kSpawnSnapEps = 1.0f;
 		if (glm::length(viewer_.pos_) > kSpawnSnapEps ||
@@ -964,6 +965,7 @@ void App::ToggleGamePlayMode() {
 			spawn_yaw = viewer_.yaw_;
 			spawn_pitch = viewer_.pitch_;
 			found_spawn = true;
+			spawned_from_camera = true;
 			Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera: pos=(" +
 				std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
 				"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
@@ -998,6 +1000,13 @@ void App::ToggleGamePlayMode() {
 			}
 		}
 
+		// The editor camera stores the eye position. Runtime physics stores the
+		// player's body base, so remove the verified standing eye height before
+		// handing this spawn to the fixed-step controller.
+		if (found_spawn && spawned_from_camera) {
+			spawn_pos.z -= igi::PlayerController::STANDING_EYE_HEIGHT;
+		}
+
 		gameplay_host_.OpenGameplay(snap);
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
@@ -1014,6 +1023,18 @@ void App::ToggleGamePlayMode() {
 
 		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
 		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, spawn_pitch);
+		const float spawn_yaw_radians = glm::radians(spawn_yaw);
+		const glm::vec3 extraction_direction(
+			-sinf(spawn_yaw_radians), cosf(spawn_yaw_radians), 0.0f);
+		glm::vec3 extraction_center = spawn_pos +
+			extraction_direction * (40.0f * igi::PlayerController::WORLD_METER);
+		float extraction_ground_height = extraction_center.z;
+		if (GetLevelZ(extraction_center.x, extraction_center.y, extraction_ground_height)) {
+			extraction_center.z = extraction_ground_height;
+		}
+		gameplay_host_.GetWorld().SetExtractionZone(
+			extraction_center,
+			8.0f * igi::PlayerController::WORLD_METER);
 		viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
 		viewer_.yaw_ = spawn_yaw;
 		viewer_.pitch_ = spawn_pitch;
@@ -1030,7 +1051,7 @@ void App::ToggleGamePlayMode() {
 		show_hud_ = false;
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
-		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, R reload, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		gameplay_host_.CloseGameplay(snap);
