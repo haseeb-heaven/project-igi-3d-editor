@@ -615,15 +615,6 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 		glutSetCursor(GLUT_CURSOR_NONE);
 	}
 
-	if (in_game_mode_ && !pause_mode_) {
-		if (button == GLUT_LEFT_BUTTON) {
-			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
-		}
-		if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
-			gameplay_host_.GetWorld().GetWeapons().Reload();
-		}
-		return;
-	}
 }
 
 void App::Input_OnMotion(int x, int y) {

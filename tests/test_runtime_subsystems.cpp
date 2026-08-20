@@ -859,6 +859,16 @@ TEST(RuntimeInputTest, ActivateIsMomentaryAndFocusGated) {
     EXPECT_FALSE(router.ConsumeGameplayInput().interact);
 }
 
+TEST(RuntimeInputTest, RightMouseIsAimWithoutImplicitReload) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.OnMouseButton(2, true);
+
+    const PlayerInputCmd command = router.ConsumeGameplayInput();
+    EXPECT_TRUE(command.zoom);
+    EXPECT_FALSE(command.reload);
+}
+
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);
