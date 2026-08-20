@@ -2,6 +2,8 @@
 
 - [ ] Windows CMake configure/build (authoritative environment still required).
 - [x] Headless focused runtime test harness: 28/28 passing on the development host.
+- [x] Final static-geometry line-of-sight smoke: wall-occluded player and
+      guard damage was blocked; open combat and mission extraction passed.
 - [x] Absolute-deadline 30 Hz clock and edge-case tests.
 - [x] Runtime task ownership and lifecycle safety.
 - [x] Runtime session/world ownership and editor snapshot isolation.

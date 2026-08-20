@@ -26,8 +26,9 @@ parity claims remain gated on IGI1 evidence.
 
 - [x] Confirm the exact remote branch, specification, OpenIGI reference, and
   current runtime files.
-- [x] Build a headless runtime harness and run the focused tests; the current
-  slice passes 28/28 tests on the development host.
+- [x] Build a headless runtime harness and run the focused tests; the baseline
+  slice passed 28/28 tests on the development host, and the final line-of-sight
+  change passed a fresh runtime smoke harness.
 - [x] Record the current placeholders and missing production components in
   `coding_guidelines.md` and the evidence boundary in `tasks/todo.md`.
 
