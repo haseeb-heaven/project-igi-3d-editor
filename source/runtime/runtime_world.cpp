@@ -797,7 +797,12 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
             // missions. Keeping the weapon in the runtime state makes cadence,
             // spread, recoil metadata, and ammunition obey the same fixed-tick
             // path as the player weapon instead of using a damage shortcut.
-            combat_state.weapon.SelectWeapon(4); // WEAPON_ID_M16A2
+            const bool selected_authored_weapon =
+                !guard.weapon_script_id.empty() &&
+                combat_state.weapon.SelectWeaponByScriptId(guard.weapon_script_id);
+            if (!selected_authored_weapon) {
+                combat_state.weapon.SelectWeapon(4); // WEAPON_ID_M16A2 fallback
+            }
         }
         combat_state.weapon.Update(GameClock::TICK_INTERVAL_SECONDS, true);
 

@@ -1302,6 +1302,9 @@ void App::SetupLevelAiGuards() {
 		igi::AiGuardEntity guard;
 		guard.id = (uint32_t)i;
 		guard.name = obj.name.empty() ? obj.type : obj.name;
+		guard.weapon_script_id = !obj.weaponEnumId.empty()
+			? obj.weaponEnumId
+			: obj.primaryWeapon;
 		guard.position = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
 		guard.yaw = glm::degrees((float)obj.rot.z);
 
