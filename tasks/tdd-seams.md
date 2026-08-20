@@ -1,0 +1,16 @@
+# TDD Seams for the Gameplay Runtime
+
+The implementation tests public behavior at these seams. Tests should not
+inspect private fields or couple themselves to the chosen data structure.
+
+| Seam | Observable contract |
+| --- | --- |
+| `GameClock` | Absolute 30 Hz deadlines, bounded catch-up, pause/exclusion, render boundaries, and reset behavior. |
+| `PlayerCollision` | Ground/roof probes, wall blocking and sliding, stance clearance, and finite obstacle resolution. |
+| `PlayerController` | Input-to-motion behavior, fixed-step gravity/jump/air control, stance transitions, and collision-safe position. |
+| `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |
+| `QvmInterpreter` | Malformed-program rejection, bounded execution, native calls, stack safety, and deterministic reset. |
+| `GameplayHost` / `RuntimeWorld` | Isolated session start/tick/restart/close, mission state, and no mutation of editor snapshots. |
+
+The user-requested TDD workflow is applied as a vertical slice: each new test
+is added before the smallest production change that makes that behavior pass.
