@@ -880,6 +880,24 @@ TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     EXPECT_LT(world.GetAi().GetGuards()[0].health, 100.0f);
 }
 
+TEST(RuntimeWorldTest, MissionRestartRestoresTheInitialWeaponLoadout) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    ASSERT_TRUE(world.GetWeapons().SelectWeaponSlot(6)); // MP5SD
+
+    BulletTrace trace;
+    ASSERT_TRUE(world.GetWeapons().TryFire(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        trace));
+    EXPECT_EQ(world.GetWeapons().GetCurrentClipAmmo(), 31U);
+
+    world.Reset();
+
+    ASSERT_TRUE(world.GetWeapons().SelectWeaponSlot(6));
+    EXPECT_EQ(world.GetWeapons().GetCurrentClipAmmo(), 32U);
+}
+
 TEST(RuntimeWorldTest, SolidGeometryOccludesPlayerFire) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain, WallAtOneMeter);

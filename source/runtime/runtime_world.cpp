@@ -99,7 +99,7 @@ void RuntimeWorld::Reset() {
     }
 
     player_.Reset(spawn_pos, 0.0f);
-    weapons_.SelectWeaponSlot(0);
+    weapons_ = WeaponSystem();
     ai_.Clear();
     ClearGuardScripts();
     task_tree_.Clear();
