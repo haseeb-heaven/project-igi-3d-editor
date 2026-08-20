@@ -19,37 +19,61 @@ void WindowInputRouter::SetFocus(WindowFocusTarget target) {
 
 void WindowInputRouter::ResetInputState() {
     current_cmd_ = PlayerInputCmd();
+    forward_key_down_ = false;
+    backward_key_down_ = false;
+    left_strafe_key_down_ = false;
+    right_strafe_key_down_ = false;
+}
+
+void WindowInputRouter::UpdateMovementAxes() {
+    current_cmd_.forward = (forward_key_down_ ? 1.0f : 0.0f) +
+        (backward_key_down_ ? -1.0f : 0.0f);
+    current_cmd_.strafe = (right_strafe_key_down_ ? 1.0f : 0.0f) +
+        (left_strafe_key_down_ ? -1.0f : 0.0f);
 }
 
 void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
     if (focus_target_ != WindowFocusTarget::GameplayWindow) return;
 
-    unsigned char up_key = (unsigned char)std::toupper(key);
+    const unsigned char up_key = static_cast<unsigned char>(
+        std::toupper(static_cast<unsigned char>(key)));
 
-    unsigned char k_fwd = (unsigned char)std::toupper(profile_.GetKeyForAction("MoveUp", 'W'));
-    unsigned char k_bwd = (unsigned char)std::toupper(profile_.GetKeyForAction("MoveDown", 'S'));
-    unsigned char k_lft = (unsigned char)std::toupper(profile_.GetKeyForAction("MoveLeft", 'A'));
-    unsigned char k_rgt = (unsigned char)std::toupper(profile_.GetKeyForAction("MoveRight", 'D'));
-    unsigned char k_jmp = (unsigned char)std::toupper(profile_.GetKeyForAction("Jump", ' '));
-    unsigned char k_crc = (unsigned char)std::toupper(profile_.GetKeyForAction("Crouch", 'C'));
-    unsigned char k_rld = (unsigned char)std::toupper(profile_.GetKeyForAction("Reload", 'R'));
-    unsigned char k_act = (unsigned char)std::toupper(profile_.GetKeyForAction("Activate", 'E'));
+    const unsigned char forward_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("MoveUp", 'W')));
+    const unsigned char backward_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("MoveDown", 'S')));
+    const unsigned char left_strafe_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("MoveLeft", 'A')));
+    const unsigned char right_strafe_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("MoveRight", 'D')));
+    const unsigned char jump_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("Jump", ' ')));
+    const unsigned char crouch_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("Crouch", 'C')));
+    const unsigned char reload_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("Reload", 'R')));
+    const unsigned char activate_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("Activate", 'E')));
 
-    if (up_key == k_fwd) {
-        current_cmd_.forward = is_down ? 1.0f : (current_cmd_.forward > 0.0f ? 0.0f : current_cmd_.forward);
-    } else if (up_key == k_bwd) {
-        current_cmd_.forward = is_down ? -1.0f : (current_cmd_.forward < 0.0f ? 0.0f : current_cmd_.forward);
-    } else if (up_key == k_rgt) {
-        current_cmd_.strafe = is_down ? 1.0f : (current_cmd_.strafe > 0.0f ? 0.0f : current_cmd_.strafe);
-    } else if (up_key == k_lft) {
-        current_cmd_.strafe = is_down ? -1.0f : (current_cmd_.strafe < 0.0f ? 0.0f : current_cmd_.strafe);
-    } else if (up_key == k_jmp || key == ' ') {
+    if (up_key == forward_key) {
+        forward_key_down_ = is_down;
+        UpdateMovementAxes();
+    } else if (up_key == backward_key) {
+        backward_key_down_ = is_down;
+        UpdateMovementAxes();
+    } else if (up_key == right_strafe_key) {
+        right_strafe_key_down_ = is_down;
+        UpdateMovementAxes();
+    } else if (up_key == left_strafe_key) {
+        left_strafe_key_down_ = is_down;
+        UpdateMovementAxes();
+    } else if (up_key == jump_key || key == ' ') {
         current_cmd_.jump = is_down;
-    } else if (up_key == k_crc || up_key == 'C') {
+    } else if (up_key == crouch_key || up_key == 'C') {
         current_cmd_.crouch = is_down;
-    } else if (up_key == k_act || up_key == 'E') {
+    } else if (up_key == activate_key || up_key == 'E') {
         current_cmd_.interact = is_down;
-    } else if (up_key == k_rld || up_key == 'R') {
+    } else if (up_key == reload_key || up_key == 'R') {
         current_cmd_.reload = is_down;
     } else if (key >= '1' && key <= '9') {
         if (is_down) current_cmd_.switch_weapon = key - '1';

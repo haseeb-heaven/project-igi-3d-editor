@@ -869,6 +869,20 @@ TEST(RuntimeInputTest, RightMouseIsAimWithoutImplicitReload) {
     EXPECT_FALSE(command.reload);
 }
 
+TEST(RuntimeInputTest, OpposingMovementKeysRemainIndependent) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+
+    router.OnKeyboardKey('W', true);
+    router.OnKeyboardKey('S', true);
+    router.OnKeyboardKey('W', false);
+
+    EXPECT_FLOAT_EQ(router.ConsumeGameplayInput().forward, -1.0f);
+
+    router.OnKeyboardKey('S', false);
+    EXPECT_FLOAT_EQ(router.ConsumeGameplayInput().forward, 0.0f);
+}
+
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

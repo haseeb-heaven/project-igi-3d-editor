@@ -32,9 +32,15 @@ public:
     void ResetInputState();
 
 private:
+    void UpdateMovementAxes();
+
     WindowFocusTarget focus_target_ = WindowFocusTarget::EditorWindow;
     ProfileConfig profile_;
     PlayerInputCmd current_cmd_;
+    bool forward_key_down_ = false;
+    bool backward_key_down_ = false;
+    bool left_strafe_key_down_ = false;
+    bool right_strafe_key_down_ = false;
 };
 
 } // namespace igi
