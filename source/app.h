@@ -498,6 +498,7 @@ private:
   void Frame(float delta_seconds);
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
+  void UpdateGameplayFieldOfView();
   void DispatchEventBindings();
 
   void ProcessInput(float delta_seconds);

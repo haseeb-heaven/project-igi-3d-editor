@@ -1046,6 +1046,19 @@ TEST(RuntimeWorldTest, FlashbangAppliesVisiblePlayerExposureAndDecays) {
     EXPECT_GT(world.GetFlashEffectStrength(), 0.0f);
 }
 
+TEST(RuntimeWorldTest, ZoomStateTracksFixedStepInput) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    PlayerInputCmd zoom_command;
+    zoom_command.zoom = true;
+    world.UpdateSimulationTick(0, zoom_command);
+    EXPECT_TRUE(world.IsZoomActive());
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_FALSE(world.IsZoomActive());
+}
+
 TEST(RuntimeWorldTest, ProjectileWeaponLaunchesOncePerTriggerPress) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

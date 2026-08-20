@@ -576,6 +576,7 @@ void App::Frame(float delta_seconds) {
 	} else {
 		ProcessInput(delta_seconds);
 	}
+	UpdateGameplayFieldOfView();
 
 	// Update animation playback (auto-play for AI NPCs)
 	UpdateAnimations(delta_seconds);
@@ -874,6 +875,36 @@ void App::Frame(float delta_seconds) {
 
 	DrawCustomCursor();
 	glutSwapBuffers();
+}
+
+void App::UpdateGameplayFieldOfView() {
+    constexpr float default_field_of_view_degrees = FOVY_IN_DEGREE;
+    constexpr float zoomed_field_of_view_degrees = 40.0f;
+    const bool zoom_active = in_game_mode_ &&
+        gameplay_host_.GetWorld().IsZoomActive();
+    const float desired_field_of_view = glm::radians(
+        zoom_active
+            ? zoomed_field_of_view_degrees
+            : default_field_of_view_degrees);
+    if (std::abs(view_define_.fovy_ - desired_field_of_view) <= 0.0001f) {
+        return;
+    }
+
+    view_define_.fovy_ = desired_field_of_view;
+    const float viewport_aspect = static_cast<float>(
+        window_state_.viewport_width_) /
+        static_cast<float>(std::max(1, window_state_.viewport_height_));
+    const float half_vertical_fov_tangent = std::tan(view_define_.fovy_ * 0.5f);
+    view_define_.fovx_ = std::atan(
+        half_vertical_fov_tangent * viewport_aspect) * 2.0f;
+    view_define_.tan_half_fovx_ = std::tan(view_define_.fovx_ * 0.5f);
+    view_define_.tan_half_fovy_ = half_vertical_fov_tangent;
+    view_define_.half_viewport_width_div_tan_half_fovx_ =
+        static_cast<float>(window_state_.viewport_width_) * 0.5f /
+        view_define_.tan_half_fovx_;
+    view_define_.half_viewport_height_div_tan_half_fovy_ =
+        static_cast<float>(window_state_.viewport_height_) * 0.5f /
+        view_define_.tan_half_fovy_;
 }
 
 void App::DrawGameplayPlayerWeapon() {

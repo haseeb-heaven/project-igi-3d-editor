@@ -382,6 +382,7 @@ void RuntimeWorld::Reset() {
     level_flow_.InitializeMission(1);
     guard_combat_states_.clear();
     fire_was_held_ = false;
+    zoom_active_ = false;
     flash_effect_strength_ = 0.0f;
     flash_effect_decay_per_second_ = 0.0f;
     flash_effect_remaining_seconds_ = 0.0f;
@@ -453,6 +454,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
 
     std::vector<ObstacleCollider> obstacles;
+    zoom_active_ = input_cmd.zoom;
     for (const auto& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {
             continue;
