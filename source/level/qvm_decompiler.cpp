@@ -294,7 +294,7 @@ static std::vector<std::shared_ptr<ASTNode>> walk(
             if (op.type == QVMOpType::PUSHF) {
                 val = FloatStr(op.operand_float);
             } else {
-                val = std::to_string(op.operand);
+                val = std::to_string(op.signed_operand);
             }
             statements.push_back(std::make_shared<LiteralNumberNode>(val));
             address = op.address + op.size;
@@ -309,7 +309,19 @@ static std::vector<std::shared_ptr<ASTNode>> walk(
             address = op.address + op.size;
         }
         else if (op.type == QVMOpType::PUSHM) {
-            statements.push_back(std::make_shared<LiteralConstNode>("4294967295"));
+            statements.push_back(std::make_shared<LiteralConstNode>("-1"));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSHS) {
+            statements.push_back(std::make_shared<LiteralStringNode>(
+                "\"" + EscapeQSCString(op.inline_text) + "\""));
+            address = op.address + op.size;
+        }
+
+        else if (op.type == QVMOpType::PUSHI) {
+            statements.push_back(std::make_shared<LiteralIdentifierNode>(
+                EscapeQSCString(op.inline_text)));
             address = op.address + op.size;
         }
 
@@ -436,7 +448,7 @@ static std::vector<std::shared_ptr<ASTNode>> walk(
             auto itEx = addrToInstrIndex.find(exAddr);
             if (itEx != addrToInstrIndex.end()) {
                 const QVMInstruction& ex = qvm.instructions[itEx->second];
-                address = ex.address + ex.size + static_cast<int32_t>(ex.operand);
+                address = ex.address + ex.size + ex.signed_operand;
             } else {
                 address = exAddr;
             }
@@ -457,14 +469,14 @@ static std::vector<std::shared_ptr<ASTNode>> walk(
             uint32_t exAddr = 0;
             uint32_t exSize = 0;
 
-            uint32_t targetAddr = op.address + op.size + static_cast<int32_t>(op.operand);
+            uint32_t targetAddr = op.address + op.size + op.signed_operand;
             if (targetAddr >= 5) {
                 uint32_t prevAddr = targetAddr - 5;
                 auto itPrev = addrToInstrIndex.find(prevAddr);
                 if (itPrev != addrToInstrIndex.end()) {
                     const QVMInstruction& ex = qvm.instructions[itPrev->second];
                     if (ex.type == QVMOpType::BRA) {
-                        exData = static_cast<int32_t>(ex.operand);
+                        exData = ex.signed_operand;
                         exAddr = ex.address;
                         exSize = ex.size;
                         if (exData < 0) {

@@ -28,7 +28,9 @@ enum class QVMOpType : uint8_t {
 struct QVMInstruction {
     QVMOpType type;
     uint32_t operand;                  // For simple operands
+    int32_t signed_operand = 0;        // Signed immediate/displacement view
     float operand_float;               // For PUSHF
+    std::string inline_text;            // Inline PUSHS/PUSHI payload
     std::vector<int32_t> call_targets; // For CALL
     uint32_t address;                  // Offset in code section
     uint32_t size;                     // Total instruction size

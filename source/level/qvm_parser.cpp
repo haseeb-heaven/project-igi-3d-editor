@@ -1,6 +1,7 @@
 #include "qvm_parser.h"
 #include <fstream>
 #include <cstring>
+#include <bit>
 
 // Operand sizes for each opcode (in bytes following the opcode byte).
 // -1 means special handling (CALL).
@@ -11,18 +12,18 @@ static int QVM_OperandSize(QVMOpType op) {
     case QVMOpType::PUSHW:   return 2;
     case QVMOpType::PUSHF:   return 4;
     case QVMOpType::PUSHA:   return 4;  // push address (4-byte code offset)
-    case QVMOpType::PUSHS:   return 4;  // push string (4-byte string-pool index)
+    case QVMOpType::PUSHS:   return -2; // inline NUL-terminated string
     case QVMOpType::PUSHSI:  return 4;
     case QVMOpType::PUSHSIB: return 1;
     case QVMOpType::PUSHSIW: return 2;
-    case QVMOpType::PUSHI:   return 4;  // push integer immediate (4-byte value)
+    case QVMOpType::PUSHI:   return -2; // inline NUL-terminated identifier
     case QVMOpType::PUSHII:  return 4;
     case QVMOpType::PUSHIIB: return 1;
     case QVMOpType::PUSHIIW: return 2;
     case QVMOpType::BRA:     return 4;
     case QVMOpType::BF:      return 4;
     case QVMOpType::BT:      return 4;
-    case QVMOpType::JSR:     return 4;  // jump to subroutine (4-byte code offset)
+    case QVMOpType::JSR:     return 0;  // illegal/reserved in the retail interpreter
     case QVMOpType::CALL:    return -1; // special: count + targets
     default:                 return 0;
     }
@@ -168,6 +169,7 @@ QVMFile QVM_Parse(const std::string& filepath) {
             QVMInstruction instr{};
             instr.address = pos;
             instr.operand = 0;
+            instr.signed_operand = 0;
             instr.operand_float = 0.0f;
 
             uint8_t opbyte = code[pos];
@@ -182,7 +184,22 @@ QVMFile QVM_Parse(const std::string& filepath) {
 
             int op_size = QVM_OperandSize(instr.type);
 
-            if (op_size == -1) {
+            if (op_size == -2) {
+                const uint32_t text_start = pos;
+                while (pos < code_size && code[pos] != 0) {
+                    ++pos;
+                }
+                if (pos >= code_size) {
+                    qvm.error = "Unterminated inline string at offset " +
+                                std::to_string(instr.address);
+                    return qvm;
+                }
+                instr.inline_text.assign(
+                    reinterpret_cast<const char*>(code + text_start),
+                    pos - text_start);
+                ++pos; // consume the NUL terminator
+                instr.size = pos - instr.address;
+            } else if (op_size == -1) {
                 // CALL: read uint32 count, then count * int32 values
                 if (pos + 4 > code_size) {
                     qvm.error = "Unexpected end of code in CALL operand count";
@@ -213,14 +230,17 @@ QVMFile QVM_Parse(const std::string& filepath) {
                 if (op_size == 4) {
                     uint32_t val = ReadU32(code + pos);
                     instr.operand = val;
+                    instr.signed_operand = std::bit_cast<int32_t>(val);
                     if (instr.type == QVMOpType::PUSHF) {
                         // Reinterpret the 4 bytes as float
                         std::memcpy(&instr.operand_float, &val, sizeof(float));
                     }
                 } else if (op_size == 2) {
                     instr.operand = ReadU16(code + pos);
+                    instr.signed_operand = static_cast<int16_t>(instr.operand);
                 } else if (op_size == 1) {
                     instr.operand = code[pos];
+                    instr.signed_operand = static_cast<int8_t>(instr.operand);
                 }
 
                 pos += (uint32_t)op_size;
