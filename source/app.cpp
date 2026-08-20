@@ -1163,10 +1163,11 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 	float nearest_distance = interaction_range;
 	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
 		const auto& object = objects[object_index];
-		if (object.deleted ||
-			(object.type != "Door" && object.type != "Terminal" &&
-			 object.type != "Switch" && object.type != "Generator" &&
-			 object.type != "GunPickup" && object.type != "AmmoPickup")) {
+		const bool is_interactable =
+			object.type == "Door" || object.type == "Terminal" ||
+			object.type == "Switch" || object.type == "Generator" ||
+			object.type == "GunPickup" || object.type == "AmmoPickup";
+		if (object.deleted || !is_interactable) {
 			continue;
 		}
 
@@ -1179,8 +1180,8 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 
 		const glm::vec2 direction_to_object = horizontal_offset / distance;
 		const float facing_dot = glm::dot(
-			horizontal_direction,
-			glm::vec3(direction_to_object.x, direction_to_object.y, 0.0f));
+			glm::vec2(horizontal_direction.x, horizontal_direction.y),
+			direction_to_object);
 		if (facing_dot < minimum_facing_dot) {
 			continue;
 		}
