@@ -26,52 +26,55 @@ parity claims remain gated on IGI1 evidence.
 
 - [x] Confirm the exact remote branch, specification, OpenIGI reference, and
   current runtime files.
-- [ ] Build the branch and run the existing focused runtime tests to identify
-  baseline failures.
-- [ ] Record the current placeholders and missing production components.
+- [x] Build a headless runtime harness and run the focused tests; the current
+  slice passes 28/28 tests on the development host.
+- [x] Record the current placeholders and missing production components in
+  `coding_guidelines.md` and the evidence boundary in `tasks/todo.md`.
 
 ### Phase 2: Runtime foundation
 
-- [ ] Replace the accumulator-only clock with the documented absolute-deadline
+- [x] Replace the accumulator-only clock with the documented absolute-deadline
   schedule, pause/exclusion/reset handling, bounded catch-up, and tests.
-- [ ] Harden runtime task ownership, duplicate IDs/parents, lifecycle ordering,
+- [x] Harden runtime task ownership, duplicate IDs/parents, lifecycle ordering,
   queued message timing, and teardown tests.
-- [ ] Add an explicit runtime session/world boundary and editor snapshot reset
+- [x] Add an explicit runtime session/world boundary and editor snapshot reset
   contract without mutating editor source objects.
 
 ### Checkpoint: Foundation
 
-- [ ] Focused runtime tests pass.
-- [ ] C++ build succeeds.
-- [ ] Runtime can start, tick deterministically, reset, and close without
+- [x] Focused runtime tests pass.
+- [ ] Windows C++ build succeeds (not runnable on the current non-Windows host).
+- [x] Runtime can start, tick deterministically, reset, and close without
   changing the editor/source representation.
 
 ### Phase 3: Gameplay systems
 
-- [ ] Port the OpenIGI-referenced ground/roof constants and multi-probe wall
+- [x] Port the OpenIGI-referenced ground/roof constants and multi-probe wall
   sweep into the C++ collision adapter; add ground, step, wall, corner, slope,
   ceiling, and missing-geometry tests.
-- [ ] Integrate player input, stance, gravity, air control, camera pose, and
+- [x] Integrate player input, stance, gravity, air control, camera pose, and
   collision resolution into the runtime session.
-- [ ] Harden weapon cadence/ammunition/damage and deterministic ballistics.
-- [ ] Connect AI perception/event queues/patrol/combat to runtime entities.
-- [ ] Execute one validated bounded QVM program through an explicit native
+- [x] Harden weapon cadence/ammunition/damage and world-occluded deterministic
+  ballistics.
+- [x] Connect AI perception/event queues/patrol/combat to runtime entities.
+- [x] Execute one validated bounded normalized QVM program through an explicit native
   registry and connect task/message updates at the fixed tick boundary.
 
 ### Phase 4: Mission and presentation integration
 
-- [ ] Add one objective success/failure/restart path from runtime events.
-- [ ] Separate gameplay input focus/pause/restart from editor input and expose a
+- [x] Add one objective success/failure/restart path from runtime events.
+- [x] Separate gameplay input focus/pause/restart from editor input and expose a
   gameplay host boundary; preserve editor rendering and save behavior.
-- [ ] Add the vertical-slice integration test and document unresolved retail
+- [x] Add the vertical-slice integration test and document unresolved retail
   differences and placeholders.
 
 ### Checkpoint: Vertical slice
 
-- [ ] One mission fixture reaches success and failure deterministically.
-- [ ] Player, AI, weapon, task/QVM, objective, and restart paths execute without
+- [x] One mission fixture reaches success and failure deterministically.
+- [x] Player, AI, weapon, task/QVM, objective, and restart paths execute without
   crashing.
-- [ ] Existing editor regression tests remain green.
+- [ ] Existing editor regression tests remain green in the authoritative Windows
+  build.
 
 ## Risks and Mitigations
 

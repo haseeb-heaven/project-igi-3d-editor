@@ -6,6 +6,11 @@ project (igi_editor
   VERSION 3.0
   LANGUAGES C CXX)
 
+if (NOT WIN32)
+  message(FATAL_ERROR
+    "igi-editor gameplay mode is supported on Windows only; configure with a Windows toolchain.")
+endif()
+
 # Designated initializers, introduced in C++20
 set(CMAKE_CXX_STANDARD 20)
 
@@ -337,4 +342,3 @@ add_custom_command(TARGET igi_tests POST_BUILD
         "$<TARGET_FILE_DIR:igi_tests>/fixtures"
     COMMENT "Copying test fixtures to output directory"
 )
-
