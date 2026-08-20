@@ -7,6 +7,7 @@
 
 void App::Input_OnSpecial(int key, int x, int y) {
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		return;
 	}
 
@@ -427,6 +428,7 @@ void App::Input_OnSpecial(int key, int x, int y) {
 
 void App::Input_OnSpecialUp(int key, int x, int y) {
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		return;
 	}
 
@@ -521,6 +523,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		if (key == 27) { // ESC
 			TogglePauseMenu();
 			return;
@@ -1451,6 +1454,7 @@ void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		gameplay_host_.GetInputRouter().OnKeyboardKey(key, false);
 		return;
 	}
@@ -1499,4 +1503,3 @@ void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 }
 
 // idle
-

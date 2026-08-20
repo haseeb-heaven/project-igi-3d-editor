@@ -2,6 +2,7 @@
 #pragma once
 
 #include "runtime_session.h"
+#include "gameplay_window.h"
 
 namespace igi {
 
@@ -23,6 +24,20 @@ public:
     void Update(int64_t now_milliseconds);
     void Render();
 
+    bool InitializeGameplayWindow(
+        int editor_window_id,
+        int width,
+        int height,
+        const GameplayWindowCallbacks& callbacks);
+    void ShutdownGameplayWindow();
+    void NotifyGameplayWindowClosed();
+    void ShowGameplayWindow();
+    void HideGameplayWindow();
+    void FocusGameplayWindow();
+    void MakeGameplayWindowCurrent() const;
+    bool HasGameplayWindow() const { return gameplay_window_.IsCreated(); }
+    bool IsGameplayWindowCurrent() const { return gameplay_window_.IsCurrent(); }
+
     // State queries
     bool IsGameplayActive() const { return session_.IsActive(); }
     bool IsPaused() const { return session_.IsPaused(); }
@@ -38,6 +53,7 @@ public:
 
 private:
     RuntimeSession session_;
+    GameplayWindowHost gameplay_window_;
 };
 
 } // namespace igi

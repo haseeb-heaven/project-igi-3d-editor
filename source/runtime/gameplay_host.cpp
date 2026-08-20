@@ -44,4 +44,36 @@ void GameplayHost::Render() {
     // Gameplay HUD & runtime camera render hook
 }
 
+bool GameplayHost::InitializeGameplayWindow(
+    int editor_window_id,
+    int width,
+    int height,
+    const GameplayWindowCallbacks& callbacks) {
+    return gameplay_window_.Create(editor_window_id, width, height, callbacks);
+}
+
+void GameplayHost::ShutdownGameplayWindow() {
+    gameplay_window_.Destroy();
+}
+
+void GameplayHost::NotifyGameplayWindowClosed() {
+    gameplay_window_.NotifyClosed();
+}
+
+void GameplayHost::ShowGameplayWindow() {
+    gameplay_window_.Show();
+}
+
+void GameplayHost::HideGameplayWindow() {
+    gameplay_window_.Hide();
+}
+
+void GameplayHost::FocusGameplayWindow() {
+    gameplay_window_.Focus();
+}
+
+void GameplayHost::MakeGameplayWindowCurrent() const {
+    gameplay_window_.MakeCurrent();
+}
+
 } // namespace igi

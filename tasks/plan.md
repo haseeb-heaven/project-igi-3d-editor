@@ -78,13 +78,14 @@ parity claims remain gated on IGI1 evidence.
 
 ### Phase 5: Production runtime boundary (current)
 
-- [ ] Extract an explicit `RuntimeSession` lifecycle (`Created`, `Running`,
+- [x] Extract an explicit `RuntimeSession` lifecycle (`Created`, `Running`,
   `Paused`, `Stopped`, `Failed`) from `GameplayHost`, with direct lifecycle
   tests and no editor/OpenGL dependency.
-- [ ] Add a controlled gameplay window owned by `GameplayHost`; it must have
-  independent focus, cursor, input callbacks, viewport, camera, HUD, and
-  presentation. The editor window remains usable while gameplay is paused or
-  unfocused.
+- [ ] Add a controlled gameplay window owned by `GameplayHost`; the current
+  slice creates the Windows/FreeGLUT window, routes callbacks, focus, cursor,
+  viewport, and close recovery. Full independent camera/HUD/render ownership
+  remains pending because scene presentation still passes through the shared
+  `App::Frame()` renderer.
 - [ ] Move gameplay drawing out of `App::Frame()` into a runtime presentation
   path. Keep shared asset caches read-only and make restart/close destroy the
   mutable runtime session.
@@ -116,9 +117,9 @@ parity claims remain gated on IGI1 evidence.
 
 ### Checkpoint: Runtime session
 
-- A session can be created, opened, paused, restarted, closed, and failed
+- [x] A session can be created, opened, paused, restarted, and closed
   without changing the editor snapshot or source-level object data.
-- Duplicate open/close and failed transition paths are deterministic and
+- [x] Duplicate open/close and failed transition paths are deterministic and
   covered by focused tests.
 
 ### Checkpoint: Twin-window gameplay
@@ -145,7 +146,7 @@ parity claims remain gated on IGI1 evidence.
 | OpenIGI behavior differs from IGI1 | High | Mark evidence class in code/tests and require retail comparison before parity claims. |
 | Editor/runtime coupling corrupts authoring state | High | Runtime copies/adapters, explicit snapshots, no implicit source writes. |
 | Windows-only C++/OpenGL build is platform-sensitive | Medium | Run headless subsystem tests here, then require the Windows CMake target/CI as the authoritative build. |
-| FreeGLUT/OpenGL context ownership can couple two windows accidentally | High | Keep window creation behind a host adapter, verify current-window routing on Windows, and test session state independently before wiring presentation. |
+| FreeGLUT/OpenGL context ownership can couple two windows accidentally | High | Keep window creation behind a host adapter, use FreeGLUT's current-context option so the renderer's loaded resources remain visible, verify current-window routing on Windows, and test session state independently before wiring presentation. |
 | Scope is larger than one implementation turn | High | Keep this plan active, deliver vertical slices, and preserve a runnable checkpoint. |
 
 ## Evidence Sources

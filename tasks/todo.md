@@ -19,14 +19,15 @@
 - [x] Authored guard weapon selection, scripted/patrol animation request
       delivery, and fixed-step weapon zoom state.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
-- [ ] Extract and test an explicit `RuntimeSession` state machine; the current
-      host still owns the world/scheduler directly and has no failure state.
-- [ ] Create the separate native gameplay window and route its input/rendering
-      independently from the editor GLUT window. Current `App::Frame()` still
-      renders gameplay through the editor context and `GameplayHost::Render()`
-      is an empty seam.
+- [x] Extract and test an explicit `RuntimeSession` state machine with
+      editor-snapshot isolation and deterministic restart/close behavior.
+- [ ] Finish the separate native gameplay window boundary. `GameplayWindowHost`
+      now creates the Windows/FreeGLUT window, routes gameplay callbacks,
+      focus, viewport, and close recovery; Windows interactive verification and
+      independent renderer ownership remain pending.
 - [ ] Move gameplay presentation/HUD/camera ownership behind the gameplay host;
-      preserve editor visibility and interaction while gameplay is paused.
+      the current gameplay scene/HUD still render through `App::Frame()`, while
+      the editor retains its last authoring frame during active gameplay.
 - [ ] Add explicit apply/restart semantics for editor changes made while a
       gameplay session exists; never silently mutate authoring data.
 - [ ] Port/verify remaining selected-vanilla-fixture traversal (fall damage,
@@ -42,9 +43,11 @@
   world-occluded hits, guard patrol/perception/combat, authored weapon
   selection, projectile simulation, flash exposure, zoom, audio hooks, HUD,
   and objective/extraction flow.
-- `architecture-gap`: the current branch has one deterministic runtime model,
-  but gameplay presentation and input are still hosted by the editor GLUT
-  window; the required twin-window boundary is not implemented yet.
+- `architecture-gap`: a controlled gameplay window now owns gameplay focus,
+  input callbacks, viewport, and close recovery, but scene/HUD presentation
+  still runs through `App::Frame()` and the editor is retained as its last
+  authoring frame during active gameplay. Full runtime renderer ownership is
+  not implemented yet.
 - `inferred` or `placeholder`: some root-motion speeds, fallback guard patrol,
   demo extraction placement, and the normalized QVM seam are not proof of full
   retail IGI1 behavior. Actual Windows execution against the supplied vanilla

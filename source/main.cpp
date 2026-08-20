@@ -139,6 +139,46 @@ static void OnDisplay() {
   g_app.OnDisplay();
 }
 
+static void OnGameplayDisplay() {
+  g_app.OnGameplayDisplay();
+}
+
+static void OnGameplayReshape(int width, int height) {
+  g_app.OnGameplayWindowResize(width, height);
+}
+
+static void OnGameplayMouse(int button, int state, int x, int y) {
+  g_app.Input_OnMouse(button, state, x, y);
+}
+
+static void OnGameplayMouseWheel(int wheel, int direction, int x, int y) {
+  g_app.Input_OnMouseWheel(wheel, direction, x, y);
+}
+
+static void OnGameplayMotion(int x, int y) {
+  g_app.Input_OnMotion(x, y);
+}
+
+static void OnGameplaySpecial(int key, int x, int y) {
+  g_app.Input_OnSpecial(key, x, y);
+}
+
+static void OnGameplaySpecialUp(int key, int x, int y) {
+  g_app.Input_OnSpecialUp(key, x, y);
+}
+
+static void OnGameplayKeyboard(unsigned char key, int x, int y) {
+  g_app.Input_OnKeyboard(key, x, y);
+}
+
+static void OnGameplayKeyboardUp(unsigned char key, int x, int y) {
+  g_app.Input_OnKeyboardUp(key, x, y);
+}
+
+static void OnGameplayClose() {
+  g_app.OnGameplayWindowClose();
+}
+
 static void UpdateOverlayWireframeMenuText();
 static void UpdateDrawPartsMenuText();
 static void UpdateTerrainOptionsMenuText();
@@ -642,6 +682,7 @@ int main(int argc, char **argv) {
 
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH | GLUT_STENCIL);
+  glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
 
   // center display
   int screen_cx = glutGet(GLUT_SCREEN_WIDTH);
@@ -725,6 +766,25 @@ int main(int argc, char **argv) {
 
   if (!g_app.Init(argc, argv)) {
     return 2;
+  }
+
+  igi::GameplayWindowCallbacks gameplay_window_callbacks;
+  gameplay_window_callbacks.display = OnGameplayDisplay;
+  gameplay_window_callbacks.reshape = OnGameplayReshape;
+  gameplay_window_callbacks.mouse = OnGameplayMouse;
+  gameplay_window_callbacks.mouse_wheel = OnGameplayMouseWheel;
+  gameplay_window_callbacks.motion = OnGameplayMotion;
+  gameplay_window_callbacks.passive_motion = OnGameplayMotion;
+  gameplay_window_callbacks.special = OnGameplaySpecial;
+  gameplay_window_callbacks.special_up = OnGameplaySpecialUp;
+  gameplay_window_callbacks.keyboard = OnGameplayKeyboard;
+  gameplay_window_callbacks.keyboard_up = OnGameplayKeyboardUp;
+  gameplay_window_callbacks.close = OnGameplayClose;
+  if (!g_app.InitializeGameplayWindow(
+          glutGetWindow(), wnd_w, wnd_h, gameplay_window_callbacks)) {
+    Logger::Get().Log(
+        LogLevel::WARNING,
+        "[Main] Gameplay window unavailable; editor remains usable");
   }
 
   // Apply command line settings

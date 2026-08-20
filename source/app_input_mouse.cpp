@@ -7,6 +7,12 @@
 #include "renderer/object_lightmap.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
+	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
+		if (direction > 0) gameplay_host_.GetWorld().GetWeapons().SelectNextWeapon();
+		else gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
+		return;
+	}
 	if (show_help_) {
 		// Scroll keybindings help panel
 		if (direction > 0) { if (help_scroll_offset_ > 0) help_scroll_offset_--; }
@@ -37,6 +43,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	mouse_state_.prior_y_ = y;
 
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		if (button == GLUT_LEFT_BUTTON) {
 			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
 		} else if (button == GLUT_RIGHT_BUTTON) {
@@ -622,6 +629,7 @@ void App::Input_OnMotion(int x, int y) {
 	int dy = y - mouse_state_.prior_y_;
 
 	if (in_game_mode_ && !pause_mode_) {
+		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		gameplay_host_.GetInputRouter().OnMouseMove(static_cast<float>(dx), static_cast<float>(dy));
 		mouse_state_.prior_x_ = x;
 		mouse_state_.prior_y_ = y;

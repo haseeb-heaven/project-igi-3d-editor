@@ -205,6 +205,13 @@ bool App::Init(int argc, char** argv) {
 }
 
 void App::Shutdown() {
+	if (in_game_mode_) {
+		igi::EditorSnapshot restored_snapshot;
+		gameplay_host_.CloseGameplay(restored_snapshot);
+		in_game_mode_ = false;
+		runtime_level_objects_.reset();
+	}
+	gameplay_host_.ShutdownGameplayWindow();
 	if (game_process_.running) {
 		// Wait briefly for monitor thread (it's blocking on the game process handle)
 		if (game_process_.hMonitorThread) {
@@ -297,8 +304,22 @@ int	App::GetTerrainModOptions() const {
 
 // events
 void App::OnWindowResize(int width, int height) {
-	window_state_.viewport_width_ = std::max(1, width);
-	window_state_.viewport_height_ = std::max(1, height);
+	editor_viewport_width_ = std::max(1, width);
+	editor_viewport_height_ = std::max(1, height);
+	ApplyViewportSize(editor_viewport_width_, editor_viewport_height_);
+}
+
+void App::OnGameplayWindowResize(int width, int height) {
+	gameplay_viewport_width_ = std::max(1, width);
+	gameplay_viewport_height_ = std::max(1, height);
+	ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
+}
+
+void App::ApplyViewportSize(int width, int height) {
+	width = std::max(1, width);
+	height = std::max(1, height);
+	window_state_.viewport_width_ = width;
+	window_state_.viewport_height_ = height;
 
 	view_define_.viewport_width_ = window_state_.viewport_width_;
 	view_define_.viewport_height_ = window_state_.viewport_height_;
@@ -321,8 +342,45 @@ void App::OnWindowResize(int width, int height) {
 
 }
 
+void App::RestoreEditorViewport() {
+	ApplyViewportSize(editor_viewport_width_, editor_viewport_height_);
+}
+
 void App::OnDisplay() {
+	if (gameplay_host_.IsGameplayWindowCurrent()) {
+		OnGameplayDisplay();
+		return;
+	}
+	// Keep the last authoring frame visible while gameplay owns the other
+	// window. Editor input is ignored during active gameplay by the input
+	// adapters, so this cannot accidentally edit the source level.
+	if (in_game_mode_) return;
 	Frame(0.0f);
+}
+
+bool App::InitializeGameplayWindow(
+	int editor_window_id,
+	int width,
+	int height,
+	const igi::GameplayWindowCallbacks& callbacks) {
+	gameplay_viewport_width_ = std::max(1, width);
+	gameplay_viewport_height_ = std::max(1, height);
+	return gameplay_host_.InitializeGameplayWindow(
+		editor_window_id, width, height, callbacks);
+}
+
+void App::ShutdownGameplayWindow() {
+	gameplay_host_.ShutdownGameplayWindow();
+}
+
+void App::OnGameplayDisplay() {
+	if (!in_game_mode_ || !gameplay_host_.IsGameplayWindowCurrent()) return;
+	Frame(0.0f);
+}
+
+void App::OnGameplayWindowClose() {
+    gameplay_host_.NotifyGameplayWindowClosed();
+    gameplay_window_close_requested_ = true;
 }
 
 // AI text editor helpers — must be defined before Input_OnMouse and Input_OnSpecial.
@@ -332,6 +390,11 @@ void App::OnDisplay() {
 
 // input
 void App::OnIdle() {
+	if (gameplay_window_close_requested_) {
+		gameplay_window_close_requested_ = false;
+		if (in_game_mode_) ToggleGamePlayMode();
+	}
+
 	// freeglut pumps messages with a window-handle filter and misses WM_HOTKEY,
 	// which is a thread message only retrievable via PeekMessage(NULL, ...).
 	// Poll it here so F3 works while the game is running and editor is iconified.
@@ -393,6 +456,7 @@ void App::OnIdle() {
 		return;
 	}
 
+	if (in_game_mode_) gameplay_host_.MakeGameplayWindowCurrent();
 	Frame(delta_time * 0.001f);	// convert to seconds
 
 	prior_frame_time_ = cur_time;
@@ -550,7 +614,9 @@ void App::Frame(float delta_seconds) {
 
 	if (in_game_mode_) {
 		int64_t now_ms = Sys_Milliseconds();
-		gameplay_host_.Update(now_ms);
+		// OnIdle owns the simulation update. Display callbacks may run once per
+		// window, so a zero render delta must never advance gameplay a second time.
+		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
 
 		const auto& player = gameplay_host_.GetWorld().GetPlayer();
 		viewer_.pos_ = player.GetEyePosition();
@@ -1140,7 +1206,15 @@ void App::ToggleGamePlayMode() {
 			status_message_ = "Cannot enter Game Play: runtime session is already active";
 			return;
 		}
+		if (!gameplay_host_.HasGameplayWindow()) {
+			igi::EditorSnapshot ignored_snapshot;
+			gameplay_host_.CloseGameplay(ignored_snapshot);
+			runtime_level_objects_.reset();
+			status_message_ = "Cannot enter Game Play: gameplay window is unavailable";
+			return;
+		}
 		in_game_mode_ = true;
+		gameplay_host_.FocusGameplayWindow();
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
@@ -1191,6 +1265,8 @@ void App::ToggleGamePlayMode() {
 			status_message_ = "Cannot leave Game Play: runtime session is not active";
 			return;
 		}
+		gameplay_host_.HideGameplayWindow();
+		RestoreEditorViewport();
 		in_game_mode_ = false;
 		runtime_level_objects_.reset();
 		opened_door_indices_.clear();

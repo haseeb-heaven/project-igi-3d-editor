@@ -91,6 +91,15 @@ public:
   // events
   void OnWindowResize(int width, int height);
   void OnDisplay();
+  bool InitializeGameplayWindow(
+      int editor_window_id,
+      int width,
+      int height,
+      const igi::GameplayWindowCallbacks& callbacks);
+  void ShutdownGameplayWindow();
+  void OnGameplayDisplay();
+  void OnGameplayWindowResize(int width, int height);
+  void OnGameplayWindowClose();
 
   // input
   void Input_OnMouse(int button, int state, int x, int y);
@@ -431,6 +440,10 @@ private:
   int64_t prior_frame_time_;
 
   window_state_s window_state_;
+  int editor_viewport_width_ = 1;
+  int editor_viewport_height_ = 1;
+  int gameplay_viewport_width_ = 1;
+  int gameplay_viewport_height_ = 1;
   mouse_state_s mouse_state_;
   input_s input_;
 
@@ -447,6 +460,7 @@ private:
   std::atomic<bool> game_exited_{
       false}; // set by monitor thread when game process exits
   HWND editor_hwnd_ = NULL;
+  bool gameplay_window_close_requested_ = false;
 
   bool orbit_active_ = false;
   glm::vec3 orbit_target_pos_ = glm::vec3(0.0f);
@@ -496,6 +510,8 @@ private:
   void UpdateGraphNodeManipulation(int x, int y);
 
   void Frame(float delta_seconds);
+  void ApplyViewportSize(int width, int height);
+  void RestoreEditorViewport();
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
   void UpdateGameplayFieldOfView();
