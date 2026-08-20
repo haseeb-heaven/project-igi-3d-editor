@@ -237,7 +237,9 @@ TEST(RuntimeQvmTest, RejectsMalformedBytecodeAndUnsafeControlFlow) {
     QvmInterpreter interpreter(registry);
     QvmProgram program;
 
-    EXPECT_FALSE(interpreter.LoadProgram({0x01, 0x02}, program));
+    EXPECT_FALSE(interpreter.LoadProgram(
+        std::vector<uint8_t>{0x01, 0x02},
+        program));
     EXPECT_NE(interpreter.GetLastError().find("truncated"), std::string::npos);
 
     QvmProgram invalid_jump_program;
