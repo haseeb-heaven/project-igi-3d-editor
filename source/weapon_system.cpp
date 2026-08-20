@@ -2,6 +2,7 @@
 #include "weapon_system.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iterator>
 #include <utility>
@@ -106,6 +107,34 @@ glm::vec3 NormalizeOrFallback(const glm::vec3& vector, const glm::vec3& fallback
     return vector / std::sqrt(length_squared);
 }
 
+std::string NormalizeScriptIdentifier(std::string script_identifier) {
+    const auto is_whitespace = [](unsigned char character) {
+        return std::isspace(character) != 0;
+    };
+
+    const auto first_non_whitespace = std::find_if_not(
+        script_identifier.begin(),
+        script_identifier.end(),
+        is_whitespace);
+    const auto last_non_whitespace = std::find_if_not(
+        script_identifier.rbegin(),
+        script_identifier.rend(),
+        is_whitespace).base();
+    if (first_non_whitespace >= last_non_whitespace) {
+        return {};
+    }
+
+    script_identifier = std::string(first_non_whitespace, last_non_whitespace);
+    if (script_identifier.size() >= 2 &&
+        script_identifier.front() == '"' &&
+        script_identifier.back() == '"') {
+        script_identifier = script_identifier.substr(
+            1,
+            script_identifier.size() - 2);
+    }
+    return script_identifier;
+}
+
 } // namespace
 
 const std::vector<WeaponDefinition>& WeaponSystem::GetVanillaWeaponCatalog() {
@@ -205,12 +234,17 @@ bool WeaponSystem::SelectWeapon(uint32_t weapon_id) {
 }
 
 bool WeaponSystem::SelectWeaponByScriptId(const std::string& script_id) {
+    const std::string normalized_script_id = NormalizeScriptIdentifier(script_id);
+    if (normalized_script_id.empty()) {
+        return false;
+    }
+
     const auto& catalog = GetVanillaWeaponCatalog();
     const auto weapon = std::find_if(
         catalog.begin(),
         catalog.end(),
-        [&script_id](const WeaponDefinition& definition) {
-            return definition.script_id == script_id;
+        [&normalized_script_id](const WeaponDefinition& definition) {
+            return definition.script_id == normalized_script_id;
         });
     return weapon != catalog.end() && SelectWeapon(weapon->id);
 }

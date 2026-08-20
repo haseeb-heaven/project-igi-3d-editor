@@ -652,6 +652,13 @@ TEST(RuntimeWeaponTest, UsesRetailPlayerCycleAndWeaponModels) {
     EXPECT_EQ(weapons.GetActiveWeapon().clip_capacity, 32U);
 }
 
+TEST(RuntimeWeaponTest, ResolvesAuthoredWeaponIdentifiersWithDecorativeText) {
+    WeaponSystem weapons;
+
+    ASSERT_TRUE(weapons.SelectWeaponByScriptId("  \"WEAPON_ID_MP5SD\"  "));
+    EXPECT_EQ(weapons.GetActiveWeapon().id, 7U);
+}
+
 TEST(RuntimeWeaponTest, UsesRetailAutomaticCadenceAndResetsBurstOnRelease) {
     WeaponSystem weapons;
     ASSERT_TRUE(weapons.SelectWeaponSlot(6)); // MP5SD: 700 RPM -> 2 fixed ticks
