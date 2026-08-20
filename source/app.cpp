@@ -469,7 +469,9 @@ void App::Frame(float delta_seconds) {
 			.in_game_mode_         = in_game_mode_,
 			.noclip_mode_          = noclip_mode_,
 			.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
+			.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
 			.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
+			.player_maximum_armor_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumArmor(),
 			.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
 			.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
 			.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
@@ -555,6 +557,10 @@ void App::Frame(float delta_seconds) {
 		auto& objects = GetActiveRenderLevelObjects().GetObjects();
 		for (const auto& g : guards) {
 			if ((int)g.id < (int)objects.size()) {
+				objects[g.id].deleted = (g.state == igi::AiGuardState::Dead);
+				if (objects[g.id].deleted) {
+					continue;
+				}
 				objects[g.id].pos = glm::dvec3(g.position.x, g.position.y, g.position.z);
 				objects[g.id].rot.z = glm::radians((double)g.yaw);
 			}
@@ -696,7 +702,9 @@ void App::Frame(float delta_seconds) {
 		.in_game_mode_         = in_game_mode_,
 		.noclip_mode_          = noclip_mode_,
 		.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
+		.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
 		.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
+		.player_maximum_armor_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumArmor(),
 		.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
 		.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
 		.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
@@ -1449,7 +1457,7 @@ void App::ToggleAnimationForObject(int objIndex, int animId) {
 
 std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
     std::unordered_set<int> result;
-    auto& objs = level_.GetLevelObjects().GetObjects();
+    auto& objs = GetActiveRenderLevelObjects().GetObjects();
     for (const auto& [idx, pb] : animPlaybacks_) {
         // Paused (animation toggled off for this AI) -> show its normal static
         // mesh, not a frozen skinned pose. Only objects actively playing get

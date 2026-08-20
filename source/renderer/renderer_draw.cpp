@@ -2981,8 +2981,11 @@ void Renderer::Draw(const draw_params_s &params,
       // ── 2. Authentic Health Powerbar (Bottom Left) ─────────────────────────
       // StatusScreenLayout: both sprites centred on (0.0625w, 0.89583331h from
       // the top); foreground inset 2px up-left; bottom-filled by remaining hp.
-      float hp  = std::clamp(task_tree_view.player_health_, 0.0f, 100.0f);
-      float arm = std::clamp(task_tree_view.player_armor_,  0.0f, 100.0f);
+      const float maximum_health = std::max(0.0001f, task_tree_view.player_maximum_health_);
+      const float maximum_armor = std::max(0.0001f, task_tree_view.player_maximum_armor_);
+      float hp  = std::clamp(task_tree_view.player_health_, 0.0f, maximum_health);
+      float arm = std::clamp(task_tree_view.player_armor_,  0.0f, maximum_armor);
+      const float health_fraction = std::clamp(hp / maximum_health, 0.0f, 1.0f);
 
       HudSprite pb_bg  = GetOrLoadHudSprite("powerbarbackground.spr");
       HudSprite pb_fg  = GetOrLoadHudSprite("powerbar.spr");
@@ -3001,8 +3004,7 @@ void Renderer::Draw(const draw_params_s &params,
         // Foreground inset 2px up-left from the background top-left corner.
         int fg_left = bg_left - kHealthInset;
         int fg_top  = bg_top  + kHealthInset;
-        float hp_frac = std::clamp(hp / 100.0f, 0.0f, 1.0f);
-        DrawHudBarFill(pb_fg, fg_left, fg_top - pb_fg.height, hp_frac, 1.0f, 1.0f, 1.0f, 0.95f);
+        DrawHudBarFill(pb_fg, fg_left, fg_top - pb_fg.height, health_fraction, 1.0f, 1.0f, 1.0f, 0.95f);
 
         // Health cross icon beside the bar (top-right of the background).
         if (hp_icon.valid) {
@@ -3028,9 +3030,9 @@ void Renderer::Draw(const draw_params_s &params,
         glVertex2i(bx + BAR_W, by + BAR_H); glVertex2i(bx, by + BAR_H);
         glEnd();
 
-        int fill_h = (int)(BAR_H * (hp / 100.0f));
-        if (hp > 50.0f)      glColor4f(0.0f, 0.95f, 0.25f, 0.9f);
-        else if (hp > 25.0f) glColor4f(0.95f, 0.8f, 0.0f, 0.9f);
+        int fill_h = (int)(BAR_H * health_fraction);
+        if (health_fraction > 0.5f)      glColor4f(0.0f, 0.95f, 0.25f, 0.9f);
+        else if (health_fraction > 0.25f) glColor4f(0.95f, 0.8f, 0.0f, 0.9f);
         else                 glColor4f(0.95f, 0.15f, 0.1f, 0.9f);
         glBegin(GL_QUADS);
         glVertex2i(bx + 2, by + 2); glVertex2i(bx + BAR_W - 2, by + 2);
@@ -3762,4 +3764,3 @@ void Renderer::DrawGraphNodes3D(const draw_params_s& params) {
   glLineWidth(1.0f);
   glDepthFunc(GL_LESS);
 }
-

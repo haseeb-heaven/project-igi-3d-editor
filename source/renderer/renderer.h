@@ -476,7 +476,9 @@ public:
 		bool in_game_mode_ = false;
 		bool noclip_mode_ = true;
 		float player_health_ = 100.0f;
+		float player_maximum_health_ = 100.0f;
 		float player_armor_ = 100.0f;
+		float player_maximum_armor_ = 100.0f;
 		std::string active_weapon_name_ = "M16A2";
 		uint32_t clip_ammo_ = 30;
 		uint32_t clip_capacity_ = 30;
