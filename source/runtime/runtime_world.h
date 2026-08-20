@@ -61,6 +61,7 @@ public:
 
 private:
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
+    bool ApplyGuardShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     bool IsWorldLineBlocked(const glm::vec3& line_origin, const glm::vec3& line_target) const;
     float FindWorldCeilingHeight(const glm::vec3& body_position) const;
@@ -88,7 +89,11 @@ private:
     QvmNativeRegistry qvm_registry_;
     AiScriptHost ai_script_host_;
     std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;
-    std::unordered_map<uint32_t, uint64_t> next_guard_attack_tick_;
+    struct GuardCombatState {
+        WeaponSystem weapon;
+    };
+
+    std::unordered_map<uint32_t, GuardCombatState> guard_combat_states_;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;

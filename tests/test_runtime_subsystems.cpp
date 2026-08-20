@@ -901,6 +901,25 @@ TEST(RuntimeWorldTest, CombatGuardDamagesPlayerAtFixedCadence) {
     EXPECT_LT(world.GetPlayer().GetHealth(), initial_health);
 }
 
+TEST(RuntimeWorldTest, CombatGuardFiresTheRuntimeWeaponAtThePlayer) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().ApplyTuning(100.0f, 0.0f);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    AiGuardEntity guard;
+    guard.id = 27;
+    guard.position = glm::vec3(0.0f, 2.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.yaw = 180.0f;
+    guard.state = AiGuardState::Combat;
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetHealth(), 65.0f);
+}
+
 TEST(RuntimeWorldTest, SolidGeometryBlocksGuardLineOfSightDamage) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain, WallAtOneMeter);

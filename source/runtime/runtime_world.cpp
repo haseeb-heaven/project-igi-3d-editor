@@ -104,7 +104,7 @@ void RuntimeWorld::Reset() {
     ClearGuardScripts();
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
-    next_guard_attack_tick_.clear();
+    guard_combat_states_.clear();
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
@@ -411,6 +411,41 @@ bool RuntimeWorld::FindWorldShotImpact(
     return false;
 }
 
+bool RuntimeWorld::ApplyGuardShotDamage(BulletTrace& bullet_trace) {
+    constexpr float player_hit_radius = 0.6f * PlayerController::WORLD_METER;
+    const float direction_length = glm::length(bullet_trace.direction);
+    if (direction_length <= 0.0001f) {
+        return false;
+    }
+
+    const glm::vec3 shot_direction = bullet_trace.direction / direction_length;
+    float world_impact_distance = bullet_trace.distance;
+    if (FindWorldShotImpact(bullet_trace, world_impact_distance)) {
+        bullet_trace.distance = world_impact_distance;
+        bullet_trace.hit_position = bullet_trace.origin +
+            shot_direction * world_impact_distance;
+        bullet_trace.hit_world_geometry = true;
+    }
+
+    const glm::vec3 to_player = player_.GetEyePosition() - bullet_trace.origin;
+    const float projected_distance = glm::dot(to_player, shot_direction);
+    if (projected_distance < 0.0f || projected_distance > bullet_trace.distance) {
+        return false;
+    }
+
+    const glm::vec3 closest_point = bullet_trace.origin +
+        shot_direction * projected_distance;
+    if (glm::distance(closest_point, player_.GetEyePosition()) > player_hit_radius) {
+        return false;
+    }
+
+    bullet_trace.hit_entity_id = 0;
+    bullet_trace.hit_position = closest_point;
+    bullet_trace.distance = projected_distance;
+    player_.ApplyDamage(bullet_trace.damage);
+    return true;
+}
+
 bool RuntimeWorld::IsWorldLineBlocked(
     const glm::vec3& line_origin,
     const glm::vec3& line_target) const {
@@ -431,8 +466,6 @@ bool RuntimeWorld::IsWorldLineBlocked(
 
 void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
     constexpr float combat_range = 50.0f * PlayerController::WORLD_METER;
-    constexpr uint64_t attack_interval_ticks = 30;
-    constexpr float damage_per_attack = 5.0f;
 
     if (!player_.IsAlive()) {
         return;
@@ -454,14 +487,39 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
             continue;
         }
 
-        uint64_t& next_attack_tick = next_guard_attack_tick_[guard.id];
-        if (tick_number < next_attack_tick) {
+        auto [combat_state_iterator, inserted] = guard_combat_states_.try_emplace(guard.id);
+        GuardCombatState& combat_state = combat_state_iterator->second;
+        if (inserted) {
+            // Vanilla guards commonly use the M16 family in the supplied
+            // missions. Keeping the weapon in the runtime state makes cadence,
+            // spread, recoil metadata, and ammunition obey the same fixed-tick
+            // path as the player weapon instead of using a damage shortcut.
+            combat_state.weapon.SelectWeapon(4); // WEAPON_ID_M16A2
+        }
+        combat_state.weapon.Update(GameClock::TICK_INTERVAL_SECONDS, true);
+
+        BulletTrace trace;
+        const glm::vec3 aim_direction = player_.GetEyePosition() - guard_eye_position;
+        if (!combat_state.weapon.TryFire(guard_eye_position, aim_direction, trace)) {
             continue;
         }
 
-        player_.ApplyDamage(damage_per_attack);
-        next_attack_tick = tick_number + attack_interval_ticks;
-        AudioSystem::Play(SoundEffect::Pain);
+        const bool hit_player = ApplyGuardShotDamage(trace);
+        AudioSystem::Play(SoundEffect::Gunshot);
+        if (hit_player) {
+            AudioSystem::Play(SoundEffect::Pain);
+        }
+        if (hit_player || trace.hit_world_geometry) {
+            AudioSystem::Play(SoundEffect::BulletImpact);
+        }
+
+        AiStimulusEvent gunshot;
+        gunshot.type = AiEventType::Gunshot;
+        gunshot.position = guard.position;
+        gunshot.loudness = 1.0f;
+        gunshot.originator_id = guard.id;
+        gunshot.tick_timestamp = tick_number;
+        ai_.GetEventQueue().Post(gunshot);
     }
 }
 
