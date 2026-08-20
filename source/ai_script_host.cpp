@@ -335,6 +335,7 @@ void AiScriptHost::RegisterNatives() {
         [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
             if (AiGuardEntity* guard = GetCurrentGuard()) {
                 guard->requested_animation = arguments.GetInt(0);
+                ++guard->animation_request_serial;
                 guard->script_action_flags = arguments.GetInt(1);
             }
             return QvmRuntimeValue::FromInt(0);
