@@ -14,7 +14,10 @@ enum class QvmValueType {
     Int = 1,
     Real = 2,
     String = 3,
-    Object = 4
+    Object = 4,
+    Address = 5,
+    Identifier = 6,
+    Symbol = 7
 };
 
 struct QvmRuntimeValue {
@@ -53,11 +56,60 @@ struct QvmRuntimeValue {
         v.obj_ptr = ptr;
         return v;
     }
+
+    static QvmRuntimeValue FromAddress(int32_t address) {
+        QvmRuntimeValue value;
+        value.type = QvmValueType::Address;
+        value.int_val = address;
+        return value;
+    }
+
+    static QvmRuntimeValue FromIdentifier(const std::string& identifier) {
+        QvmRuntimeValue value;
+        value.type = QvmValueType::Identifier;
+        value.str_val = identifier;
+        return value;
+    }
+
+    static QvmRuntimeValue FromSymbol(const std::string& symbol_name) {
+        QvmRuntimeValue value;
+        value.type = QvmValueType::Symbol;
+        value.str_val = symbol_name;
+        return value;
+    }
 };
 
 class QvmExecutionContext;
 
+class QvmNativeCallArguments {
+public:
+    QvmNativeCallArguments(
+        QvmExecutionContext& execution_context,
+        const std::vector<uint32_t>& argument_addresses);
+
+    size_t Count() const { return argument_addresses_.size(); }
+    bool TryGetInt(size_t argument_index, int32_t& out_value) const;
+    bool TryGetReal(size_t argument_index, double& out_value) const;
+    bool TryGetString(size_t argument_index, std::string& out_value) const;
+
+    int32_t GetInt(size_t argument_index) const;
+    double GetReal(size_t argument_index) const;
+    std::string GetString(size_t argument_index) const;
+
+private:
+    bool TryGetArgument(
+        size_t argument_index,
+        QvmValueType requested_type,
+        QvmRuntimeValue& out_value) const;
+
+    QvmExecutionContext& execution_context_;
+    const std::vector<uint32_t>& argument_addresses_;
+};
+
 using QvmNativeFn = std::function<QvmRuntimeValue(QvmExecutionContext& ctx, const std::vector<QvmRuntimeValue>& args)>;
+using QvmDeferredNativeFn = std::function<QvmRuntimeValue(
+    QvmExecutionContext& ctx,
+    const QvmNativeCallArguments& args)>;
 
 class QvmNativeRegistry {
 public:
@@ -67,8 +119,38 @@ public:
     void RegisterConstant(uint32_t symbol_id, const std::string& name, int32_t val);
     void RegisterRealConstant(uint32_t symbol_id, const std::string& name, double val);
 
+    void RegisterFunctionByName(
+        const std::string& name,
+        QvmNativeFn fn,
+        QvmValueType return_type = QvmValueType::Int);
+    void RegisterDeferredFunctionByName(
+        const std::string& name,
+        QvmDeferredNativeFn fn,
+        QvmValueType return_type = QvmValueType::Int);
+    void RegisterConstantByName(const std::string& name, int32_t val);
+    void RegisterRealConstantByName(const std::string& name, double val);
+    void RegisterVariableByName(
+        const std::string& name,
+        const QvmRuntimeValue& initial_value);
+
     bool TryExecute(uint32_t symbol_id, QvmExecutionContext& ctx, const std::vector<QvmRuntimeValue>& args, QvmRuntimeValue& out_result) const;
+    bool TryExecuteByName(
+        const std::string& name,
+        QvmExecutionContext& ctx,
+        const std::vector<QvmRuntimeValue>& args,
+        QvmRuntimeValue& out_result) const;
+    bool TryExecuteDeferredByName(
+        const std::string& name,
+        QvmExecutionContext& ctx,
+        const std::vector<uint32_t>& argument_addresses,
+        QvmRuntimeValue& out_result) const;
     bool TryGetConstant(uint32_t symbol_id, QvmRuntimeValue& out_val) const;
+    bool TryGetValueByName(const std::string& name, QvmRuntimeValue& out_value) const;
+    bool TrySetValueByName(
+        const std::string& name,
+        const QvmRuntimeValue& value,
+        QvmRuntimeValue& out_value);
+    QvmValueType GetReturnTypeByName(const std::string& name) const;
 
     const std::string& GetSymbolName(uint32_t symbol_id) const;
 
@@ -76,12 +158,19 @@ private:
     struct SymbolEntry {
         std::string name;
         QvmNativeFn function;
+        QvmDeferredNativeFn deferred_function;
         QvmRuntimeValue constant_value;
+        QvmRuntimeValue variable_value;
+        QvmValueType return_type = QvmValueType::Int;
         bool is_function = false;
         bool is_constant = false;
+        bool is_variable = false;
     };
 
     std::unordered_map<uint32_t, SymbolEntry> symbols_;
+    std::unordered_map<std::string, uint32_t> symbol_ids_by_name_;
+    uint32_t next_dynamic_symbol_id_ = 0x80000000U;
+    uint32_t GetOrCreateSymbolId(const std::string& name);
     static const std::string empty_name_;
 };
 

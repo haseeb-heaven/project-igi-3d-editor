@@ -207,6 +207,11 @@ QVMFile QVM_Parse(const std::string& filepath) {
                 }
                 uint32_t count = ReadU32(code + pos);
                 instr.operand = count;
+                if (count > static_cast<uint32_t>(INT32_MAX)) {
+                    qvm.error = "CALL argument count exceeds signed range";
+                    return qvm;
+                }
+                instr.signed_operand = static_cast<int32_t>(count);
                 pos += 4;
 
                 if (pos + count * 4 > code_size) {

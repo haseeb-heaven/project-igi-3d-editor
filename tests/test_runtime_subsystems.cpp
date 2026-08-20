@@ -213,6 +213,92 @@ TEST(RuntimeQvmTest, StopsDeterministicallyAtInstructionBudgetAndCanReset) {
     EXPECT_EQ(context->GetStepCount(), 0U);
 }
 
+TEST(RuntimeQvmTest, ExecutesRetailLoopArithmeticAndDeferredNativeArguments) {
+    QvmNativeRegistry registry;
+    int native_evaluation_count = 0;
+    registry.RegisterDeferredFunctionByName(
+        "RecordValue",
+        [&native_evaluation_count](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
+            ++native_evaluation_count;
+            return QvmRuntimeValue::FromInt(arguments.GetInt(0) + 1);
+        });
+
+    QVMFile parsed_file;
+    parsed_file.valid = true;
+    parsed_file.identifiers = {"RecordValue"};
+
+    QVMInstruction push_symbol{};
+    push_symbol.type = QVMOpType::PUSHIIB;
+    push_symbol.operand = 0;
+    push_symbol.address = 0;
+    push_symbol.size = 2;
+
+    QVMInstruction call{};
+    call.type = QVMOpType::CALL;
+    call.operand = 1;
+    call.signed_operand = 1;
+    call.call_targets = {16};
+    call.address = 2;
+    call.size = 9;
+
+    QVMInstruction skip_arguments{};
+    skip_arguments.type = QVMOpType::BRA;
+    skip_arguments.operand = 5;
+    skip_arguments.signed_operand = 5;
+    skip_arguments.address = 11;
+    skip_arguments.size = 5;
+
+    QVMInstruction argument_value{};
+    argument_value.type = QVMOpType::PUSHB;
+    argument_value.operand = 7;
+    argument_value.signed_operand = 7;
+    argument_value.address = 16;
+    argument_value.size = 2;
+
+    QVMInstruction argument_one{};
+    argument_one.type = QVMOpType::PUSH1;
+    argument_one.address = 18;
+    argument_one.size = 1;
+
+    QVMInstruction argument_add{};
+    argument_add.type = QVMOpType::ADD;
+    argument_add.address = 19;
+    argument_add.size = 1;
+
+    QVMInstruction argument_end{};
+    argument_end.type = QVMOpType::BRK;
+    argument_end.address = 20;
+    argument_end.size = 1;
+
+    QVMInstruction program_end{};
+    program_end.type = QVMOpType::BRK;
+    program_end.address = 21;
+    program_end.size = 1;
+
+    parsed_file.instructions = {
+        push_symbol,
+        call,
+        skip_arguments,
+        argument_value,
+        argument_one,
+        argument_add,
+        argument_end,
+        program_end,
+    };
+
+    QvmInterpreter interpreter(registry);
+    QvmProgram program;
+    ASSERT_TRUE(interpreter.LoadProgram(parsed_file, program))
+        << interpreter.GetLastError();
+    ASSERT_TRUE(program.uses_loop_85_instruction_set);
+
+    auto context = interpreter.CreateContext(program);
+    ASSERT_TRUE(context->Run()) << context->GetLastError();
+    ASSERT_EQ(context->StackSize(), 1U);
+    EXPECT_EQ(context->Pop().int_val, 9);
+    EXPECT_EQ(native_evaluation_count, 1);
+}
+
 // 3. Task Tree & Messaging Tests
 TEST(RuntimeTaskTreeTest, LifecycleAndMessaging) {
     TaskTree tree;

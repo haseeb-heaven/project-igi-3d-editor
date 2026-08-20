@@ -141,6 +141,8 @@ TEST(QvmParserTest, DecodesRetailInlineAndSignedOperands) {
         0x0B, 'G', 'O', 'S', 't', 'a', 'r', 't', 0x00, // PUSHI
         0x03, 0xFF,                                     // PUSHB -1
         0x04, 0xFF, 0xFF,                               // PUSHW -1
+        0x18, 0x01, 0x00, 0x00, 0x00,                  // CALL with one argument
+        0x00, 0x00, 0x00, 0x00,                         // argument code address
         0x14, 0xFB, 0xFF, 0xFF, 0xFF,                   // BRA -5
         0x00                                              // BRK
     };
@@ -157,14 +159,16 @@ TEST(QvmParserTest, DecodesRetailInlineAndSignedOperands) {
     std::remove(path.c_str());
 
     ASSERT_TRUE(qvm.valid) << qvm.error;
-    ASSERT_EQ(qvm.instructions.size(), 6U);
+    ASSERT_EQ(qvm.instructions.size(), 7U);
     EXPECT_EQ(qvm.instructions[0].type, QVMOpType::PUSHS);
     EXPECT_EQ(qvm.instructions[0].inline_text, "vanilla");
     EXPECT_EQ(qvm.instructions[1].type, QVMOpType::PUSHI);
     EXPECT_EQ(qvm.instructions[1].inline_text, "GOStart");
     EXPECT_EQ(qvm.instructions[2].signed_operand, -1);
     EXPECT_EQ(qvm.instructions[3].signed_operand, -1);
-    EXPECT_EQ(qvm.instructions[4].signed_operand, -5);
+    EXPECT_EQ(qvm.instructions[4].type, QVMOpType::CALL);
+    EXPECT_EQ(qvm.instructions[4].signed_operand, 1);
+    EXPECT_EQ(qvm.instructions[5].signed_operand, -5);
 }
 
 TEST(QvmRoundTripTest, CompileEmptyProgram) {
