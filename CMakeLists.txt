@@ -308,6 +308,7 @@ target_sources(igi_tests PRIVATE
     source/player_controller.cpp
     source/weapon_system.cpp
     source/ai_events.cpp
+    source/ai_script_host.cpp
     source/ai_system.cpp
     source/level_flow.cpp
     source/runtime/runtime_world.cpp
