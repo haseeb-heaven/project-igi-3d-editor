@@ -874,19 +874,25 @@ bool App::GetShowHUD() const {
 }
 
 void App::SetShowHUD(bool show) {
-	show_hud_ = true;
+	show_hud_ = show;
 }
 
 void App::ToggleEditMode() {
-    // Logic removed as requested
+	// Preserve the historical API used by editor commands while making the
+	// gameplay session the single owner of the mode transition.
+	ToggleGamePlayMode();
 }
 
 bool App::GetEditMode() const {
-	return true; // Always true
+	return !in_game_mode_;
 }
 
 void App::SetEditMode(bool enabled) {
-    // Logic removed as requested
+	const bool currently_in_editor = !in_game_mode_;
+	if (enabled == currently_in_editor) {
+		return;
+	}
+	ToggleGamePlayMode();
 }
 
 void App::SetTerrainEditEnabled(bool enabled) {
@@ -937,8 +943,13 @@ LevelObjects& App::GetActiveRenderLevelObjects() {
 }
 
 void App::ToggleGamePlayMode() {
-	in_game_mode_ = !in_game_mode_;
-	if (in_game_mode_) {
+	const bool entering_gameplay = !in_game_mode_;
+	if (entering_gameplay) {
+		if (level_.GetLevelNo() <= 0) {
+			status_message_ = "Cannot enter Game Play: load a level first";
+			return;
+		}
+
 		igi::EditorSnapshot snap;
 		snap.camera_pos = viewer_.pos_;
 		snap.camera_yaw = viewer_.yaw_;
@@ -1015,7 +1026,12 @@ void App::ToggleGamePlayMode() {
 			spawn_pos.z -= igi::PlayerController::STANDING_EYE_HEIGHT;
 		}
 
-		gameplay_host_.OpenGameplay(snap);
+		if (!gameplay_host_.OpenGameplay(snap)) {
+			runtime_level_objects_.reset();
+			status_message_ = "Cannot enter Game Play: runtime session is already active";
+			return;
+		}
+		in_game_mode_ = true;
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
@@ -1062,7 +1078,11 @@ void App::ToggleGamePlayMode() {
 		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
-		gameplay_host_.CloseGameplay(snap);
+		if (!gameplay_host_.CloseGameplay(snap)) {
+			status_message_ = "Cannot leave Game Play: runtime session is not active";
+			return;
+		}
+		in_game_mode_ = false;
 		runtime_level_objects_.reset();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;

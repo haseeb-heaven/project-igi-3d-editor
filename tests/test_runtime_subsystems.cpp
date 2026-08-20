@@ -692,3 +692,33 @@ TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     EXPECT_FALSE(restored.was_noclip_mode);
     EXPECT_FALSE(restored.was_hud_visible);
 }
+
+TEST(RuntimeHostTest, PausingFreezesTicksAndRepeatedSessionsStayIsolated) {
+    GameplayHost host;
+    host.Initialize(FlatTerrain);
+
+    EditorSnapshot snapshot;
+    ASSERT_TRUE(host.OpenGameplay(snapshot));
+    EXPECT_FALSE(host.OpenGameplay(snapshot));
+
+    host.GetInputRouter().OnKeyboardKey('W', true);
+    host.Update(100);
+    const glm::vec3 position_after_running_tick = host.GetWorld().GetPlayer().GetPosition();
+
+    host.SetPaused(true);
+    host.Update(1000);
+    EXPECT_EQ(host.GetWorld().GetPlayer().GetPosition(), position_after_running_tick);
+
+    host.SetPaused(false);
+    host.Update(1100);
+    EXPECT_NE(host.GetWorld().GetPlayer().GetPosition(), position_after_running_tick);
+
+    EditorSnapshot restored;
+    ASSERT_TRUE(host.CloseGameplay(restored));
+    EXPECT_EQ(host.GetInputRouter().GetFocus(), WindowFocusTarget::EditorWindow);
+    EXPECT_FALSE(host.IsPaused());
+
+    ASSERT_TRUE(host.OpenGameplay(snapshot));
+    EXPECT_EQ(host.GetWorld().GetPlayer().GetPosition(), glm::vec3(0.0f));
+    ASSERT_TRUE(host.CloseGameplay(restored));
+}
