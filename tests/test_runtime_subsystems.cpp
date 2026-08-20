@@ -318,6 +318,7 @@ TEST(RuntimeWeaponTest, FireAndRecoilCooldown) {
     bool fired = weapons.TryFire(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), trace);
     EXPECT_TRUE(fired);
     EXPECT_TRUE(trace.hit);
+    EXPECT_GT(trace.distance, PlayerController::WORLD_METER);
     EXPECT_EQ(weapons.GetCurrentClipAmmo(), 29);
 
     // Rapid second shot must be throttled by RPM cooldown
@@ -358,6 +359,25 @@ TEST(RuntimeAiTest, VisionConeDirectAndPeripheral) {
     EXPECT_EQ(res3, AiVisionResult::Peripheral);
 }
 
+TEST(RuntimeAiTest, PatrolFallbackMovesGuardsWithoutScriptData) {
+    AiSystem ai;
+    AiGuardEntity guard;
+    guard.id = 7;
+    guard.state = AiGuardState::Patrol;
+    guard.position = glm::vec3(0.0f, 0.0f, 0.0f);
+    guard.waypoints = {
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 8192.0f, 0.0f),
+    };
+    ai.RegisterGuard(guard);
+
+    ai.Update(GameClock::TICK_INTERVAL_SECONDS, glm::vec3(100000.0f), false);
+    ai.Update(GameClock::TICK_INTERVAL_SECONDS, glm::vec3(100000.0f), false);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_GT(ai.GetGuards()[0].position.y, 0.0f);
+}
+
 // 7. Mission Flow & Objective Tests
 TEST(RuntimeLevelFlowTest, ObjectiveSuccessFlow) {
     LevelFlow flow;
@@ -373,6 +393,48 @@ TEST(RuntimeLevelFlowTest, ObjectiveSuccessFlow) {
     flow.SetObjectiveState(1, ObjectiveState::Completed);
     flow.Update(true, true); // Player alive in extraction
     EXPECT_EQ(flow.GetStatus(), MissionStatus::Success);
+}
+
+TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+    world.GetPlayer().SetOrientation(0.0f, 0.0f);
+
+    AiGuardEntity guard;
+    guard.id = 17;
+    guard.position = glm::vec3(0.0f, 4096.0f, 0.0f);
+    guard.yaw = 180.0f;
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    PlayerInputCmd input;
+    input.fire = true;
+    world.UpdateSimulationTick(0, input);
+
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_LT(world.GetAi().GetGuards()[0].health, 100.0f);
+}
+
+TEST(RuntimeWorldTest, CombatGuardDamagesPlayerAtFixedCadence) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().ApplyTuning(100.0f, 0.0f);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    AiGuardEntity guard;
+    guard.id = 23;
+    guard.position = glm::vec3(0.0f, 4096.0f, 0.0f);
+    guard.yaw = 180.0f;
+    guard.state = AiGuardState::Combat;
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    const float initial_health = world.GetPlayer().GetHealth();
+    PlayerInputCmd input;
+    world.UpdateSimulationTick(30, input);
+
+    EXPECT_LT(world.GetPlayer().GetHealth(), initial_health);
 }
 
 // 8. Twin-Window & Editor Snapshot Tests

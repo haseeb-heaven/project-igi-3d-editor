@@ -18,6 +18,7 @@ struct WeaponDefinition {
     float recoil_yaw = 0.5f;   // degrees
     float base_spread = 0.02f; // radians
     float damage = 35.0f;
+    float effective_range_meters = 500.0f;
     bool is_automatic = true;
 };
 

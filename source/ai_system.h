@@ -112,6 +112,7 @@ public:
     void ApplyDamage(uint32_t guard_id, float damage);
 
     AiEventQueue& GetEventQueue() { return event_queue_; }
+    std::vector<AiGuardEntity>& GetGuards() { return guards_; }
     const std::vector<AiGuardEntity>& GetGuards() const { return guards_; }
 
 private:

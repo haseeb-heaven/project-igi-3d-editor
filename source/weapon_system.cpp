@@ -4,6 +4,12 @@
 
 namespace igi {
 
+namespace {
+
+constexpr float kWorldUnitsPerMeter = 4096.0f;
+
+} // namespace
+
 WeaponSystem::WeaponSystem() {
     SelectWeapon(0);
 }
@@ -105,7 +111,7 @@ bool WeaponSystem::TryFire(const glm::vec3& muzzle_pos, const glm::vec3& aim_dir
     out_trace.direction = aim_dir;
     out_trace.damage = active_weapon_.damage;
     out_trace.hit = true;
-    out_trace.distance = 500.0f; // Max effective range in meters
+    out_trace.distance = active_weapon_.effective_range_meters * kWorldUnitsPerMeter;
     out_trace.hit_position = muzzle_pos + aim_dir * out_trace.distance;
 
     return true;

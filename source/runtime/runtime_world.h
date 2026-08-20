@@ -3,6 +3,7 @@
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 #include <string>
 #include "../game_clock.h"
@@ -48,6 +49,10 @@ public:
     bool IsMissionActive() const { return level_flow_.GetStatus() == MissionStatus::InProgress; }
 
 private:
+    bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
+    void ApplyGuardCombatDamage(uint64_t tick_number);
+    void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
+
     float (*get_terrain_z_)(float x, float y) = nullptr;
     bool (*check_collision_)(float x, float y, float z) = nullptr;
 
@@ -57,6 +62,8 @@ private:
     LevelFlow level_flow_;
     TaskTree task_tree_;
     QvmNativeRegistry qvm_registry_;
+    std::unordered_map<uint32_t, uint64_t> next_guard_attack_tick_;
+    double footstep_timer_seconds_ = 0.0;
 };
 
 } // namespace igi
