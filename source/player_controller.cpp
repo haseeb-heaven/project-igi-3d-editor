@@ -38,6 +38,7 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
     armor_ = maximum_armor_;
     is_grounded_ = false;
     stance_ = PlayerStanceState::Standing;
+    maximum_downward_velocity_ = 0.0f;
     slope_slide_velocity_ = glm::vec3(0.0f);
 }
 
@@ -64,6 +65,7 @@ void PlayerController::ApplyTuning(const Tuning& tuning) {
     armor_ = maximum_armor_;
     current_eye_height_ = standing_eye_height_units_;
     stance_ = PlayerStanceState::Standing;
+    maximum_downward_velocity_ = 0.0f;
 }
 
 void PlayerController::SetCollisionQuery(SolidGeometryQuery solid_geometry_query) {
@@ -167,6 +169,16 @@ void PlayerController::UpdateEyeHeight(bool crouching) {
     current_eye_height_ += eye_height_delta;
 }
 
+void PlayerController::ApplyLandingImpactDamage(float maximum_downward_velocity) {
+    const float impact_speed = std::max(0.0f, -maximum_downward_velocity);
+    const float excess_speed = impact_speed - SAFE_LANDING_SPEED_UNITS_PER_TICK;
+    if (excess_speed <= 0.0f) {
+        return;
+    }
+
+    ApplyDamage(excess_speed * FALL_DAMAGE_PER_EXCESS_SPEED_UNIT);
+}
+
 void PlayerController::Tick(
     const PlayerInputCmd& input_command,
     PlayerCollision::TerrainHeightQuery terrain_height_query,
@@ -186,6 +198,14 @@ void PlayerController::Tick(
                 sample_position.y,
                 sample_position.z);
         });
+    }
+
+    const bool was_grounded = is_grounded_;
+    const float vertical_velocity_before_tick = velocity_.z;
+    if (!was_grounded && vertical_velocity_before_tick < 0.0f) {
+        maximum_downward_velocity_ = std::min(
+            maximum_downward_velocity_,
+            vertical_velocity_before_tick);
     }
 
     const bool should_crouch = ResolveRequestedStance(input_command.crouch);
@@ -236,11 +256,21 @@ void PlayerController::Tick(
         terrain_height_query,
         is_grounded_,
         should_crouch);
+    if (velocity_.z < 0.0f) {
+        maximum_downward_velocity_ = std::min(
+            maximum_downward_velocity_,
+            velocity_.z);
+    }
+
     if (velocity_.z <= 0.0f && post_move_ground_query.is_grounded) {
         position_.z = post_move_ground_query.ground_height;
         velocity_.z = 0.0f;
         is_grounded_ = true;
         stance_ = should_crouch ? PlayerStanceState::Crouching : PlayerStanceState::Standing;
+        if (!was_grounded) {
+            ApplyLandingImpactDamage(maximum_downward_velocity_);
+        }
+        maximum_downward_velocity_ = 0.0f;
     } else {
         is_grounded_ = false;
         stance_ = PlayerStanceState::Airborne;

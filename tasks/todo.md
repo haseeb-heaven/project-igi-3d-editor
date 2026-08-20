@@ -30,9 +30,10 @@
       the editor retains its last authoring frame during active gameplay.
 - [ ] Add explicit apply/restart semantics for editor changes made while a
       gameplay session exists; never silently mutate authoring data.
-- [ ] Port/verify remaining selected-vanilla-fixture traversal (fall damage,
-      ladder/root-motion where exercised), authored mission patrol routes, and
-      non-demo extraction conditions from OpenIGI/retail evidence.
+- [ ] Port/verify remaining selected-vanilla-fixture traversal (replace the
+      inferred fall-damage threshold, ladder/root-motion where exercised),
+      authored mission patrol routes, and non-demo extraction conditions from
+      OpenIGI/retail evidence.
 - [ ] Final Windows verification and evidence/limitations report.
 
 ## Current evidence boundary
@@ -49,6 +50,6 @@
   authoring frame during active gameplay. Full runtime renderer ownership is
   not implemented yet.
 - `inferred` or `placeholder`: some root-motion speeds, fallback guard patrol,
-  demo extraction placement, and the normalized QVM seam are not proof of full
-  retail IGI1 behavior. Actual Windows execution against the supplied vanilla
-  assets remains a required verification step.
+  fall-damage threshold, demo extraction placement, and the normalized QVM seam
+  are not proof of full retail IGI1 behavior. Actual Windows execution against
+  the supplied vanilla assets remains a required verification step.

@@ -547,6 +547,39 @@ TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     EXPECT_FALSE(std::isnan(test_pos.x) || std::isnan(test_pos.y));
 }
 
+TEST(RuntimePlayerTest, LandingFromAHighFallAppliesDamage) {
+    PlayerController player;
+    player.Reset(glm::vec3(0.0f, 0.0f, 12.0f * PlayerController::WORLD_METER));
+
+    PlayerInputCmd no_input;
+    for (int tick = 0; tick < 240 && !player.IsGrounded(); ++tick) {
+        player.Tick(no_input, FlatTerrain);
+    }
+
+    ASSERT_TRUE(player.IsGrounded());
+    EXPECT_LT(player.GetHealth(), player.GetMaximumHealth());
+}
+
+TEST(RuntimePlayerTest, NormalJumpLandingDoesNotApplyFallDamage) {
+    PlayerController player;
+    player.Reset(glm::vec3(0.0f));
+
+    PlayerInputCmd settle_input;
+    player.Tick(settle_input, FlatTerrain);
+
+    PlayerInputCmd jump_input;
+    jump_input.jump = true;
+    player.Tick(jump_input, FlatTerrain);
+
+    PlayerInputCmd no_input;
+    for (int tick = 0; tick < 120 && !player.IsGrounded(); ++tick) {
+        player.Tick(no_input, FlatTerrain);
+    }
+
+    ASSERT_TRUE(player.IsGrounded());
+    EXPECT_FLOAT_EQ(player.GetHealth(), player.GetMaximumHealth());
+}
+
 TEST(RuntimeCollisionTest, GroundProbeHonorsStepBudgetAndSlopeNormal) {
     PlayerCollision collision;
     auto sloped_terrain = [](float x, float) -> float { return x * 0.25f; };

@@ -95,9 +95,10 @@ parity claims remain gated on IGI1 evidence.
 
 ### Phase 6: Fidelity and fixture coverage
 
-- [ ] Port the remaining OpenIGI-referenced locomotion transitions, falling
-  damage, ladder/traversal hooks, and root-motion seams where the selected
-  vanilla fixture exercises them.
+- [ ] Replace the inferred landing-impact threshold with recovered vanilla
+  evidence, then port remaining OpenIGI-referenced locomotion transitions,
+  ladder/traversal hooks, and root-motion seams where the selected vanilla
+  fixture exercises them.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
