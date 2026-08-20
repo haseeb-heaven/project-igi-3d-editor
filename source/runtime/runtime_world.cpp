@@ -18,8 +18,14 @@ void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*c
                 position.y,
                 position.z + 0.9f * PlayerController::WORLD_METER);
         });
+        ai_.SetLineOfSightQuery([this](
+            const glm::vec3& line_origin,
+            const glm::vec3& line_target) {
+            return !IsWorldLineBlocked(line_origin, line_target);
+        });
     } else {
         ai_.SetMovementCollisionQuery({});
+        ai_.SetLineOfSightQuery({});
     }
     Reset();
 }

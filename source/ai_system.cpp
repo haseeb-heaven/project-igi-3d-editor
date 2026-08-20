@@ -30,6 +30,10 @@ void AiSystem::SetMovementCollisionQuery(MovementCollisionQuery movement_collisi
     movement_collision_query_ = std::move(movement_collision_query);
 }
 
+void AiSystem::SetLineOfSightQuery(LineOfSightQuery line_of_sight_query) {
+    line_of_sight_query_ = std::move(line_of_sight_query);
+}
+
 void AiSystem::ApplyDamage(uint32_t guard_id, float damage) {
     auto* guard = FindGuard(guard_id);
     if (!guard || guard->state == AiGuardState::Dead) return;
@@ -411,6 +415,15 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
         // 2. Process vision
         if (player_alive) {
             AiVisionResult vis = CheckVision(guard, player_pos, guard.state == AiGuardState::Combat);
+            if (vis != AiVisionResult::None && line_of_sight_query_) {
+                const glm::vec3 guard_eye_position = guard.position + glm::vec3(
+                    0.0f,
+                    0.0f,
+                    1.7f * 4096.0f);
+                if (!line_of_sight_query_(guard_eye_position, player_pos)) {
+                    vis = AiVisionResult::None;
+                }
+            }
             if (vis == AiVisionResult::Primary) {
                 guard.state = AiGuardState::Combat;
                 guard.suspicion = 1.0f;

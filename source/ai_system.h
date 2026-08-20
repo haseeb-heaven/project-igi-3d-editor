@@ -2,6 +2,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <vector>
 #include <memory>
 #include <string>
@@ -100,6 +101,9 @@ struct AiGuardEntity {
 class AiSystem {
 public:
     using MovementCollisionQuery = std::function<bool(const glm::vec3& position)>;
+    using LineOfSightQuery = std::function<bool(
+        const glm::vec3& line_origin,
+        const glm::vec3& line_target)>;
 
     AiSystem();
 
@@ -107,6 +111,7 @@ public:
     void RegisterGuard(const AiGuardEntity& guard);
     AiGuardEntity* FindGuard(uint32_t guard_id);
     void SetMovementCollisionQuery(MovementCollisionQuery movement_collision_query);
+    void SetLineOfSightQuery(LineOfSightQuery line_of_sight_query);
 
     // Fixed-step simulation tick
     void Update(double delta_seconds, const glm::vec3& player_pos, bool player_alive);
@@ -123,6 +128,7 @@ private:
     std::vector<AiGuardEntity> guards_;
     AiEventQueue event_queue_;
     MovementCollisionQuery movement_collision_query_;
+    LineOfSightQuery line_of_sight_query_;
     uint64_t tick_ = 0;  // 30 Hz simulation tick counter (monotonic across Update calls)
 };
 
