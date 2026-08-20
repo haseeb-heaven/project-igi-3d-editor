@@ -949,6 +949,13 @@ bool App::GetTerrainEditEnabled() const {
 
 void App::TogglePauseMenu() {
 	pause_mode_ = !pause_mode_;
+	// Keep the application-level pause menu and the fixed-step scheduler on the
+	// same state boundary. Frame() intentionally skips simulation while this menu
+	// is visible, but the scheduler must also reject the wall-clock gap so resume
+	// cannot replay stale input through its catch-up budget.
+	if (in_game_mode_) {
+		gameplay_host_.SetPaused(pause_mode_);
+	}
 	// cursor_visible_ stays TRUE always — camera lock is handled dynamically in Input_OnMotion.
 	// Hiding the cursor permanently caused the "mouse stuck" bug after resuming.
 	window_state_.cursor_visible_ = true;
