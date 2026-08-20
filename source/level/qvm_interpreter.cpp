@@ -1,6 +1,44 @@
 // qvm_interpreter.cpp - Bounded QVM bytecode runtime interpreter implementation
 #include "qvm_interpreter.h"
+#include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <exception>
 #include <sstream>
+
+namespace {
+
+bool ReadLittleEndianUint32(const std::vector<uint8_t>& bytecode, size_t& offset, uint32_t& value) {
+    if (bytecode.size() - offset < sizeof(uint32_t)) {
+        return false;
+    }
+
+    value = static_cast<uint32_t>(bytecode[offset])
+        | (static_cast<uint32_t>(bytecode[offset + 1]) << 8U)
+        | (static_cast<uint32_t>(bytecode[offset + 2]) << 16U)
+        | (static_cast<uint32_t>(bytecode[offset + 3]) << 24U);
+    offset += sizeof(uint32_t);
+    return true;
+}
+
+bool ReadLittleEndianUint64(const std::vector<uint8_t>& bytecode, size_t& offset, uint64_t& value) {
+    if (bytecode.size() - offset < sizeof(uint64_t)) {
+        return false;
+    }
+
+    value = static_cast<uint64_t>(bytecode[offset])
+        | (static_cast<uint64_t>(bytecode[offset + 1]) << 8U)
+        | (static_cast<uint64_t>(bytecode[offset + 2]) << 16U)
+        | (static_cast<uint64_t>(bytecode[offset + 3]) << 24U)
+        | (static_cast<uint64_t>(bytecode[offset + 4]) << 32U)
+        | (static_cast<uint64_t>(bytecode[offset + 5]) << 40U)
+        | (static_cast<uint64_t>(bytecode[offset + 6]) << 48U)
+        | (static_cast<uint64_t>(bytecode[offset + 7]) << 56U);
+    offset += sizeof(uint64_t);
+    return true;
+}
+
+} // namespace
 
 namespace igi {
 
@@ -35,14 +73,23 @@ void QvmExecutionContext::Push(const QvmRuntimeValue& val) {
     stack_.push_back(val);
 }
 
-QvmRuntimeValue QvmExecutionContext::Pop() {
+bool QvmExecutionContext::TryPop(QvmRuntimeValue& out_value) {
     if (stack_.empty()) {
         SetError("Stack underflow in QVM execution context");
+        return false;
+    }
+
+    out_value = stack_.back();
+    stack_.pop_back();
+    return true;
+}
+
+QvmRuntimeValue QvmExecutionContext::Pop() {
+    QvmRuntimeValue value;
+    if (!TryPop(value)) {
         return QvmRuntimeValue();
     }
-    QvmRuntimeValue top = stack_.back();
-    stack_.pop_back();
-    return top;
+    return value;
 }
 
 const QvmRuntimeValue& QvmExecutionContext::Peek(size_t depth) const {
@@ -67,8 +114,12 @@ bool QvmExecutionContext::Run() {
 }
 
 bool QvmExecutionContext::Step() {
-    if (halted_ || errored_ || pc_ >= program_.instructions.size()) {
-        halted_ = true;
+    if (halted_ || errored_) {
+        return false;
+    }
+
+    if (pc_ >= program_.instructions.size()) {
+        SetError("Instruction pointer is outside the QVM program");
         return false;
     }
 
@@ -92,7 +143,10 @@ bool QvmExecutionContext::Step() {
             break;
 
         case 0x04: // POP
-            Pop();
+            {
+                QvmRuntimeValue discarded_value;
+                TryPop(discarded_value);
+            }
             break;
 
         case 0x05: // DUP
@@ -105,48 +159,67 @@ bool QvmExecutionContext::Step() {
 
         case 0x10: // ADD_INT
             {
-                QvmRuntimeValue b = Pop();
-                QvmRuntimeValue a = Pop();
-                Push(QvmRuntimeValue::FromInt(a.int_val + b.int_val));
+                QvmRuntimeValue right_value;
+                QvmRuntimeValue left_value;
+                if (TryPop(right_value) && TryPop(left_value)) {
+                    Push(QvmRuntimeValue::FromInt(left_value.int_val + right_value.int_val));
+                }
             }
             break;
 
         case 0x11: // SUB_INT
             {
-                QvmRuntimeValue b = Pop();
-                QvmRuntimeValue a = Pop();
-                Push(QvmRuntimeValue::FromInt(a.int_val - b.int_val));
+                QvmRuntimeValue right_value;
+                QvmRuntimeValue left_value;
+                if (TryPop(right_value) && TryPop(left_value)) {
+                    Push(QvmRuntimeValue::FromInt(left_value.int_val - right_value.int_val));
+                }
             }
             break;
 
         case 0x12: // MUL_INT
             {
-                QvmRuntimeValue b = Pop();
-                QvmRuntimeValue a = Pop();
-                Push(QvmRuntimeValue::FromInt(a.int_val * b.int_val));
+                QvmRuntimeValue right_value;
+                QvmRuntimeValue left_value;
+                if (TryPop(right_value) && TryPop(left_value)) {
+                    Push(QvmRuntimeValue::FromInt(left_value.int_val * right_value.int_val));
+                }
             }
             break;
 
         case 0x13: // DIV_INT
             {
-                QvmRuntimeValue b = Pop();
-                QvmRuntimeValue a = Pop();
-                if (b.int_val == 0) {
-                    SetError("Divide by zero in QVM");
-                } else {
-                    Push(QvmRuntimeValue::FromInt(a.int_val / b.int_val));
+                QvmRuntimeValue right_value;
+                QvmRuntimeValue left_value;
+                if (TryPop(right_value) && TryPop(left_value)) {
+                    if (right_value.int_val == 0) {
+                        SetError("Divide by zero in QVM");
+                    } else {
+                        Push(QvmRuntimeValue::FromInt(left_value.int_val / right_value.int_val));
+                    }
                 }
             }
             break;
 
         case 0x20: // JUMP
-            pc_ = inst.operand_u32;
+            if (inst.operand_u32 >= program_.instructions.size()) {
+                SetError("QVM jump target is outside the program");
+            } else {
+                pc_ = inst.operand_u32;
+            }
             break;
 
         case 0x21: // JUMP_IF_ZERO
             {
-                QvmRuntimeValue cond = Pop();
-                if (cond.int_val == 0) {
+                QvmRuntimeValue condition_value;
+                if (!TryPop(condition_value)) {
+                    break;
+                }
+                if (condition_value.int_val == 0) {
+                    if (inst.operand_u32 >= program_.instructions.size()) {
+                        SetError("QVM conditional jump target is outside the program");
+                        break;
+                    }
                     pc_ = inst.operand_u32;
                 }
             }
@@ -155,21 +228,40 @@ bool QvmExecutionContext::Step() {
         case 0x30: // CALL_NATIVE
             {
                 uint32_t sym_id = inst.operand_u32;
-                uint32_t arg_count = inst.operand_i32;
+                if (inst.operand_i32 < 0) {
+                    SetError("QVM native call has a negative argument count");
+                    break;
+                }
+                const uint32_t arg_count = static_cast<uint32_t>(inst.operand_i32);
+                if (arg_count > stack_.size()) {
+                    SetError("QVM native call has insufficient stack arguments");
+                    break;
+                }
                 std::vector<QvmRuntimeValue> args;
                 args.reserve(arg_count);
 
                 for (uint32_t i = 0; i < arg_count; i++) {
-                    args.push_back(Pop());
+                    QvmRuntimeValue argument;
+                    if (!TryPop(argument)) {
+                        return false;
+                    }
+                    args.push_back(argument);
                 }
+                std::reverse(args.begin(), args.end());
 
                 QvmRuntimeValue result;
-                if (!registry_.TryExecute(sym_id, *this, args, result)) {
-                    std::ostringstream ss;
-                    ss << "Unknown native function ID 0x" << std::hex << sym_id;
-                    SetError(ss.str());
-                } else {
-                    Push(result);
+                try {
+                    if (!registry_.TryExecute(sym_id, *this, args, result)) {
+                        std::ostringstream ss;
+                        ss << "Unknown native function ID 0x" << std::hex << sym_id;
+                        SetError(ss.str());
+                    } else if (!errored_) {
+                        Push(result);
+                    }
+                } catch (const std::exception& exception) {
+                    SetError(std::string("QVM native function threw: ") + exception.what());
+                } catch (...) {
+                    SetError("QVM native function threw an unknown exception");
                 }
             }
             break;
@@ -194,45 +286,59 @@ QvmInterpreter::QvmInterpreter(const QvmNativeRegistry& registry)
     : registry_(registry) {}
 
 bool QvmInterpreter::LoadProgram(const std::vector<uint8_t>& bytecode, QvmProgram& out_program) {
-    if (bytecode.empty()) return false;
+    out_program = QvmProgram();
+    last_error_.clear();
 
-    out_program.raw_bytecode = bytecode;
-    out_program.instructions.clear();
-    out_program.entry_point = 0;
+    auto fail = [this](const std::string& message) {
+        last_error_ = message;
+        return false;
+    };
 
-    // Simple bytecode decoder
+    if (bytecode.empty()) {
+        return fail("QVM bytecode is empty");
+    }
+
+    std::vector<QvmInstruction> decoded_instructions;
     size_t offset = 0;
     while (offset < bytecode.size()) {
         QvmInstruction inst;
         inst.opcode = bytecode[offset++];
 
         if (inst.opcode == 0x01) { // PUSH_INT
-            if (offset + 4 <= bytecode.size()) {
-                inst.operand_i32 = *reinterpret_cast<const int32_t*>(&bytecode[offset]);
-                offset += 4;
+            uint32_t encoded_value = 0;
+            if (!ReadLittleEndianUint32(bytecode, offset, encoded_value)) {
+                return fail("truncated PUSH_INT operand in QVM bytecode");
             }
+            inst.operand_i32 = std::bit_cast<int32_t>(encoded_value);
         } else if (inst.opcode == 0x02) { // PUSH_REAL
-            if (offset + 8 <= bytecode.size()) {
-                inst.operand_f64 = *reinterpret_cast<const double*>(&bytecode[offset]);
-                offset += 8;
+            uint64_t encoded_value = 0;
+            if (!ReadLittleEndianUint64(bytecode, offset, encoded_value)) {
+                return fail("truncated PUSH_REAL operand in QVM bytecode");
             }
+            inst.operand_f64 = std::bit_cast<double>(encoded_value);
         } else if (inst.opcode == 0x20 || inst.opcode == 0x21) { // JUMP
-            if (offset + 4 <= bytecode.size()) {
-                inst.operand_u32 = *reinterpret_cast<const uint32_t*>(&bytecode[offset]);
-                offset += 4;
+            if (!ReadLittleEndianUint32(bytecode, offset, inst.operand_u32)) {
+                return fail("truncated jump operand in QVM bytecode");
             }
         } else if (inst.opcode == 0x30) { // CALL_NATIVE
-            if (offset + 8 <= bytecode.size()) {
-                inst.operand_u32 = *reinterpret_cast<const uint32_t*>(&bytecode[offset]);
-                inst.operand_i32 = *reinterpret_cast<const int32_t*>(&bytecode[offset + 4]);
-                offset += 8;
+            uint32_t argument_count = 0;
+            if (!ReadLittleEndianUint32(bytecode, offset, inst.operand_u32)
+                || !ReadLittleEndianUint32(bytecode, offset, argument_count)) {
+                return fail("truncated native-call operand in QVM bytecode");
             }
+            inst.operand_i32 = std::bit_cast<int32_t>(argument_count);
         }
 
-        out_program.instructions.push_back(inst);
+        decoded_instructions.push_back(std::move(inst));
     }
 
-    return !out_program.instructions.empty();
+    if (decoded_instructions.empty()) {
+        return fail("QVM bytecode contains no instructions");
+    }
+
+    out_program.raw_bytecode = bytecode;
+    out_program.instructions = std::move(decoded_instructions);
+    return true;
 }
 
 std::unique_ptr<QvmExecutionContext> QvmInterpreter::CreateContext(const QvmProgram& program) {

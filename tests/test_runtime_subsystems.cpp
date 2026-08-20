@@ -149,6 +149,64 @@ TEST(RuntimeQvmTest, BytecodeExecutionAndStack) {
     EXPECT_EQ(ctx->Pop().int_val, 35);
 }
 
+TEST(RuntimeQvmTest, RejectsMalformedBytecodeAndUnsafeControlFlow) {
+    QvmNativeRegistry registry;
+    QvmInterpreter interpreter(registry);
+    QvmProgram program;
+
+    EXPECT_FALSE(interpreter.LoadProgram({0x01, 0x02}, program));
+    EXPECT_NE(interpreter.GetLastError().find("truncated"), std::string::npos);
+
+    QvmProgram invalid_jump_program;
+    invalid_jump_program.instructions.push_back({0x20, 99, 0, 0.0, ""});
+    auto invalid_jump_context = interpreter.CreateContext(invalid_jump_program);
+    EXPECT_FALSE(invalid_jump_context->Run());
+    EXPECT_TRUE(invalid_jump_context->HasErrored());
+}
+
+TEST(RuntimeQvmTest, FailsOnStackUnderflowAndPreservesNativeArgumentOrder) {
+    QvmNativeRegistry registry;
+    QvmInterpreter interpreter(registry);
+    registry.RegisterFunction(0x101, "EncodePair", [](QvmExecutionContext&, const std::vector<QvmRuntimeValue>& args) {
+        if (args.size() != 2U) {
+            return QvmRuntimeValue::FromInt(-1);
+        }
+        return QvmRuntimeValue::FromInt(args[0].int_val * 10 + args[1].int_val);
+    });
+
+    QvmProgram underflow_program;
+    underflow_program.instructions.push_back({0x10, 0, 0, 0.0, ""});
+    auto underflow_context = interpreter.CreateContext(underflow_program);
+    EXPECT_FALSE(underflow_context->Run());
+    EXPECT_TRUE(underflow_context->HasErrored());
+
+    QvmProgram native_program;
+    native_program.instructions.push_back({0x01, 0, 1, 0.0, ""});
+    native_program.instructions.push_back({0x01, 0, 2, 0.0, ""});
+    native_program.instructions.push_back({0x30, 0x101, 2, 0.0, ""});
+    native_program.instructions.push_back({0xFF, 0, 0, 0.0, ""});
+    auto native_context = interpreter.CreateContext(native_program);
+    ASSERT_TRUE(native_context->Run());
+    ASSERT_EQ(native_context->StackSize(), 1U);
+    EXPECT_EQ(native_context->Pop().int_val, 12);
+}
+
+TEST(RuntimeQvmTest, StopsDeterministicallyAtInstructionBudgetAndCanReset) {
+    QvmNativeRegistry registry;
+    QvmProgram looping_program;
+    looping_program.instructions.push_back({0x20, 0, 0, 0.0, ""});
+
+    QvmInterpreter interpreter(registry);
+    auto context = interpreter.CreateContext(looping_program);
+    EXPECT_FALSE(context->Run());
+    EXPECT_TRUE(context->HasErrored());
+    EXPECT_EQ(context->GetStepCount(), QvmExecutionContext::MAX_INSTRUCTION_STEPS);
+
+    context->Reset();
+    EXPECT_FALSE(context->HasErrored());
+    EXPECT_EQ(context->GetStepCount(), 0U);
+}
+
 // 3. Task Tree & Messaging Tests
 TEST(RuntimeTaskTreeTest, LifecycleAndMessaging) {
     TaskTree tree;

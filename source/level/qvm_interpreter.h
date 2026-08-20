@@ -56,6 +56,8 @@ public:
     void SetError(const std::string& msg);
 
 private:
+    bool TryPop(QvmRuntimeValue& out_value);
+
     struct CallFrame {
         uint32_t return_pc = 0;
         size_t stack_base = 0;
@@ -81,8 +83,11 @@ public:
     bool LoadProgram(const std::vector<uint8_t>& bytecode, QvmProgram& out_program);
     std::unique_ptr<QvmExecutionContext> CreateContext(const QvmProgram& program);
 
+    const std::string& GetLastError() const { return last_error_; }
+
 private:
     const QvmNativeRegistry& registry_;
+    std::string last_error_;
 };
 
 } // namespace igi
