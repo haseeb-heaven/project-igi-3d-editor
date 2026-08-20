@@ -16,6 +16,7 @@
 #include "../source/ai_system.h"
 #include "../source/level_flow.h"
 #include "../source/runtime/runtime_world.h"
+#include "../source/runtime/runtime_session.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
 #include "../source/runtime/projectile_system.h"
@@ -1352,4 +1353,52 @@ TEST(RuntimeHostTest, PausingFreezesTicksAndRepeatedSessionsStayIsolated) {
     ASSERT_TRUE(host.OpenGameplay(snapshot));
     EXPECT_EQ(host.GetWorld().GetPlayer().GetPosition(), glm::vec3(0.0f));
     ASSERT_TRUE(host.CloseGameplay(restored));
+}
+
+TEST(RuntimeSessionTest, LifecycleIsExplicitAndRestoresEditorSnapshot) {
+    RuntimeSession session;
+    EditorSnapshot snapshot;
+    snapshot.camera_pos = glm::vec3(11.0f, 22.0f, 33.0f);
+    snapshot.camera_yaw = 90.0f;
+
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Stopped);
+    EXPECT_FALSE(session.Open(snapshot));
+
+    session.Initialize(FlatTerrain);
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Created);
+    EXPECT_TRUE(session.Open(snapshot));
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Running);
+    EXPECT_EQ(session.GetInputRouter().GetFocus(), WindowFocusTarget::GameplayWindow);
+
+    session.SetPaused(true);
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Paused);
+    session.Update(1000);
+    session.Restart();
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Running);
+    EXPECT_EQ(session.GetWorld().GetPlayer().GetPosition(), glm::vec3(0.0f));
+
+    EditorSnapshot restored;
+    ASSERT_TRUE(session.Close(restored));
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Stopped);
+    EXPECT_EQ(session.GetInputRouter().GetFocus(), WindowFocusTarget::EditorWindow);
+    EXPECT_EQ(restored.camera_pos, snapshot.camera_pos);
+    EXPECT_FLOAT_EQ(restored.camera_yaw, snapshot.camera_yaw);
+    EXPECT_FALSE(session.Close(restored));
+}
+
+TEST(RuntimeSessionTest, RestartDoesNotMutateTheCapturedEditorSnapshot) {
+    RuntimeSession session;
+    session.Initialize(FlatTerrain);
+
+    EditorSnapshot snapshot;
+    snapshot.selected_object_id = 42;
+    ASSERT_TRUE(session.Open(snapshot));
+    session.GetWorld().GetPlayer().SetPosition(glm::vec3(100.0f, 200.0f, 300.0f));
+
+    session.Restart();
+
+    EditorSnapshot restored;
+    ASSERT_TRUE(session.Close(restored));
+    EXPECT_EQ(restored.selected_object_id, 42U);
+    EXPECT_EQ(restored.camera_pos, snapshot.camera_pos);
 }

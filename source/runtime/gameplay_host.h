@@ -1,12 +1,7 @@
 // gameplay_host.h - Host controller for gameplay runtime, simulation, and twin-window lifecycle
 #pragma once
 
-#include <memory>
-#include <string>
-#include "runtime_world.h"
-#include "window_input_router.h"
-#include "simulation_scheduler.h"
-#include "editor_snapshot.h"
+#include "runtime_session.h"
 
 namespace igi {
 
@@ -29,25 +24,20 @@ public:
     void Render();
 
     // State queries
-    bool IsGameplayActive() const { return is_gameplay_active_; }
-    bool IsPaused() const { return is_paused_; }
+    bool IsGameplayActive() const { return session_.IsActive(); }
+    bool IsPaused() const { return session_.IsPaused(); }
     void SetPaused(bool paused);
 
-    RuntimeWorld& GetWorld() { return world_; }
-    const RuntimeWorld& GetWorld() const { return world_; }
+    RuntimeSessionState GetSessionState() const { return session_.GetState(); }
 
-    WindowInputRouter& GetInputRouter() { return input_router_; }
-    SimulationScheduler& GetScheduler() { return scheduler_; }
+    RuntimeWorld& GetWorld() { return session_.GetWorld(); }
+    const RuntimeWorld& GetWorld() const { return session_.GetWorld(); }
+
+    WindowInputRouter& GetInputRouter() { return session_.GetInputRouter(); }
+    SimulationScheduler& GetScheduler() { return session_.GetScheduler(); }
 
 private:
-    RuntimeWorld world_;
-    WindowInputRouter input_router_;
-    SimulationScheduler scheduler_;
-    EditorSnapshotManager snapshot_mgr_;
-
-    bool is_gameplay_active_ = false;
-    bool is_paused_ = false;
-    float (*get_terrain_z_)(float x, float y) = nullptr;
+    RuntimeSession session_;
 };
 
 } // namespace igi

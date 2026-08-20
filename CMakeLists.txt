@@ -312,6 +312,7 @@ target_sources(igi_tests PRIVATE
     source/ai_system.cpp
     source/level_flow.cpp
     source/runtime/runtime_world.cpp
+    source/runtime/runtime_session.cpp
     source/runtime/editor_snapshot.cpp
     source/runtime/window_input_router.cpp
     source/runtime/simulation_scheduler.cpp

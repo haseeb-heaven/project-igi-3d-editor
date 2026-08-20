@@ -1,12 +1,13 @@
-# Implementation Plan: IGI Gameplay Runtime Vertical Slice
+# Implementation Plan: IGI Gameplay Runtime and Twin-Window Port
 
 ## Overview
 
 Bring the `editor-gameplay-mode` C++ branch from its current scaffold toward a
-deterministic, isolated gameplay runtime that consumes the existing editor level
-data. The first implementation checkpoint is a playable, testable foundation:
-fixed-step scheduling, safe runtime ownership, faithful player collision
-queries, bounded script execution, and a single mission/objective path. Retail
+deterministic, isolated Windows gameplay runtime that consumes the existing
+vanilla editor level data. The immediate target is a convincing playable
+vertical slice: fixed-step simulation, real player collision, weapons/projectiles,
+moving enemies, sound, HUD, and one mission path. The production boundary must
+also keep the editor alive in its own window while gameplay is focused. Retail
 parity claims remain gated on IGI1 evidence.
 
 ## Architecture Decisions
@@ -15,6 +16,12 @@ parity claims remain gated on IGI1 evidence.
   from copied/adapted data and is destroyed on restart/close.
 - Keep the simulation at 30 Hz with explicit catch-up, pause, exclusion, and
   reset semantics; rendering/window integration consumes simulation state.
+- Treat the runtime session as the owner of mutable world state. The editor host
+  owns transition policy; the gameplay host owns presentation/window policy; no
+  gameplay renderer may mutate the authoring level representation.
+- Follow OpenIGI's `GameLoop`/`IGameWindow` split: the host pumps window events,
+  the fixed-step session advances simulation, and presentation consumes a
+  snapshot. Do not hide gameplay rendering inside the editor display callback.
 - Treat OpenIGI as `verified-reference` evidence, not proof of IGI1 parity.
   Any behavior without retail evidence is labelled `inferred` or `placeholder`.
 - Prefer narrow injected collision and visibility queries so gameplay tests do
@@ -69,6 +76,34 @@ parity claims remain gated on IGI1 evidence.
 - [x] Add the vertical-slice integration test and document unresolved retail
   differences and placeholders.
 
+### Phase 5: Production runtime boundary (current)
+
+- [ ] Extract an explicit `RuntimeSession` lifecycle (`Created`, `Running`,
+  `Paused`, `Stopped`, `Failed`) from `GameplayHost`, with direct lifecycle
+  tests and no editor/OpenGL dependency.
+- [ ] Add a controlled gameplay window owned by `GameplayHost`; it must have
+  independent focus, cursor, input callbacks, viewport, camera, HUD, and
+  presentation. The editor window remains usable while gameplay is paused or
+  unfocused.
+- [ ] Move gameplay drawing out of `App::Frame()` into a runtime presentation
+  path. Keep shared asset caches read-only and make restart/close destroy the
+  mutable runtime session.
+- [ ] Add explicit editor-change handling: changes made while gameplay is open
+  require an intentional restart/apply action and never silently write source
+  files or mutate the running world.
+
+### Phase 6: Fidelity and fixture coverage
+
+- [ ] Port the remaining OpenIGI-referenced locomotion transitions, falling
+  damage, ladder/traversal hooks, and root-motion seams where the selected
+  vanilla fixture exercises them.
+- [ ] Replace fallback patrol/extraction behavior with authored mission data in
+  the selected fixture; scan level/Common/Weapons QVMs before adding natives.
+- [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
+  weapon/projectile timing, objective progression, audio, and restart.
+- [ ] Run the authoritative Windows configure/build/test/play checks and record
+  every remaining `inferred` or `placeholder` behavior.
+
 ### Checkpoint: Vertical slice
 
 - [x] One mission fixture reaches success and failure deterministically.
@@ -76,6 +111,31 @@ parity claims remain gated on IGI1 evidence.
   crashing.
 - [ ] Existing editor regression tests remain green in the authoritative Windows
   build.
+
+## Checkpoints and acceptance criteria
+
+### Checkpoint: Runtime session
+
+- A session can be created, opened, paused, restarted, closed, and failed
+  without changing the editor snapshot or source-level object data.
+- Duplicate open/close and failed transition paths are deterministic and
+  covered by focused tests.
+
+### Checkpoint: Twin-window gameplay
+
+- The editor and gameplay windows have separate focus/input/camera/HUD/render
+  paths; switching focus does not restart simulation.
+- Pausing or closing gameplay leaves the editor visible and interactive.
+- A gameplay-window failure tears down only the runtime presentation and returns
+  the editor to a usable state.
+
+### Checkpoint: Playable vanilla fixture
+
+- One selected vanilla mission can be entered, played for multiple seconds at
+  the fixed simulation rate, fought through, interacted with, completed or
+  failed, and restarted without process termination.
+- Windows build/tests and an interactive smoke are recorded; local headless
+  tests do not count as Windows proof.
 
 ## Risks and Mitigations
 
@@ -85,6 +145,7 @@ parity claims remain gated on IGI1 evidence.
 | OpenIGI behavior differs from IGI1 | High | Mark evidence class in code/tests and require retail comparison before parity claims. |
 | Editor/runtime coupling corrupts authoring state | High | Runtime copies/adapters, explicit snapshots, no implicit source writes. |
 | Windows-only C++/OpenGL build is platform-sensitive | Medium | Run headless subsystem tests here, then require the Windows CMake target/CI as the authoritative build. |
+| FreeGLUT/OpenGL context ownership can couple two windows accidentally | High | Keep window creation behind a host adapter, verify current-window routing on Windows, and test session state independently before wiring presentation. |
 | Scope is larger than one implementation turn | High | Keep this plan active, deliver vertical slices, and preserve a runnable checkpoint. |
 
 ## Evidence Sources
@@ -93,4 +154,8 @@ parity claims remain gated on IGI1 evidence.
 - `/Users/haseeb-mir/Documents/Code/open-igi/Agents.md`.
 - OpenIGI reference symbols under `src/OpenIGI.Engine`, `src/OpenIGI.Game`, and
   `src/OpenIGI.Scripting`.
+- OpenIGI window/loop contracts: `src/OpenIGI.Platform/IGameWindow.cs`,
+  `src/OpenIGI.Platform.Desktop/SilkGameWindow.cs`,
+  `src/OpenIGI.Engine/Flow/GameLoop.cs`, and
+  `src/OpenIGI.Engine/Time/GameClock.cs`.
 - Existing C++ parser, terrain, renderer, and runtime tests in this branch.
