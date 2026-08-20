@@ -1,5 +1,9 @@
 // test_runtime_subsystems.cpp - Unit and integration tests for C++ Game Mode Runtime Subsystems
 #include <gtest/gtest.h>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
 #include "../source/game_clock.h"
 #include "../source/level/qvm_interpreter.h"
 #include "../source/level/qvm_native_registry.h"
@@ -14,6 +18,31 @@
 #include "../source/runtime/gameplay_host.h"
 
 using namespace igi;
+
+namespace {
+
+class RecordingTask final : public GameTask {
+public:
+    RecordingTask(uint32_t task_id, std::vector<std::string>& events)
+        : GameTask(task_id, 0x200, "RecordingTask"), events_(events) {}
+
+    void OnCreate() override { events_.push_back("create:" + std::to_string(GetId())); }
+    void OnDestroy() override { events_.push_back("destroy:" + std::to_string(GetId())); }
+    void OnMessage(const RuntimeTaskMessage& message) override {
+        if (message.message_id == 42) {
+            events_.push_back("message:" + std::to_string(GetId()));
+        }
+    }
+
+private:
+    std::vector<std::string>& events_;
+};
+
+float FlatTerrain(float, float) {
+    return 0.0f;
+}
+
+} // namespace
 
 // 1. Game Clock Determinism & Tick Tests
 TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
@@ -30,6 +59,9 @@ TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
     while (clock.IsTickDue()) {
         clock.CompleteTick();
         tick_count++;
+        if (clock.GetTickCount() < GameClock::GUARDED_STARTUP_TICKS) {
+            clock.CompleteRender();
+        }
     }
     EXPECT_GE(tick_count, 3);
     EXPECT_EQ(clock.GetTickCount(), static_cast<uint64_t>(tick_count));
@@ -38,6 +70,58 @@ TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
     clock.SetPaused(true);
     clock.Update(300);
     EXPECT_FALSE(clock.IsTickDue());
+}
+
+TEST(RuntimeClockTest, UsesAbsoluteDeadlinesInsteadOfRoundedAccumulator) {
+    GameClock clock;
+    clock.Reset(1000);
+    clock.Update(1000);
+    clock.Update(1034);
+
+    ASSERT_TRUE(clock.IsTickDue());
+    EXPECT_EQ(clock.GetDueMilliseconds(), 1000);
+    clock.CompleteTick();
+    clock.CompleteRender();
+
+    clock.Update(1067);
+    EXPECT_TRUE(clock.IsTickDue());
+    EXPECT_EQ(clock.GetDueMilliseconds(), 1033);
+}
+
+TEST(RuntimeClockTest, BoundsCatchUpBurstAndExcludesNestedWallTime) {
+    GameClock clock;
+    clock.Reset(0);
+    clock.Update(0);
+    clock.Update(1000);
+
+    // The first three ticks are render-guarded in the reference loop.
+    for (int startup_tick = 0; startup_tick < GameClock::GUARDED_STARTUP_TICKS; ++startup_tick) {
+        ASSERT_TRUE(clock.IsTickDue());
+        clock.CompleteTick();
+        clock.CompleteRender();
+    }
+
+    int completed_ticks = 0;
+    while (clock.IsTickDue()) {
+        clock.CompleteTick();
+        ++completed_ticks;
+    }
+
+    EXPECT_EQ(completed_ticks, 11);
+    EXPECT_TRUE(clock.IsCatchUpCapped());
+
+    clock.Reset(100);
+    clock.Update(100);
+    clock.BeginExcludedTime(100);
+    clock.BeginExcludedTime(200);
+    clock.EndExcludedTime(300);
+    clock.EndExcludedTime(400);
+    clock.Update(400);
+
+    EXPECT_EQ(clock.GetExcludedMilliseconds(), 300);
+    EXPECT_FALSE(clock.IsTickDue());
+    clock.Update(401);
+    EXPECT_TRUE(clock.IsTickDue());
 }
 
 // 2. QVM Bytecode Execution & Native Registry Tests
@@ -85,6 +169,38 @@ TEST(RuntimeTaskTreeTest, LifecycleAndMessaging) {
     EXPECT_TRUE(child->IsActive());
 }
 
+TEST(RuntimeTaskTreeTest, RejectsDuplicateOwnershipAndDestroysChildrenBeforeParents) {
+    std::vector<std::string> lifecycle_events;
+    auto root = std::make_shared<RecordingTask>(1, lifecycle_events);
+    auto child = std::make_shared<RecordingTask>(2, lifecycle_events);
+    auto duplicate_id = std::make_shared<RecordingTask>(2, lifecycle_events);
+
+    EXPECT_TRUE(root->AppendChild(child));
+    EXPECT_FALSE(root->AppendChild(child));
+    EXPECT_FALSE(root->AppendChild(duplicate_id));
+    EXPECT_FALSE(child->AppendChild(root));
+
+    TaskTree tree;
+    ASSERT_TRUE(tree.SetRoot(root));
+    tree.RegisterTask(child);
+    ASSERT_EQ(lifecycle_events, (std::vector<std::string>{"create:1", "create:2"}));
+
+    RuntimeTaskMessage message;
+    message.message_id = 42;
+    message.target_id = child->GetId();
+    tree.QueueMessage(message);
+    tree.Update(1.0 / 30.0);
+    EXPECT_EQ(lifecycle_events.back(), "message:2");
+
+    child->MarkForDestruction();
+    tree.Update(1.0 / 30.0);
+    ASSERT_GE(lifecycle_events.size(), 4U);
+    EXPECT_EQ(lifecycle_events[lifecycle_events.size() - 1], "destroy:2");
+
+    tree.Clear();
+    EXPECT_EQ(lifecycle_events.back(), "destroy:1");
+}
+
 // 4. Player Locomotion, Physics & Obstacle Collision Integration Tests
 TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     PlayerController player;
@@ -123,6 +239,74 @@ TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     collision.ResolveObstacles(test_pos, obstacles, 1638.4f);
     // Should resolve without NaN/Inf
     EXPECT_FALSE(std::isnan(test_pos.x) || std::isnan(test_pos.y));
+}
+
+TEST(RuntimeCollisionTest, GroundProbeHonorsStepBudgetAndSlopeNormal) {
+    PlayerCollision collision;
+    auto sloped_terrain = [](float x, float) -> float { return x * 0.25f; };
+
+    PlayerGroundQuery query = collision.QueryGround(
+        glm::vec3(0.0f, 0.0f, 1024.0f),
+        PlayerController::STANDING_EYE_HEIGHT,
+        sloped_terrain,
+        true,
+        false);
+
+    EXPECT_TRUE(query.is_grounded);
+    EXPECT_FLOAT_EQ(query.ground_height, 0.0f);
+    EXPECT_EQ(query.step_down_budget, 2048.0f);
+    EXPECT_GT(query.surface_normal.z, 0.9f);
+    EXPECT_LT(query.surface_normal.x, 0.0f);
+}
+
+TEST(RuntimeCollisionTest, WallSweepStopsAtSolidGeometryAndSlides) {
+    PlayerCollision collision;
+    collision.SetSolidQuery([](const glm::vec3& sample_position) {
+        return sample_position.x >= 4096.0f;
+    });
+
+    PlayerWallSweepResult result = collision.SweepWalls(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(8192.0f, 8192.0f, 0.0f),
+        512.0f,
+        PlayerController::STANDING_EYE_HEIGHT);
+
+    EXPECT_TRUE(result.hit_wall);
+    EXPECT_LT(result.hit_fraction, 1.0f);
+    EXPECT_LT(result.slide_velocity.x, 4096.0f);
+    EXPECT_GT(result.slide_velocity.y, 7000.0f);
+    EXPECT_LT(result.wall_normal.x, -0.9f);
+}
+
+TEST(RuntimeCollisionTest, CeilingQueryPreventsStandingInLowClearance) {
+    PlayerCollision collision;
+    collision.SetCeilingQuery([](const glm::vec3&) {
+        return 6000.0f;
+    });
+
+    EXPECT_FALSE(collision.CanStandUp(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        PlayerController::STANDING_EYE_HEIGHT,
+        FlatTerrain));
+    EXPECT_TRUE(collision.CanStandUp(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        PlayerController::CROUCHING_EYE_HEIGHT,
+        FlatTerrain));
+}
+
+TEST(RuntimePlayerTest, ControllerUsesCollisionBoundaryForFixedStepMovement) {
+    PlayerController player;
+    player.Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+    player.SetCollisionQuery([](const glm::vec3& sample_position) {
+        return sample_position.x >= 100.0f;
+    });
+
+    PlayerInputCmd input;
+    input.strafe = 1.0f;
+    player.Tick(input, FlatTerrain);
+
+    EXPECT_LT(player.GetPosition().x, 100.0f);
+    EXPECT_TRUE(player.IsGrounded());
 }
 
 // 5. Weapon Fire & Ballistics Tests

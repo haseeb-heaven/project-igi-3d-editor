@@ -1,8 +1,10 @@
-// player_collision.h - Player collision, ground probe, and multi-height wall sweeps
+// player_collision.h - Runtime ground, ceiling, and wall collision boundaries.
 #pragma once
 
+#include <functional>
+#include <vector>
+
 #include <glm/glm.hpp>
-#include <cstdint>
 
 namespace igi {
 
@@ -10,7 +12,7 @@ struct PlayerGroundQuery {
     bool is_grounded = false;
     float ground_height = 0.0f;
     glm::vec3 surface_normal = glm::vec3(0.0f, 0.0f, 1.0f);
-    float step_down_budget = 4096.0f; // Max step down snap distance (1m in IGI world units)
+    float step_down_budget = 2048.0f;
     bool is_under_roof = false;
     float ceiling_height = 100000.0f;
 };
@@ -24,25 +26,79 @@ struct PlayerWallSweepResult {
 
 struct ObstacleCollider {
     glm::vec3 center = glm::vec3(0.0f);
-    float radius = 1638.4f; // in world units
+    float radius = 1638.4f;
     float height = 7372.8f;
 };
 
 class PlayerCollision {
 public:
-    PlayerCollision();
+    using TerrainHeightQuery = float (*)(float x, float y);
+    using SolidGeometryQuery = std::function<bool(const glm::vec3& sample_position)>;
+    using CeilingHeightQuery = std::function<float(const glm::vec3& body_position)>;
 
-    // Query ground elevation and roof clearance
-    PlayerGroundQuery QueryGround(const glm::vec3& position, float standing_eye_height, float (*get_terrain_z)(float x, float y));
+    // Verified-reference values from OpenIGI HumanWallProbe/HumanGroundQuery.
+    static constexpr float SkinWidthInUnits = 10.24f;
+    static constexpr float LowProbeHeightInUnits = 409.6f;
+    static constexpr float MiddleProbeStandingHeightInUnits = 1638.4f;
+    static constexpr float MiddleProbeCrouchingHeightInUnits = 819.2f;
+    static constexpr float HighProbeStandingHeightInUnits = 7372.8f;
+    static constexpr float HighProbeCrouchingHeightInUnits = 5324.8f;
+    static constexpr float WallNormalZLimit = 0.1f;
+    static constexpr int MaximumSweepIterations = 10;
+    static constexpr float AirborneStepDownInUnits = 0.0f;
+    static constexpr float GroundedStepDownInUnits = 2048.0f;
+    static constexpr float SlidingStepDownInUnits = 8192.0f;
+    static constexpr float RoofClearanceInUnits = 7372.8f;
 
-    // Multi-height probe wall sweep to handle obstacles, corners, and sliding
-    PlayerWallSweepResult SweepWalls(const glm::vec3& current_pos, const glm::vec3& target_pos, float body_radius, float body_height);
+    PlayerCollision() = default;
 
-    // Tests if current stance can stand up without hitting ceiling
-    bool CanStandUp(const glm::vec3& position, float standing_height, float (*get_terrain_z)(float x, float y));
+    void SetSolidQuery(SolidGeometryQuery solid_geometry_query);
+    void SetCeilingQuery(CeilingHeightQuery ceiling_height_query);
 
-    // Resolves circular cylinder collisions against obstacles (enemies, structures, boxes)
-    void ResolveObstacles(glm::vec3& position, const std::vector<ObstacleCollider>& obstacles, float player_radius = 1638.4f);
+    PlayerGroundQuery QueryGround(
+        const glm::vec3& body_position,
+        float current_eye_height,
+        TerrainHeightQuery terrain_height_query,
+        bool was_grounded = true,
+        bool crouching = false,
+        bool sliding = false) const;
+
+    PlayerWallSweepResult SweepWalls(
+        const glm::vec3& current_position,
+        const glm::vec3& target_position,
+        float body_radius,
+        float body_height,
+        bool grounded = true,
+        bool crouching = false) const;
+
+    bool CanStandUp(
+        const glm::vec3& body_position,
+        float standing_height,
+        TerrainHeightQuery terrain_height_query) const;
+
+    void ResolveObstacles(
+        glm::vec3& body_position,
+        const std::vector<ObstacleCollider>& obstacles,
+        float player_radius = 1638.4f) const;
+
+private:
+    struct RaycastHit {
+        glm::vec3 position = glm::vec3(0.0f);
+        glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f);
+        float distance = 0.0f;
+    };
+
+    bool RaycastSolidGeometry(
+        const glm::vec3& ray_origin,
+        const glm::vec3& ray_end,
+        RaycastHit& hit) const;
+
+    glm::vec3 EstimateSurfaceNormal(
+        const glm::vec3& surface_position,
+        const glm::vec3& movement_direction) const;
+
+    SolidGeometryQuery solid_geometry_query_;
+    CeilingHeightQuery ceiling_height_query_;
 };
 
 } // namespace igi

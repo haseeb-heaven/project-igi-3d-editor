@@ -18,6 +18,12 @@ void SimulationScheduler::Update(int64_t now_milliseconds) {
         world_.UpdateSimulationTick(clock_.GetTickCount(), input);
         clock_.CompleteTick();
     }
+
+    // The scheduler is called once per presented host frame. Rendering is a
+    // presentation boundary, not a simulation step, so refill the clock's
+    // one-render latch after the batch. A long stall can therefore run the
+    // bounded catch-up burst and then resume from a fresh render boundary.
+    clock_.CompleteRender();
 }
 
 } // namespace igi
