@@ -37,6 +37,7 @@ void AiSystem::SetLineOfSightQuery(LineOfSightQuery line_of_sight_query) {
 void AiSystem::ApplyDamage(uint32_t guard_id, float damage) {
     auto* guard = FindGuard(guard_id);
     if (!guard || guard->state == AiGuardState::Dead) return;
+    if (guard->script_invulnerable) return;
 
     guard->health -= damage;
     if (guard->health <= 0.0f) {

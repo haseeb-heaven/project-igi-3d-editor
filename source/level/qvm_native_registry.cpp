@@ -124,6 +124,13 @@ void QvmNativeRegistry::RegisterVariableByName(
     symbols_[symbol_id] = std::move(entry);
 }
 
+void QvmNativeRegistry::SetDynamicValueResolver(
+    QvmDynamicValueResolver resolver,
+    QvmDynamicValueWriter writer) {
+    dynamic_value_resolver_ = std::move(resolver);
+    dynamic_value_writer_ = std::move(writer);
+}
+
 bool QvmNativeRegistry::TryExecute(uint32_t symbol_id, QvmExecutionContext& ctx, const std::vector<QvmRuntimeValue>& args, QvmRuntimeValue& out_result) const {
     auto it = symbols_.find(symbol_id);
     if (it != symbols_.end() && it->second.is_function && it->second.function) {
@@ -204,12 +211,14 @@ bool QvmNativeRegistry::TryGetValueByName(
     QvmRuntimeValue& out_value) const {
     const auto id = symbol_ids_by_name_.find(name);
     if (id == symbol_ids_by_name_.end()) {
-        return false;
+        return dynamic_value_resolver_
+            && dynamic_value_resolver_(name, out_value);
     }
 
     const auto symbol = symbols_.find(id->second);
     if (symbol == symbols_.end()) {
-        return false;
+        return dynamic_value_resolver_
+            && dynamic_value_resolver_(name, out_value);
     }
     if (symbol->second.is_constant) {
         out_value = symbol->second.constant_value;
@@ -219,7 +228,8 @@ bool QvmNativeRegistry::TryGetValueByName(
         out_value = symbol->second.variable_value;
         return true;
     }
-    return false;
+    return dynamic_value_resolver_
+        && dynamic_value_resolver_(name, out_value);
 }
 
 bool QvmNativeRegistry::TrySetValueByName(
@@ -228,12 +238,14 @@ bool QvmNativeRegistry::TrySetValueByName(
     QvmRuntimeValue& out_value) {
     const auto id = symbol_ids_by_name_.find(name);
     if (id == symbol_ids_by_name_.end()) {
-        return false;
+        return dynamic_value_writer_
+            && dynamic_value_writer_(name, value, out_value);
     }
 
     const auto symbol = symbols_.find(id->second);
     if (symbol == symbols_.end() || !symbol->second.is_variable) {
-        return false;
+        return dynamic_value_writer_
+            && dynamic_value_writer_(name, value, out_value);
     }
 
     symbol->second.variable_value = value;

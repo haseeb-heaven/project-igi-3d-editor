@@ -10,6 +10,7 @@
 #include "../player_controller.h"
 #include "../weapon_system.h"
 #include "../ai_system.h"
+#include "../ai_script_host.h"
 #include "../level_flow.h"
 #include "../level/task_tree.h"
 #include "../level/qvm_interpreter.h"
@@ -25,6 +26,15 @@ public:
     void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Reset();
     void SetExtractionZone(const glm::vec3& center, float radius);
+
+    // Binds a parsed retail mission AI program to an already registered guard.
+    bool AttachGuardScript(
+        uint32_t guard_id,
+        const QVMFile& parsed_file,
+        const std::string& source_path = {});
+    bool AttachGuardScriptFromFile(uint32_t guard_id, const std::string& path);
+    void ClearGuardScripts();
+    bool HasGuardScript(uint32_t guard_id) const;
 
     // Simulation tick
     void UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd);
@@ -53,8 +63,18 @@ private:
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     bool IsWorldLineBlocked(const glm::vec3& line_origin, const glm::vec3& line_target) const;
+    void DispatchGuardScripts();
+    void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
+
+    struct GuardScriptState {
+        QvmProgram program;
+        std::string source_path;
+        std::string last_error;
+        bool dispatched_create = false;
+        bool faulted = false;
+    };
 
     float (*get_terrain_z_)(float x, float y) = nullptr;
     bool (*check_collision_)(float x, float y, float z) = nullptr;
@@ -65,6 +85,8 @@ private:
     LevelFlow level_flow_;
     TaskTree task_tree_;
     QvmNativeRegistry qvm_registry_;
+    AiScriptHost ai_script_host_;
+    std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;
     std::unordered_map<uint32_t, uint64_t> next_guard_attack_tick_;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);

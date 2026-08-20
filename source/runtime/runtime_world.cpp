@@ -5,7 +5,8 @@
 
 namespace igi {
 
-RuntimeWorld::RuntimeWorld() = default;
+RuntimeWorld::RuntimeWorld()
+    : ai_script_host_(qvm_registry_) {}
 RuntimeWorld::~RuntimeWorld() = default;
 
 void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
@@ -39,12 +40,49 @@ void RuntimeWorld::Reset() {
     player_.Reset(spawn_pos, 0.0f);
     weapons_.SelectWeapon(0);
     ai_.Clear();
+    ClearGuardScripts();
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
     next_guard_attack_tick_.clear();
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
+}
+
+bool RuntimeWorld::AttachGuardScript(
+    uint32_t guard_id,
+    const QVMFile& parsed_file,
+    const std::string& source_path) {
+    if (ai_.FindGuard(guard_id) == nullptr) {
+        return false;
+    }
+
+    GuardScriptState script_state;
+    script_state.source_path = source_path;
+    if (!ai_script_host_.LoadProgram(parsed_file, script_state.program)) {
+        script_state.last_error = ai_script_host_.GetLastError();
+        script_state.faulted = true;
+        guard_scripts_[guard_id] = std::move(script_state);
+        return false;
+    }
+
+    guard_scripts_[guard_id] = std::move(script_state);
+    return true;
+}
+
+bool RuntimeWorld::AttachGuardScriptFromFile(uint32_t guard_id, const std::string& path) {
+    const QVMFile parsed_file = QVM_Parse(path);
+    return AttachGuardScript(guard_id, parsed_file, path);
+}
+
+void RuntimeWorld::ClearGuardScripts() {
+    guard_scripts_.clear();
+    ai_script_host_.Reset();
+}
+
+bool RuntimeWorld::HasGuardScript(uint32_t guard_id) const {
+    const auto script = guard_scripts_.find(guard_id);
+    return script != guard_scripts_.end() && !script->second.faulted;
 }
 
 void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
@@ -117,6 +155,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
 
     // 3. Tick AI perception & state machine
     ai_.Update(dt, player_.GetPosition(), player_.IsAlive());
+    DispatchGuardScripts();
     ApplyGuardCombatDamage(tick_number);
 
     // 4. Tick runtime task tree
@@ -130,6 +169,65 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             extraction_zone_center_.y,
             player_.GetPosition().z)) < extraction_zone_radius_);
     level_flow_.Update(player_.IsAlive(), in_extraction);
+}
+
+void RuntimeWorld::DispatchGuardScripts() {
+    // Iterate in the same stable order in which guards were registered. The
+    // script registry carries the current guard binding, so hash-map order
+    // must never become part of the simulation result.
+    for (AiGuardEntity& guard : ai_.GetGuards()) {
+        const auto script_iterator = guard_scripts_.find(guard.id);
+        if (script_iterator == guard_scripts_.end()) {
+            continue;
+        }
+        GuardScriptState& script = script_iterator->second;
+        if (script.faulted) {
+            continue;
+        }
+
+        int32_t event_type = 4; // AIEVENT_IDLE
+        if (!script.dispatched_create) {
+            event_type = 0; // AIEVENT_CREATE
+            script.dispatched_create = true;
+        } else if (guard.state == AiGuardState::Dead) {
+            event_type = 2; // AIEVENT_DEAD
+        } else if (guard.state == AiGuardState::Combat) {
+            event_type = 7; // AIEVENT_COMBAT
+        } else if (guard.state == AiGuardState::Suspicious) {
+            event_type = 5; // AIEVENT_ALERT
+        }
+
+        if (!ai_script_host_.Run(script.program, guard, event_type)) {
+            script.faulted = true;
+            script.last_error = ai_script_host_.GetLastError();
+            continue;
+        }
+
+        ApplyScriptPatrolRoute(guard);
+    }
+}
+
+void RuntimeWorld::ApplyScriptPatrolRoute(AiGuardEntity& guard) const {
+    if (guard.script_patrol_path_id < 0
+        || guard.script_patrol_path_id == guard.active_patrol_path_id) {
+        return;
+    }
+
+    const auto route = guard.patrol_routes.find(guard.script_patrol_path_id);
+    if (route == guard.patrol_routes.end()) {
+        return;
+    }
+
+    guard.patrol_commands = route->second;
+    guard.active_patrol_path_id = guard.script_patrol_path_id;
+    guard.command_index = -1;
+    guard.loop_start_index = -1;
+    guard.last_move_index = -1;
+    guard.prev_move_index = -1;
+    guard.end_index = -1;
+    guard.deadline_tick = -1;
+    guard.patrol_started = false;
+    guard.patrol_stopped = false;
 }
 
 bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {

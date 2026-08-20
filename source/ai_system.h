@@ -8,6 +8,7 @@
 #include <string>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include "ai_events.h"
 #include "renderer/graph_writer.h"
 
@@ -72,6 +73,8 @@ struct AiGuardEntity {
 
     // ---- OpenIGI patrol port (AiPatrolRoute cursor) ----
     std::vector<AiPatrolCommand> patrol_commands;
+    std::unordered_map<int, std::vector<AiPatrolCommand>> patrol_routes;
+    int active_patrol_path_id = -1;
     int command_index = -1;         // NoCommand
     int loop_start_index = -1;
     int last_move_index = -1;
@@ -84,6 +87,17 @@ struct AiGuardEntity {
     bool patrol_stopped = false;
     int requested_animation = -1;   // from Animation commands (ids into ai cache)
     bool animation_finished = true;
+
+    // ---- Retail AI QVM state ----
+    int script_last_event_type = -1;
+    int script_patrol_path_id = -1;
+    int script_action_flags = 0;
+    int script_alarm_access = 0;
+    bool script_invulnerable = false;
+    bool script_instant_death_disabled = false;
+    std::unordered_map<std::string, int32_t> script_variables;
+    std::unordered_map<int32_t, int32_t> script_integer_values;
+    std::unordered_map<int32_t, float> script_real_values;
 
     // ---- Graph navigation state (AiSoldier.GoTo/Advance) ----
     std::shared_ptr<const GraphFile> graph;   // parsed nav graph (local node coords)

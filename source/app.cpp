@@ -1110,6 +1110,7 @@ static bool LastTwoIntArgs(const std::string& qscLine, int& a, int& b);
 void App::SetupLevelAiGuards() {
 	auto& ai = gameplay_host_.GetWorld().GetAi();
 	ai.Clear();
+	gameplay_host_.GetWorld().ClearGuardScripts();
 
 	auto& objects = level_.GetLevelObjects().GetObjects();
 
@@ -1145,6 +1146,7 @@ void App::SetupLevelAiGuards() {
 		// AI behavior script task id (ai/<taskId>.qvm).
 		int aiGraphTaskId = -1;
 		int aiTaskId = -1;
+		std::string ai_script_path;
 		for (int ci : obj.childrenIndices) {
 			if (ci < 0 || ci >= (int)objects.size()) continue;
 			if (!objects[ci].deleted && objects[ci].type == "HumanAI") {
@@ -1199,6 +1201,7 @@ void App::SetupLevelAiGuards() {
 		if (aiTaskId >= 0) {
 			std::string qvmPath = Utils::GetIGIRootPath() + "\\missions\\location0\\level" +
 				std::to_string(level_no) + "\\ai\\" + std::to_string(aiTaskId) + ".qvm";
+			ai_script_path = qvmPath;
 			int pathId = FindAiScriptPatrolPathId(qvmPath);
 			if (pathId >= 0) {
 				// Find the PatrolPath task the script names (a child of this soldier
@@ -1214,20 +1217,53 @@ void App::SetupLevelAiGuards() {
 				}
 				if (ppIndex >= 0) {
 					for (int pci : objects[ppIndex].childrenIndices) {
-						if (pci < 0 || pci >= (int)objects.size()) continue;
-						const auto& pcmd = objects[pci];
-						if (pcmd.deleted || pcmd.type != "PatrolPathCommand") continue;
-						int cmdCode = -1, param = -1;
-						if (LastTwoIntArgs(pcmd.qscLine, cmdCode, param)) {
-							guard.patrol_commands.push_back(
-								igi::AiPatrolCommand{ (igi::AiPatrolCommandKind)cmdCode, param });
-						}
+							if (pci < 0 || pci >= (int)objects.size()) continue;
+							const auto& pcmd = objects[pci];
+							if (pcmd.deleted || pcmd.type != "PatrolPathCommand") continue;
+							int cmdCode = -1, param = -1;
+							if (LastTwoIntArgs(pcmd.qscLine, cmdCode, param)) {
+								guard.patrol_commands.push_back(
+									igi::AiPatrolCommand{ (igi::AiPatrolCommandKind)cmdCode, param });
+							}
 					}
+					guard.active_patrol_path_id = pathId;
 				}
 			}
 		}
 
+		// Keep every authored route available to AIAction_Patrol. The retail
+		// script may select a different path after an event or script variable
+		// changes; the runtime switches routes at the action boundary.
+		for (int ci : obj.childrenIndices) {
+			if (ci < 0 || ci >= (int)objects.size()) continue;
+			const auto& patrol_path = objects[ci];
+			if (patrol_path.deleted || patrol_path.type != "PatrolPath") continue;
+
+			int route_id = -1;
+			try { route_id = std::stoi(patrol_path.taskId); } catch (...) { continue; }
+			std::vector<igi::AiPatrolCommand> route_commands;
+			for (int pci : patrol_path.childrenIndices) {
+				if (pci < 0 || pci >= (int)objects.size()) continue;
+				const auto& command = objects[pci];
+				if (command.deleted || command.type != "PatrolPathCommand") continue;
+				int command_kind = -1, operand = -1;
+				if (LastTwoIntArgs(command.qscLine, command_kind, operand)) {
+					route_commands.push_back(igi::AiPatrolCommand{
+						(igi::AiPatrolCommandKind)command_kind,
+						operand});
+				}
+			}
+			if (!route_commands.empty()) {
+				guard.patrol_routes[route_id] = std::move(route_commands);
+			}
+		}
+
 		ai.RegisterGuard(guard);
+		if (!ai_script_path.empty()
+			&& !gameplay_host_.GetWorld().AttachGuardScriptFromFile(guard.id, ai_script_path)) {
+			Logger::Get().Log(LogLevel::WARNING,
+				"[AI] Could not attach retail QVM " + ai_script_path);
+		}
 	}
 	Logger::Get().Log(LogLevel::INFO, "[App] Registered " +
 		std::to_string(ai.GetGuards().size()) + " enemy guards for Game Play");

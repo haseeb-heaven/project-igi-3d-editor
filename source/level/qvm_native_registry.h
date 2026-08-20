@@ -110,6 +110,13 @@ using QvmNativeFn = std::function<QvmRuntimeValue(QvmExecutionContext& ctx, cons
 using QvmDeferredNativeFn = std::function<QvmRuntimeValue(
     QvmExecutionContext& ctx,
     const QvmNativeCallArguments& args)>;
+using QvmDynamicValueResolver = std::function<bool(
+    const std::string& name,
+    QvmRuntimeValue& out_value)>;
+using QvmDynamicValueWriter = std::function<bool(
+    const std::string& name,
+    const QvmRuntimeValue& value,
+    QvmRuntimeValue& out_value)>;
 
 class QvmNativeRegistry {
 public:
@@ -132,6 +139,9 @@ public:
     void RegisterVariableByName(
         const std::string& name,
         const QvmRuntimeValue& initial_value);
+    void SetDynamicValueResolver(
+        QvmDynamicValueResolver resolver,
+        QvmDynamicValueWriter writer = {});
 
     bool TryExecute(uint32_t symbol_id, QvmExecutionContext& ctx, const std::vector<QvmRuntimeValue>& args, QvmRuntimeValue& out_result) const;
     bool TryExecuteByName(
@@ -169,6 +179,8 @@ private:
 
     std::unordered_map<uint32_t, SymbolEntry> symbols_;
     std::unordered_map<std::string, uint32_t> symbol_ids_by_name_;
+    QvmDynamicValueResolver dynamic_value_resolver_;
+    QvmDynamicValueWriter dynamic_value_writer_;
     uint32_t next_dynamic_symbol_id_ = 0x80000000U;
     uint32_t GetOrCreateSymbolId(const std::string& name);
     static const std::string empty_name_;

@@ -49,6 +49,78 @@ bool WallAtOneMeter(float, float y, float) {
     return y >= PlayerController::WORLD_METER;
 }
 
+QVMFile BuildRetailAiPatrolScript() {
+    QVMFile parsed_file;
+    parsed_file.valid = true;
+    parsed_file.identifiers = {
+        "AIFunction_GetCurrentEventType",
+        "AIEVENT_IDLE",
+        "AIAction_Patrol",
+        "AIACTIONFLAG_PUSHABLE",
+    };
+
+    auto make_instruction = [](QVMOpType type, uint32_t address, uint32_t size) {
+        QVMInstruction instruction{};
+        instruction.type = type;
+        instruction.address = address;
+        instruction.size = size;
+        return instruction;
+    };
+
+    QVMInstruction get_event = make_instruction(QVMOpType::PUSHIIB, 0, 2);
+    get_event.operand = 0;
+    QVMInstruction get_event_call = make_instruction(QVMOpType::CALL, 2, 5);
+    QVMInstruction skip_get_event_arguments = make_instruction(QVMOpType::BRA, 7, 5);
+
+    QVMInstruction idle_event = make_instruction(QVMOpType::PUSHIIB, 12, 2);
+    idle_event.operand = 1;
+    QVMInstruction compare_event = make_instruction(QVMOpType::EQ, 14, 1);
+    QVMInstruction skip_non_idle = make_instruction(QVMOpType::BF, 15, 5);
+    skip_non_idle.operand = 33;
+    skip_non_idle.signed_operand = 33;
+
+    QVMInstruction patrol_action = make_instruction(QVMOpType::PUSHIIB, 20, 2);
+    patrol_action.operand = 2;
+    QVMInstruction patrol_call = make_instruction(QVMOpType::CALL, 22, 17);
+    patrol_call.operand = 3;
+    patrol_call.signed_operand = 3;
+    patrol_call.call_targets = {44, 48, 50};
+    QVMInstruction skip_patrol_arguments = make_instruction(QVMOpType::BRA, 39, 5);
+    skip_patrol_arguments.operand = 9;
+    skip_patrol_arguments.signed_operand = 9;
+
+    QVMInstruction patrol_path = make_instruction(QVMOpType::PUSHW, 44, 3);
+    patrol_path.operand = 700;
+    patrol_path.signed_operand = 700;
+    QVMInstruction patrol_path_end = make_instruction(QVMOpType::BRK, 47, 1);
+    QVMInstruction patrol_start_index = make_instruction(QVMOpType::PUSH0, 48, 1);
+    QVMInstruction patrol_start_index_end = make_instruction(QVMOpType::BRK, 49, 1);
+    QVMInstruction patrol_flags = make_instruction(QVMOpType::PUSHIIB, 50, 2);
+    patrol_flags.operand = 3;
+    QVMInstruction patrol_flags_end = make_instruction(QVMOpType::BRK, 52, 1);
+    QVMInstruction program_end = make_instruction(QVMOpType::BRK, 53, 1);
+
+    parsed_file.instructions = {
+        get_event,
+        get_event_call,
+        skip_get_event_arguments,
+        idle_event,
+        compare_event,
+        skip_non_idle,
+        patrol_action,
+        patrol_call,
+        skip_patrol_arguments,
+        patrol_path,
+        patrol_path_end,
+        patrol_start_index,
+        patrol_start_index_end,
+        patrol_flags,
+        patrol_flags_end,
+        program_end,
+    };
+    return parsed_file;
+}
+
 } // namespace
 
 // 1. Game Clock Determinism & Tick Tests
@@ -649,6 +721,20 @@ TEST(RuntimeAiTest, PatrolMovementRespectsSolidGeometryBoundary) {
     EXPECT_FLOAT_EQ(ai.GetGuards()[0].position.y, 0.0f);
 }
 
+TEST(RuntimeAiTest, RetailInvulnerabilityFlagBlocksDamage) {
+    AiSystem ai;
+    AiGuardEntity guard;
+    guard.id = 13;
+    guard.script_invulnerable = true;
+    ai.RegisterGuard(guard);
+
+    ai.ApplyDamage(guard.id, 25.0f);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_FLOAT_EQ(ai.GetGuards()[0].health, 100.0f);
+    EXPECT_EQ(ai.GetGuards()[0].state, AiGuardState::Patrol);
+}
+
 // 7. Mission Flow & Objective Tests
 TEST(RuntimeLevelFlowTest, ObjectiveSuccessFlow) {
     LevelFlow flow;
@@ -791,6 +877,34 @@ TEST(RuntimeWorldTest, SolidGeometryBlocksGuardPerception) {
     ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
     EXPECT_EQ(world.GetAi().GetGuards()[0].state, AiGuardState::Patrol);
     EXPECT_FLOAT_EQ(world.GetAi().GetGuards()[0].suspicion, 0.0f);
+}
+
+TEST(RuntimeWorldTest, RetailAiQvmDrivesGuardActionsOnFixedTicks) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 26;
+    guard.position = glm::vec3(0.0f, 100.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.state = AiGuardState::Patrol;
+    guard.patrol_routes[700] = {
+        AiPatrolCommand{AiPatrolCommandKind::Delay, 3},
+    };
+    world.GetAi().RegisterGuard(guard);
+
+    ASSERT_TRUE(world.AttachGuardScript(guard.id, BuildRetailAiPatrolScript()));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].script_last_event_type, 0);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].script_patrol_path_id, -1);
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_EQ(world.GetAi().GetGuards()[0].script_last_event_type, 4);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].script_patrol_path_id, 700);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].active_patrol_path_id, 700);
+    ASSERT_EQ(world.GetAi().GetGuards()[0].patrol_commands.size(), 1U);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].patrol_commands[0].operand, 3);
 }
 
 TEST(RuntimeWorldTest, ActivateCompletesTheCurrentMissionObjective) {
