@@ -799,7 +799,7 @@ void App::Frame(float delta_seconds) {
     // this would leave those objects invisible. The bone wireframe stays scoped
     // to the selected object only (avoids clutter) and gated by 'B'.
     {
-        auto& objs = level_.GetLevelObjects().GetObjects();
+        auto& objs = GetActiveRenderLevelObjects().GetObjects();
         for (int idx : skinnedReplacementIndices) {
             if (idx < 0 || idx >= (int)objs.size()) continue;
             auto& pb = animPlaybacks_[idx];
@@ -843,7 +843,7 @@ void App::Frame(float delta_seconds) {
     // their weapon, positioned at the hand bone's REST pose instead of an
     // animated transform.
     {
-        auto& objs = level_.GetLevelObjects().GetObjects();
+        auto& objs = GetActiveRenderLevelObjects().GetObjects();
         for (int idx = 0; idx < (int)objs.size(); ++idx) {
             const auto& obj = objs[idx];
             if (obj.weaponModelId.empty() || obj.deleted) continue;
