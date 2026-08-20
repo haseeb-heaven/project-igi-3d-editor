@@ -754,6 +754,7 @@ void App::Frame(float delta_seconds) {
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
+	DrawGameplayProjectiles();
 	DrawGameplayPlayerWeapon();
 
     // Find the "right hand" bone index in modelId's parsed bone list (REIH+MANB
@@ -898,6 +899,37 @@ void App::DrawGameplayPlayerWeapon() {
 		weapon_model,
 		glm::vec3(40.96f * 0.75f));
 	renderer_.DrawAttachedMesh(weapon.model_id, false, weapon_model);
+}
+
+void App::DrawGameplayProjectiles() {
+	if (!in_game_mode_) return;
+
+	const auto& projectiles = gameplay_host_.GetWorld().GetProjectiles().GetProjectiles();
+	for (const auto& projectile : projectiles) {
+		const char* model_id = nullptr;
+		switch (projectile.type) {
+			case igi::ProjectileType::FragGrenade: model_id = "135_01_1"; break;
+			case igi::ProjectileType::Flashbang: model_id = "137_01_1"; break;
+			case igi::ProjectileType::ProximityMine: model_id = "136_01_1"; break;
+			case igi::ProjectileType::Rocket: model_id = "110_01_1"; break;
+			case igi::ProjectileType::None: break;
+		}
+		if (model_id == nullptr) continue;
+
+		glm::mat4 projectile_model = glm::translate(
+			glm::mat4(1.0f),
+			projectile.position);
+		projectile_model = glm::rotate(
+			projectile_model,
+			glm::radians(static_cast<float>(projectile.tumble_ticks * 17U)),
+			glm::vec3(0.0f, 0.0f, 1.0f));
+		projectile_model = glm::scale(
+			projectile_model,
+			glm::vec3(40.96f * (projectile.type == igi::ProjectileType::Rocket
+				? 0.65f
+				: 0.35f)));
+		renderer_.DrawAttachedMesh(model_id, false, projectile_model);
+	}
 }
 
 void App::ToggleShowHUD() {
