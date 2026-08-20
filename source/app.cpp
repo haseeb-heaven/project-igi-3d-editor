@@ -221,6 +221,7 @@ void App::Shutdown() {
 	level_.FreeTerrainCubeDataPools();
 	animPlaybacks_.clear();
 	animIdsCache_.clear();
+	runtime_animation_request_serials_.clear();
 	animRegistry_.Clear();
 	renderer_.Shutdown();
 	if (!g_isCLIMode) {
@@ -571,6 +572,7 @@ void App::Frame(float delta_seconds) {
 				objects[g.id].rot.z = glm::radians((double)g.yaw);
 			}
 		}
+		ApplyRuntimeAiAnimationRequests();
 	} else {
 		ProcessInput(delta_seconds);
 	}
@@ -1161,6 +1163,7 @@ void App::ToggleGamePlayMode() {
 		in_game_mode_ = false;
 		runtime_level_objects_.reset();
 		opened_door_indices_.clear();
+		runtime_animation_request_serials_.clear();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
@@ -1516,6 +1519,45 @@ void App::UpdateAnimations(float dtSec) {
     }
 }
 
+void App::ApplyRuntimeAiAnimationRequests() {
+    const auto& guards = gameplay_host_.GetWorld().GetAi().GetGuards();
+    const auto& objects = GetActiveRenderLevelObjects().GetObjects();
+
+    for (const auto& guard : guards) {
+        if (guard.state == igi::AiGuardState::Dead ||
+            guard.requested_animation < 0 ||
+            guard.animation_request_serial == 0 ||
+            guard.id >= objects.size()) {
+            continue;
+        }
+
+        const auto& object = objects[guard.id];
+        if (object.deleted || object.boneHierarchy < 0) {
+            continue;
+        }
+
+        const auto applied_serial = runtime_animation_request_serials_.find(guard.id);
+        if (applied_serial != runtime_animation_request_serials_.end() &&
+            applied_serial->second == guard.animation_request_serial) {
+            continue;
+        }
+
+        const AnimationClip* requested_clip = animRegistry_.GetClipByAnimId(
+            object.boneHierarchy,
+            guard.requested_animation);
+        if (requested_clip == nullptr) {
+            continue;
+        }
+
+        auto& playback = animPlaybacks_[static_cast<int>(guard.id)];
+        if (playback.clip != requested_clip || !playback.playing) {
+            playback.Start(requested_clip);
+            playback.forceLoop = true;
+        }
+        runtime_animation_request_serials_[guard.id] = guard.animation_request_serial;
+    }
+}
+
 std::string App::BuildAnimStatusString() {
     if (animPlaybacks_.empty()) return {};
 
@@ -1688,6 +1730,7 @@ std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
         if (!pb.clip || !pb.playing) continue;
         if (idx < 0 || idx >= (int)objs.size()) continue;
         const auto& obj = objs[idx];
+        if (obj.deleted) continue;
         // Only skip the static draw if the skinned replacement can actually render —
         // otherwise a model whose skin geometry fails to load goes permanently
         // invisible (neither the static nor the skinned draw ever produces anything).

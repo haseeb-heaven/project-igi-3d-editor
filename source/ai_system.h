@@ -87,6 +87,7 @@ struct AiGuardEntity {
     bool patrol_started = false;
     bool patrol_stopped = false;
     int requested_animation = -1;   // from Animation commands (ids into ai cache)
+    uint64_t animation_request_serial = 0;
     bool animation_finished = true;
 
     // ---- Retail AI QVM state ----

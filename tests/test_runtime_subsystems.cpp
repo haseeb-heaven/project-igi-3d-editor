@@ -883,6 +883,24 @@ TEST(RuntimeAiTest, PatrolMovementRespectsSolidGeometryBoundary) {
     EXPECT_FLOAT_EQ(ai.GetGuards()[0].position.y, 0.0f);
 }
 
+TEST(RuntimeAiTest, PatrolAnimationCommandPublishesMonotonicRequest) {
+    AiSystem ai;
+    AiGuardEntity guard;
+    guard.id = 14;
+    guard.state = AiGuardState::Patrol;
+    guard.patrol_commands = {
+        AiPatrolCommand{AiPatrolCommandKind::Animation, 37},
+        AiPatrolCommand{AiPatrolCommandKind::Quit, -1},
+    };
+    ai.RegisterGuard(guard);
+
+    ai.Update(GameClock::TICK_INTERVAL_SECONDS, glm::vec3(100000.0f), false);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_EQ(ai.GetGuards()[0].requested_animation, 37);
+    EXPECT_EQ(ai.GetGuards()[0].animation_request_serial, 1U);
+}
+
 TEST(RuntimeAiTest, RetailInvulnerabilityFlagBlocksDamage) {
     AiSystem ai;
     AiGuardEntity guard;

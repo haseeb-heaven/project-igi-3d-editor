@@ -360,6 +360,7 @@ void RunPatrolCommand(AiGuardEntity& g, uint64_t tick, double delta_seconds) {
             // The renderer plays the requested clip; without a clip-finished
             // feedback loop the cursor advances immediately rather than stalling.
             g.requested_animation = cmd.operand;
+            ++g.animation_request_serial;
             finished = true;
             break;
         case AiPatrolCommandKind::Delay:

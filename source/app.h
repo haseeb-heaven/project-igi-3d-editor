@@ -241,6 +241,7 @@ private:
 	AnimationRegistry animRegistry_;
 	std::unordered_map<int, AnimPlayback> animPlaybacks_; // object index -> playback state
 	std::unordered_map<int, std::vector<int>> animIdsCache_; // object index -> discovered AIAction_PlayAnimation ids
+	std::unordered_map<uint32_t, uint64_t> runtime_animation_request_serials_;
 	bool show_anim_debug_ = false; // F10: animation status panel (independent of F2/TaskTree)
 	bool show_anim_skeleton_ = false; // B: bone wireframe overlay, off by default, independent of F10/playback state
 	// modelId -> "right hand" bone index within GetOrLoadSkinGeometry's parsed bone
@@ -256,6 +257,7 @@ private:
 	void ToggleMusic();    // Escape-menu Music checkbox: stop if playing, else (re)start current level's music
 	void ToggleLightmaps(); // Escape-menu Lightmaps checkbox: enable/disable applying calculated lightmaps during render
 	void UpdateAnimations(float dtSec);
+	void ApplyRuntimeAiAnimationRequests();
 	std::string BuildAnimStatusString();
 	int FindHumanAiTaskId(int objIndex) const;
 	const std::vector<int>& GetOrComputeAnimationIds(int objIndex);
