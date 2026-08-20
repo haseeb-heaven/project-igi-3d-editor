@@ -1,6 +1,7 @@
 #include "app_internal.h"
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
+#include "runtime/audio_system.h"
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -90,6 +91,7 @@ bool App::Init(int argc, char** argv) {
 	std::string exeDir = Utils::GetExeDirectory();
 	Logger::Get().Init(exeDir + "\\igi1ed.log");
 	Logger::Get().Log(LogLevel::INFO, "IGI Editor Initializing...");
+	igi::AudioSystem::Initialize(Utils::GetIGIRootPath());
 
 	if (!renderer_.Init()) {
 		return false;

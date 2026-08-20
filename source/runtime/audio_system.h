@@ -1,7 +1,6 @@
 #pragma once
+#include <filesystem>
 #include <string>
-#include <vector>
-#include <unordered_map>
 
 namespace igi {
 
@@ -17,9 +16,13 @@ enum class SoundEffect {
 
 class AudioSystem {
 public:
-    static void Initialize();
+    static void Initialize(const std::string& game_root = {});
     static void Play(SoundEffect sfx);
     static void PlayWavFile(const std::string& path);
+
+private:
+    static std::filesystem::path FindExistingPath(const std::string& relative_path);
+    static std::string game_root_;
 };
 
 } // namespace igi
