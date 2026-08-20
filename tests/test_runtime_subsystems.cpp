@@ -635,26 +635,81 @@ TEST(RuntimePlayerTest, ConvertsHumanPlayerMetersToRuntimeUnitsPerTick) {
 }
 
 // 5. Weapon Fire & Ballistics Tests
+TEST(RuntimeWeaponTest, UsesRetailPlayerCycleAndWeaponModels) {
+    WeaponSystem weapons;
+
+    EXPECT_EQ(weapons.GetActiveWeapon().id, 20U); // WEAPON_ID_KNIFE
+    EXPECT_EQ(weapons.GetActiveWeapon().model_id, "133_01_1");
+
+    ASSERT_TRUE(weapons.SelectWeaponSlot(6)); // WEAPON_ID_MP5SD
+    EXPECT_EQ(weapons.GetActiveWeapon().id, 7U);
+    EXPECT_EQ(weapons.GetActiveWeapon().script_id, "WEAPON_ID_MP5SD");
+    EXPECT_EQ(weapons.GetActiveWeapon().model_id, "103_01_1");
+    EXPECT_EQ(weapons.GetActiveWeapon().rounds_per_minute, 700.0f);
+    EXPECT_EQ(weapons.GetActiveWeapon().clip_capacity, 32U);
+}
+
+TEST(RuntimeWeaponTest, UsesRetailAutomaticCadenceAndResetsBurstOnRelease) {
+    WeaponSystem weapons;
+    ASSERT_TRUE(weapons.SelectWeaponSlot(6)); // MP5SD: 700 RPM -> 2 fixed ticks
+
+    BulletTrace first_trace;
+    EXPECT_TRUE(weapons.TryFire(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), first_trace));
+    EXPECT_NE(first_trace.direction, glm::vec3(0.0f, 1.0f, 0.0f));
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 31U);
+
+    weapons.Update(1.0 / 30.0, true);
+    BulletTrace cooling_trace;
+    EXPECT_FALSE(weapons.TryFire(
+        glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), cooling_trace));
+
+    weapons.Update(1.0 / 30.0, true);
+    EXPECT_TRUE(weapons.TryFire(
+        glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), cooling_trace));
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 30U);
+
+    weapons.Update(1.0 / 30.0, false);
+    weapons.Update(1.0 / 30.0, false);
+    EXPECT_TRUE(weapons.TryFire(
+        glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), cooling_trace));
+}
+
+TEST(RuntimeWeaponTest, PreservesAmmoWhenCyclingThePlayerLoadout) {
+    WeaponSystem weapons;
+    ASSERT_TRUE(weapons.SelectWeaponSlot(6)); // MP5SD
+
+    BulletTrace trace;
+    ASSERT_TRUE(weapons.TryFire(
+        glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), trace));
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 31U);
+
+    ASSERT_TRUE(weapons.SelectWeaponSlot(0));
+    ASSERT_TRUE(weapons.SelectWeaponSlot(6));
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 31U);
+}
+
 TEST(RuntimeWeaponTest, FireAndRecoilCooldown) {
     WeaponSystem weapons;
-    weapons.SelectWeapon(0);
+    ASSERT_TRUE(weapons.SelectWeapon(4)); // WEAPON_ID_M16A2
 
     BulletTrace trace;
     bool fired = weapons.TryFire(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), trace);
     EXPECT_TRUE(fired);
     EXPECT_TRUE(trace.hit);
     EXPECT_GT(trace.distance, PlayerController::WORLD_METER);
-    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 29);
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 19U);
 
     // Rapid second shot must be throttled by RPM cooldown
     bool fired_immediately = weapons.TryFire(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), trace);
     EXPECT_FALSE(fired_immediately);
 
     // Advance cooldown
-    weapons.Update(0.2);
+    for (int tick = 0; tick < 3; ++tick) {
+        weapons.Update(1.0 / 30.0, true);
+    }
     bool fired_after_cooldown = weapons.TryFire(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), trace);
     EXPECT_TRUE(fired_after_cooldown);
-    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 28);
+    EXPECT_EQ(weapons.GetCurrentClipAmmo(), 18U);
 }
 
 // 6. AI Perception Dual-Cone Tests

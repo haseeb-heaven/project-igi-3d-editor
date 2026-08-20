@@ -51,7 +51,7 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         current_cmd_.interact = is_down;
     } else if (up_key == k_rld || up_key == 'R') {
         current_cmd_.reload = is_down;
-    } else if (key >= '1' && key <= '6') {
+    } else if (key >= '1' && key <= '9') {
         if (is_down) current_cmd_.switch_weapon = key - '1';
     }
 }

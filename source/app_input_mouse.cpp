@@ -42,11 +42,9 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		} else if (button == GLUT_RIGHT_BUTTON) {
 			gameplay_host_.GetInputRouter().OnMouseButton(2, state == GLUT_DOWN);
 		} else if (button == 3 && state == GLUT_DOWN) { // Wheel Up: Next weapon
-			int cur = (int)gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().id;
-			gameplay_host_.GetWorld().GetWeapons().SelectWeapon((cur + 1) % 6);
+			gameplay_host_.GetWorld().GetWeapons().SelectNextWeapon();
 		} else if (button == 4 && state == GLUT_DOWN) { // Wheel Down: Prev weapon
-			int cur = (int)gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().id;
-			gameplay_host_.GetWorld().GetWeapons().SelectWeapon((cur + 5) % 6);
+			gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
 		}
 		return;
 	}
@@ -877,4 +875,3 @@ void App::ApplyPropPositionDrag() {
 		viewer_.pos_ += glm::vec3(deltaPos);
 	}
 }
-

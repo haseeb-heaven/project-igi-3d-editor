@@ -1,147 +1,392 @@
-// weapon_system.cpp - Runtime weapon state machines, recoil, and ballistics simulation implementation
+// weapon_system.cpp - Vanilla weapon roster and deterministic fixed-tick firing state machine.
 #include "weapon_system.h"
+
 #include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <utility>
 
 namespace igi {
 
 namespace {
 
 constexpr float kWorldUnitsPerMeter = 4096.0f;
+constexpr float kDegreesToRadians = 0.017453292f;
+constexpr float kTwoPi = 6.2831855f;
+constexpr int kRoundsAtMinimumSpread = 3;
+
+WeaponDefinition CreateVanillaWeapon(
+    uint32_t weapon_id,
+    const char* script_id,
+    const char* display_name,
+    const char* model_id,
+    float muzzle_velocity,
+    float rounds_per_minute,
+    uint32_t clip_capacity,
+    uint32_t maximum_rounds_per_burst,
+    uint32_t bullets_per_round,
+    float minimum_spread_degrees,
+    float maximum_spread_degrees,
+    float fixed_recoil_pitch,
+    float fixed_recoil_yaw,
+    float random_recoil_pitch,
+    float random_recoil_yaw,
+    float effective_range_meters,
+    float gameplay_damage,
+    int32_t calibre_id,
+    const char* fire_sound,
+    const char* fire_loop_end_sound,
+    bool uses_ammunition = true) {
+    WeaponDefinition definition;
+    definition.id = weapon_id;
+    definition.script_id = script_id;
+    definition.name = display_name;
+    definition.model_id = model_id;
+    definition.muzzle_velocity = muzzle_velocity;
+    definition.rounds_per_minute = rounds_per_minute;
+    definition.clip_capacity = clip_capacity;
+    definition.maximum_rounds_per_burst = maximum_rounds_per_burst;
+    definition.bullets_per_round = bullets_per_round;
+    definition.minimum_spread_degrees = minimum_spread_degrees;
+    definition.maximum_spread_degrees = maximum_spread_degrees;
+    definition.base_spread = std::abs(minimum_spread_degrees) * kDegreesToRadians;
+    definition.recoil_pitch = fixed_recoil_pitch;
+    definition.recoil_yaw = fixed_recoil_yaw;
+    definition.random_recoil_pitch = random_recoil_pitch;
+    definition.random_recoil_yaw = random_recoil_yaw;
+    definition.effective_range_meters = effective_range_meters;
+    definition.damage = gameplay_damage;
+    definition.calibre_id = calibre_id;
+    definition.fire_sound = fire_sound;
+    definition.fire_loop_end_sound = fire_loop_end_sound;
+    definition.uses_ammunition = uses_ammunition;
+    definition.is_automatic = maximum_rounds_per_burst > 1;
+    return definition;
+}
+
+uint32_t ReserveForWeapon(const WeaponDefinition& weapon) {
+    switch (weapon.id) {
+        case 1: return 68;   // Glock 17, calibre 919.
+        case 3: return 30;   // Desert Eagle.
+        case 4: return 120;  // M16A2, calibre 556.
+        case 5: return 120;  // AK47, calibre 762.
+        case 6: return 150;  // Uzi.
+        case 7: return 150;  // MP5SD.
+        case 8: return 42;   // SPAS12 shells.
+        case 9: return 48;   // Jackhammer shells.
+        case 10: return 120; // Minimi.
+        case 11: return 30;  // Dragunov.
+        case 12: return 4;   // LAW 80.
+        case 13: return 150; // Uzi x2.
+        case 14: return 4;   // Hand grenades.
+        case 15: return 4;   // Flashbangs.
+        case 16: return 4;   // Proximity mines.
+        case 18: return 0;   // Binoculars.
+        case 19: return 4;   // Medipacks.
+        case 20: return 0;   // Knife.
+        case 21: return 24;  // Colt Anaconda.
+        default: return 0;
+    }
+}
+
+int FixedCadenceTicks(float rounds_per_minute) {
+    if (rounds_per_minute <= 0.0f) {
+        return 1;
+    }
+    return std::max(
+        1,
+        static_cast<int>(60.0 / static_cast<double>(rounds_per_minute) * 30.0));
+}
+
+glm::vec3 NormalizeOrFallback(const glm::vec3& vector, const glm::vec3& fallback) {
+    const float length_squared = glm::dot(vector, vector);
+    if (length_squared <= 0.00000001f) {
+        return fallback;
+    }
+    return vector / std::sqrt(length_squared);
+}
 
 } // namespace
 
+const std::vector<WeaponDefinition>& WeaponSystem::GetVanillaWeaponCatalog() {
+    static const std::vector<WeaponDefinition> catalog = {
+        // Values below are the fixed DefineWeaponType fields from the vanilla
+        // WEAPONS/*/WEAPON.QVM roster. Damage remains the runtime bridge value;
+        // the separate ammo QVM damage table is the next ballistics seam.
+        CreateVanillaWeapon(1, "WEAPON_ID_GLOCK", "Glock 17", "117_01_1",
+            400.0f, 400.0f, 17, 1, 1, -1.5f, 1.5f, 1.5f, 0.0f, 0.0f, 0.0f,
+            80.0f, 25.0f, 919, "glock_shot_1", "glock_shot_2"),
+        CreateVanillaWeapon(3, "WEAPON_ID_DESERTEAGLE", "Desert Eagle", "106_01_1",
+            400.0f, 200.0f, 10, 1, 1, -1.5f, 1.5f, 4.0f, 0.0f, 0.0f, 0.0f,
+            40.0f, 50.0f, 919, "glock_shot_1", "glock_shot_2"),
+        CreateVanillaWeapon(4, "WEAPON_ID_M16A2", "M16 A2", "108_01_1",
+            950.0f, 550.0f, 20, 20, 1, -2.0f, 2.0f, 0.8f, 0.0f, 1.2f, 0.4f,
+            200.0f, 35.0f, 556, "m16_loop", "m16_loop_e"),
+        CreateVanillaWeapon(5, "WEAPON_ID_AK47", "AK47", "100_01_1",
+            710.0f, 650.0f, 30, 30, 1, -3.5f, 3.5f, 0.8f, 0.0f, 0.6f, 0.6f,
+            2000.0f, 42.0f, 762, "ak47_loop", "ak47_loop_e"),
+        CreateVanillaWeapon(6, "WEAPON_ID_UZI", "Uzi", "111_01_1",
+            400.0f, 700.0f, 32, 32, 1, -5.0f, 5.0f, 0.9f, 0.0f, 0.7f, 0.7f,
+            50.0f, 28.0f, 919, "uzi_loop", "uzi_loop_e"),
+        CreateVanillaWeapon(7, "WEAPON_ID_MP5SD", "Mp5 SD3", "103_01_1",
+            400.0f, 700.0f, 32, 32, 1, -2.0f, 2.0f, 0.8f, 0.0f, 0.8f, 0.0f,
+            80.0f, 28.0f, 919, "mp5sd_loop", "mp5sd_loop_e"),
+        CreateVanillaWeapon(8, "WEAPON_ID_SPAS12", "Spas 12", "109_01_1",
+            600.0f, 40.0f, 7, 1, 30, 20.0f, 20.0f, 8.0f, 3.0f, 0.0f, 0.0f,
+            30.0f, 45.0f, 12, "spas12_shot_1", "spas12_shot_1"),
+        CreateVanillaWeapon(9, "WEAPON_ID_JACKHAMMER", "Jackhammer", "125_01_1",
+            280.0f, 180.0f, 12, 12, 30, -14.0f, 14.0f, 5.0f, 0.0f, 0.0f, 0.0f,
+            50.0f, 45.0f, 12, "jackhammer_loop", "jackhammer_loop_e"),
+        CreateVanillaWeapon(10, "WEAPON_ID_MINIMI", "Minimi", "107_01_1",
+            1200.0f, 800.0f, 60, 60, 1, -4.5f, 4.5f, 0.2f, 0.0f, -1.0f, 0.0f,
+            300.0f, 35.0f, 556, "minimi_loop", "minimi_loop_e"),
+        CreateVanillaWeapon(11, "WEAPON_ID_DRAGUNOV", "Dragunov", "105_01_1",
+            6000.0f, 50.0f, 10, 1, 1, -0.05f, 0.05f, 3.5f, 0.0f, 0.0f, 0.0f,
+            300.0f, 95.0f, 10004, "svddrag_shot_1", "svddrag_shot_1"),
+        CreateVanillaWeapon(12, "WEAPON_ID_RPG18", "LAW 80", "110_01_1",
+            5.0f, 40.0f, 1, 1, 1, 0.0f, 0.0f, 12.0f, 0.0f, 0.0f, 0.0f,
+            600.0f, 100.0f, 1000, "rpg_launch_1", "rpg_launch_1"),
+        CreateVanillaWeapon(13, "WEAPON_ID_UZIX2", "Uzi x 2", "111_04_1",
+            400.0f, 1400.0f, 64, 64, 1, -5.0f, 5.0f, 0.9f, 0.0f, 0.7f, 0.7f,
+            50.0f, 28.0f, 919, "uzix2_loop", "uzi_loop_e"),
+        CreateVanillaWeapon(14, "WEAPON_ID_GRENADE", "Hand Grenade", "135_01_1",
+            15.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f, 100.0f, 10000, "grenade_throw", "grenade_throw"),
+        CreateVanillaWeapon(15, "WEAPON_ID_FLASHBANG", "FlashBang", "137_01_1",
+            15.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f, 1.0f, 10003, "flashbang_throw", "flashbang_throw"),
+        CreateVanillaWeapon(16, "WEAPON_ID_PROXIMITYMINE", "Proximitymine", "136_01_1",
+            15.0f, 60.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.5f, 100.0f, 10001, "mine_place", "mine_place"),
+        CreateVanillaWeapon(18, "WEAPON_ID_BINOCULARS", "Binoculars", "102_01_1",
+            8.0f, 50.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 919, "", "", false),
+        CreateVanillaWeapon(19, "WEAPON_ID_MEDIPACK", "Medipack", "121_01_1",
+            0.0f, 120.0f, 1, 60, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f, 0.0f, 10005, "medipack_use", "medipack_use"),
+        CreateVanillaWeapon(20, "WEAPON_ID_KNIFE", "Knife", "133_01_1",
+            10.0f, 140.0f, 1, 1, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            1.0f, 100.0f, -1, "knife_1", "knife_2", false),
+        CreateVanillaWeapon(21, "WEAPON_ID_COLT", "Colt Anaconda", "101_01_1",
+            360.0f, 60.0f, 6, 1, 1, -2.0f, 2.0f, 6.0f, 0.0f, 0.0f, 0.0f,
+            80.0f, 50.0f, 44, "colt_shot_1", "colt_shot_1"),
+    };
+    return catalog;
+}
+
+const std::vector<uint32_t>& WeaponSystem::GetVanillaPlayerWeaponCycle() {
+    static const std::vector<uint32_t> cycle = {
+        20, 1, 21, 3, 6, 13, 7, 4, 5, 8, 9, 11, 10, 14, 15, 16, 12, 19,
+    };
+    return cycle;
+}
+
 WeaponSystem::WeaponSystem() {
-    SelectWeapon(0);
+    SelectWeaponSlot(0);
 }
 
-void WeaponSystem::SelectWeapon(uint32_t weapon_id) {
-    active_weapon_.id = weapon_id;
-    switch (weapon_id) {
-        case 0:
-            active_weapon_.name = "M16A2 Assault Rifle";
-            active_weapon_.muzzle_velocity = 900.0f;
-            active_weapon_.rounds_per_minute = 600.0f;
-            active_weapon_.clip_capacity = 30;
-            active_weapon_.recoil_pitch = 1.2f;
-            active_weapon_.recoil_yaw = 0.4f;
-            active_weapon_.base_spread = 0.015f;
-            active_weapon_.damage = 35.0f;
-            active_weapon_.is_automatic = true;
-            reserve_ammo_ = 120;
-            break;
-        case 1:
-            active_weapon_.name = "Glock 17 9mm";
-            active_weapon_.muzzle_velocity = 375.0f;
-            active_weapon_.rounds_per_minute = 400.0f;
-            active_weapon_.clip_capacity = 17;
-            active_weapon_.recoil_pitch = 1.0f;
-            active_weapon_.recoil_yaw = 0.2f;
-            active_weapon_.base_spread = 0.02f;
-            active_weapon_.damage = 25.0f;
-            active_weapon_.is_automatic = false;
-            reserve_ammo_ = 68;
-            break;
-        case 2:
-            active_weapon_.name = "MP5SD3 Submachine Gun";
-            active_weapon_.muzzle_velocity = 285.0f;
-            active_weapon_.rounds_per_minute = 800.0f;
-            active_weapon_.clip_capacity = 30;
-            active_weapon_.recoil_pitch = 0.8f;
-            active_weapon_.recoil_yaw = 0.3f;
-            active_weapon_.base_spread = 0.025f;
-            active_weapon_.damage = 28.0f;
-            active_weapon_.is_automatic = true;
-            reserve_ammo_ = 150;
-            break;
-        case 3:
-            active_weapon_.name = "AK-47 Assault Rifle";
-            active_weapon_.muzzle_velocity = 715.0f;
-            active_weapon_.rounds_per_minute = 600.0f;
-            active_weapon_.clip_capacity = 30;
-            active_weapon_.recoil_pitch = 1.8f;
-            active_weapon_.recoil_yaw = 0.6f;
-            active_weapon_.base_spread = 0.03f;
-            active_weapon_.damage = 42.0f;
-            active_weapon_.is_automatic = true;
-            reserve_ammo_ = 120;
-            break;
-        case 4:
-            active_weapon_.name = "Dragunov SVD Sniper";
-            active_weapon_.muzzle_velocity = 830.0f;
-            active_weapon_.rounds_per_minute = 150.0f;
-            active_weapon_.clip_capacity = 10;
-            active_weapon_.recoil_pitch = 3.5f;
-            active_weapon_.recoil_yaw = 1.0f;
-            active_weapon_.base_spread = 0.002f;
-            active_weapon_.damage = 95.0f;
-            active_weapon_.is_automatic = false;
-            reserve_ammo_ = 30;
-            break;
-        case 5:
-        default:
-            active_weapon_.name = "Combat Knife";
-            active_weapon_.muzzle_velocity = 50.0f;
-            active_weapon_.rounds_per_minute = 100.0f;
-            active_weapon_.clip_capacity = 1;
-            active_weapon_.recoil_pitch = 0.1f;
-            active_weapon_.recoil_yaw = 0.1f;
-            active_weapon_.base_spread = 0.0f;
-            active_weapon_.damage = 100.0f;
-            active_weapon_.is_automatic = false;
-            reserve_ammo_ = 1;
-            break;
-    }
-
-    current_clip_ammo_ = active_weapon_.clip_capacity;
-    shot_cooldown_ = 0.0;
-    is_reloading_ = false;
-    reload_timer_ = 0.0;
-}
-
-bool WeaponSystem::TryFire(const glm::vec3& muzzle_pos, const glm::vec3& aim_dir, BulletTrace& out_trace) {
-    if (is_reloading_ || shot_cooldown_ > 0.0 || current_clip_ammo_ == 0 ||
-        glm::dot(aim_dir, aim_dir) <= 0.0001f) {
+bool WeaponSystem::SelectWeapon(uint32_t weapon_id) {
+    const auto& catalog = GetVanillaWeaponCatalog();
+    const auto weapon = std::find_if(
+        catalog.begin(),
+        catalog.end(),
+        [weapon_id](const WeaponDefinition& definition) {
+            return definition.id == weapon_id;
+        });
+    if (weapon == catalog.end()) {
         return false;
     }
 
-    out_trace = BulletTrace();
-    current_clip_ammo_--;
-    shot_cooldown_ = 60.0 / active_weapon_.rounds_per_minute;
+    SaveActiveAmmoState();
+    active_weapon_ = *weapon;
+    RestoreOrInitializeAmmoState();
+    ResetTransientState();
+    return true;
+}
 
-    // Simulate ballistic bullet raycast trace
+bool WeaponSystem::SelectWeaponSlot(uint32_t player_cycle_slot) {
+    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    if (player_cycle_slot >= cycle.size()) {
+        return false;
+    }
+    return SelectWeapon(cycle[player_cycle_slot]);
+}
+
+bool WeaponSystem::SelectNextWeapon() {
+    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    const auto current = std::find(cycle.begin(), cycle.end(), active_weapon_.id);
+    const size_t current_slot = current == cycle.end()
+        ? 0
+        : static_cast<size_t>(std::distance(cycle.begin(), current));
+    return SelectWeaponSlot(static_cast<uint32_t>((current_slot + 1) % cycle.size()));
+}
+
+bool WeaponSystem::SelectPreviousWeapon() {
+    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    const auto current = std::find(cycle.begin(), cycle.end(), active_weapon_.id);
+    const size_t current_slot = current == cycle.end()
+        ? 0
+        : static_cast<size_t>(std::distance(cycle.begin(), current));
+    const size_t previous_slot = current_slot == 0 ? cycle.size() - 1 : current_slot - 1;
+    return SelectWeaponSlot(static_cast<uint32_t>(previous_slot));
+}
+
+void WeaponSystem::SaveActiveAmmoState() {
+    if (active_weapon_.id == 0) {
+        return;
+    }
+    ammo_state_by_weapon_id_[active_weapon_.id] = {
+        current_clip_ammo_,
+        reserve_ammo_,
+    };
+}
+
+void WeaponSystem::RestoreOrInitializeAmmoState() {
+    const auto [state, inserted] = ammo_state_by_weapon_id_.try_emplace(
+        active_weapon_.id,
+        AmmoState{
+            active_weapon_.clip_capacity,
+            active_weapon_.uses_ammunition ? ReserveForWeapon(active_weapon_) : 0,
+        });
+    if (inserted) {
+        current_clip_ammo_ = state->second.clip_ammo;
+        reserve_ammo_ = state->second.reserve_ammo;
+        return;
+    }
+
+    current_clip_ammo_ = std::min(
+        state->second.clip_ammo,
+        active_weapon_.clip_capacity);
+    reserve_ammo_ = state->second.reserve_ammo;
+}
+
+void WeaponSystem::ResetTransientState() {
+    rounds_this_burst_ = 0;
+    shot_cooldown_ticks_ = 0;
+    is_reloading_ = false;
+    reload_timer_ = 0.0;
+    last_recoil_pitch_degrees_ = 0.0f;
+    last_recoil_yaw_degrees_ = 0.0f;
+}
+
+void WeaponSystem::SetReserveAmmo(uint32_t count) {
+    reserve_ammo_ = count;
+    SaveActiveAmmoState();
+}
+
+float WeaponSystem::NextRandomUnit() {
+    random_state_ = random_state_ * 1664525U + 1013904223U;
+    return static_cast<float>(random_state_ & 0x00FFFFFFU) /
+        static_cast<float>(0x01000000U);
+}
+
+bool WeaponSystem::TryFire(
+    const glm::vec3& muzzle_pos,
+    const glm::vec3& aim_dir,
+    BulletTrace& out_trace) {
+    out_trace = BulletTrace();
+    last_recoil_pitch_degrees_ = 0.0f;
+    last_recoil_yaw_degrees_ = 0.0f;
+
+    if (is_reloading_ || shot_cooldown_ticks_ > 0 ||
+        rounds_this_burst_ >= active_weapon_.maximum_rounds_per_burst ||
+        (active_weapon_.uses_ammunition && current_clip_ammo_ == 0)) {
+        return false;
+    }
+
+    const float aim_length_squared = glm::dot(aim_dir, aim_dir);
+    if (aim_length_squared <= 0.0001f) {
+        return false;
+    }
+
+    const glm::vec3 forward = aim_dir / std::sqrt(aim_length_squared);
+    const glm::vec3 world_up(0.0f, 0.0f, 1.0f);
+    const glm::vec3 right = NormalizeOrFallback(
+        glm::cross(forward, world_up),
+        glm::vec3(1.0f, 0.0f, 0.0f));
+    const glm::vec3 up = NormalizeOrFallback(glm::cross(right, forward), world_up);
+
+    const float spread_degrees = rounds_this_burst_ > kRoundsAtMinimumSpread
+        ? active_weapon_.maximum_spread_degrees
+        : active_weapon_.minimum_spread_degrees;
+    const float spread_radians = std::abs(spread_degrees) * kDegreesToRadians;
+    glm::vec3 shot_direction = forward;
+    if (spread_radians > 0.0f) {
+        float radius = NextRandomUnit() * NextRandomUnit() * NextRandomUnit() * spread_radians;
+        const float bearing = NextRandomUnit() * kTwoPi;
+        const float sine = std::sin(radius);
+        shot_direction = NormalizeOrFallback(
+            forward * std::cos(radius) +
+                right * (std::cos(bearing) * sine) +
+                up * (std::sin(bearing) * sine),
+            forward);
+    }
+
     out_trace.origin = muzzle_pos;
-    out_trace.direction = aim_dir;
+    out_trace.direction = shot_direction;
     out_trace.damage = active_weapon_.damage;
     out_trace.hit = true;
     out_trace.distance = active_weapon_.effective_range_meters * kWorldUnitsPerMeter;
-    out_trace.hit_position = muzzle_pos + aim_dir * out_trace.distance;
+    out_trace.hit_position = muzzle_pos + shot_direction * out_trace.distance;
+
+    if (active_weapon_.uses_ammunition && current_clip_ammo_ > 0) {
+        --current_clip_ammo_;
+    }
+    ++rounds_this_burst_;
+    shot_cooldown_ticks_ = static_cast<uint32_t>(
+        FixedCadenceTicks(active_weapon_.rounds_per_minute));
+
+    if (active_weapon_.random_recoil_pitch != 0.0f ||
+        active_weapon_.random_recoil_yaw != 0.0f) {
+        float recoil_x = 0.0f;
+        float recoil_y = 0.0f;
+        do {
+            recoil_x = (NextRandomUnit() - 0.5f) * 2.0f;
+            recoil_y = (NextRandomUnit() - 0.5f) * 2.0f;
+        } while (recoil_x * recoil_x + recoil_y * recoil_y > 1.0f);
+        last_recoil_pitch_degrees_ = active_weapon_.recoil_pitch +
+            active_weapon_.random_recoil_pitch * recoil_x;
+        last_recoil_yaw_degrees_ = active_weapon_.recoil_yaw +
+            active_weapon_.random_recoil_yaw * recoil_y;
+    } else {
+        last_recoil_pitch_degrees_ = active_weapon_.recoil_pitch;
+        last_recoil_yaw_degrees_ = active_weapon_.recoil_yaw;
+    }
 
     return true;
 }
 
 void WeaponSystem::Reload() {
-    if (is_reloading_ || current_clip_ammo_ >= active_weapon_.clip_capacity || reserve_ammo_ == 0) {
+    if (!active_weapon_.uses_ammunition || is_reloading_ ||
+        current_clip_ammo_ >= active_weapon_.clip_capacity || reserve_ammo_ == 0) {
         return;
     }
     is_reloading_ = true;
-    reload_timer_ = 2.2; // 2.2 second reload animation time
+    reload_timer_ = active_weapon_.reload_time_seconds;
 }
 
-void WeaponSystem::Update(double delta_seconds) {
-    if (shot_cooldown_ > 0.0) {
-        shot_cooldown_ = std::max(0.0, shot_cooldown_ - delta_seconds);
+void WeaponSystem::Update(double delta_seconds, bool trigger_held) {
+    if (shot_cooldown_ticks_ > 0) {
+        --shot_cooldown_ticks_;
+    }
+    if (!trigger_held) {
+        rounds_this_burst_ = 0;
     }
 
-    if (is_reloading_) {
-        reload_timer_ -= delta_seconds;
-        if (reload_timer_ <= 0.0) {
-            uint32_t needed = active_weapon_.clip_capacity - current_clip_ammo_;
-            uint32_t transferred = std::min(needed, reserve_ammo_);
-            reserve_ammo_ -= transferred;
-            current_clip_ammo_ += transferred;
-            is_reloading_ = false;
-        }
+    if (!is_reloading_) {
+        return;
     }
+
+    reload_timer_ -= std::max(0.0, delta_seconds);
+    if (reload_timer_ > 0.0) {
+        return;
+    }
+
+    const uint32_t rounds_needed = active_weapon_.clip_capacity - current_clip_ammo_;
+    const uint32_t transferred_rounds = std::min(rounds_needed, reserve_ammo_);
+    current_clip_ammo_ += transferred_rounds;
+    reserve_ammo_ -= transferred_rounds;
+    is_reloading_ = false;
 }
 
 } // namespace igi

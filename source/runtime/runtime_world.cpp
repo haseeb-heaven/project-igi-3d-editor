@@ -99,7 +99,7 @@ void RuntimeWorld::Reset() {
     }
 
     player_.Reset(spawn_pos, 0.0f);
-    weapons_.SelectWeapon(0);
+    weapons_.SelectWeaponSlot(0);
     ai_.Clear();
     ClearGuardScripts();
     task_tree_.Clear();
@@ -174,10 +174,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     PlayFootstepIfNeeded(input_cmd, was_grounded);
 
     // 2. Weapon switching, firing & cooldowns
-    if (input_cmd.switch_weapon >= 0 && input_cmd.switch_weapon <= 5) {
-        weapons_.SelectWeapon(input_cmd.switch_weapon);
+    if (input_cmd.switch_weapon >= 0 && input_cmd.switch_weapon <= 17) {
+        weapons_.SelectWeaponSlot(static_cast<uint32_t>(input_cmd.switch_weapon));
     }
-    weapons_.Update(dt);
+    weapons_.Update(dt, input_cmd.fire);
     if (input_cmd.fire) {
         BulletTrace trace;
         float yaw_rad = glm::radians(player_.GetYaw());
@@ -189,6 +189,12 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         glm::vec3 aim_dir(-sin_y * cos_p, cos_y * cos_p, sin_p);
 
         if (weapons_.TryFire(player_.GetEyePosition(), aim_dir, trace)) {
+            player_.SetOrientation(
+                player_.GetYaw() + weapons_.GetLastRecoilYawDegrees(),
+                std::clamp(
+                    player_.GetPitch() + weapons_.GetLastRecoilPitchDegrees(),
+                    -89.0f,
+                    89.0f));
             const bool hit_guard = ApplyPlayerShotDamage(trace);
             AudioSystem::Play(SoundEffect::Gunshot);
             if (hit_guard || trace.hit_world_geometry) {
