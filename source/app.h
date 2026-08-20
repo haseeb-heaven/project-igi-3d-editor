@@ -493,6 +493,7 @@ private:
   void UpdateGraphNodeManipulation(int x, int y);
 
   void Frame(float delta_seconds);
+  void DrawGameplayPlayerWeapon();
   void DispatchEventBindings();
 
   void ProcessInput(float delta_seconds);

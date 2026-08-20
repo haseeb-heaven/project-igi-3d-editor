@@ -748,6 +748,7 @@ void App::Frame(float delta_seconds) {
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
+	DrawGameplayPlayerWeapon();
 
     // Find the "right hand" bone index in modelId's parsed bone list (REIH+MANB
     // names), cached per modelId. This is the same index space EvaluateWorld's
@@ -863,6 +864,34 @@ void App::Frame(float delta_seconds) {
 
 	DrawCustomCursor();
 	glutSwapBuffers();
+}
+
+void App::DrawGameplayPlayerWeapon() {
+	if (!in_game_mode_) return;
+
+	const auto& player = gameplay_host_.GetWorld().GetPlayer();
+	const auto& weapon = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon();
+	if (weapon.model_id.empty() || !player.IsAlive()) return;
+
+	const glm::vec3 forward = glm::normalize(viewer_.forward_);
+	const glm::vec3 right = glm::normalize(viewer_.right_);
+	const glm::vec3 up = glm::normalize(viewer_.up_);
+	const glm::vec3 weapon_position = viewer_.pos_ +
+		forward * (0.75f * igi::PlayerController::WORLD_METER) +
+		right * (0.24f * igi::PlayerController::WORLD_METER) -
+		up * (0.24f * igi::PlayerController::WORLD_METER);
+
+	// Vanilla weapon meshes use +Y as the barrel axis. Building the basis from
+	// the live camera keeps the held model aligned with the same aim vector as
+	// the hit-scan trace while leaving the simulation independent of rendering.
+	glm::mat4 weapon_model = glm::translate(glm::mat4(1.0f), weapon_position);
+	weapon_model[0] = glm::vec4(right, 0.0f);
+	weapon_model[1] = glm::vec4(forward, 0.0f);
+	weapon_model[2] = glm::vec4(up, 0.0f);
+	weapon_model = glm::scale(
+		weapon_model,
+		glm::vec3(40.96f * 0.75f));
+	renderer_.DrawAttachedMesh(weapon.model_id, false, weapon_model);
 }
 
 void App::ToggleShowHUD() {
