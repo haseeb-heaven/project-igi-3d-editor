@@ -71,6 +71,10 @@ public:
 
     QvmNativeRegistry& GetNativeRegistry() { return qvm_registry_; }
 
+    // Current first-person flash exposure, normalized to [0, 1]. The renderer
+    // consumes this value without coupling presentation to projectile state.
+    float GetFlashEffectStrength() const { return flash_effect_strength_; }
+
     bool IsMissionActive() const { return level_flow_.GetStatus() == MissionStatus::InProgress; }
 
 private:
@@ -123,6 +127,9 @@ private:
     std::unordered_map<uint32_t, GuardCombatState> guard_combat_states_;
     InteractionQuery interaction_query_;
     bool fire_was_held_ = false;
+    float flash_effect_strength_ = 0.0f;
+    float flash_effect_decay_per_second_ = 0.0f;
+    float flash_effect_remaining_seconds_ = 0.0f;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;

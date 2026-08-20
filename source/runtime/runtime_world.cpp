@@ -275,6 +275,9 @@ void RuntimeWorld::LaunchPlayerProjectile(
 void RuntimeWorld::ApplyProjectileDetonations() {
     constexpr float target_collision_radius = 0.6f * PlayerController::WORLD_METER;
     constexpr float body_radius_scale = 0.33333334f;
+    constexpr float flash_maximum_distance = 15.0f * PlayerController::WORLD_METER;
+    constexpr float flash_minimum_duration_seconds = 0.75f;
+    constexpr float flash_maximum_duration_seconds = 1.5f;
 
     const auto calculate_damage = [](const ProjectileDetonation& detonation,
                                      float target_distance) {
@@ -296,6 +299,32 @@ void RuntimeWorld::ApplyProjectileDetonations() {
     for (const ProjectileDetonation& detonation : projectiles_.GetDetonations()) {
         if (detonation.type == ProjectileType::Flashbang) {
             AudioSystem::Play(SoundEffect::Flashbang);
+            if (player_.IsAlive()) {
+                const float player_distance = glm::distance(
+                    detonation.position,
+                    player_.GetEyePosition());
+                if (player_distance < flash_maximum_distance &&
+                    !IsWorldLineBlocked(
+                        detonation.position,
+                        player_.GetEyePosition())) {
+                    const float exposure = std::clamp(
+                        1.0f - player_distance / flash_maximum_distance,
+                        0.0f,
+                        1.0f);
+                    const float duration = flash_minimum_duration_seconds +
+                        exposure * (flash_maximum_duration_seconds -
+                            flash_minimum_duration_seconds);
+                    flash_effect_strength_ = std::max(
+                        flash_effect_strength_,
+                        exposure);
+                    flash_effect_decay_per_second_ = std::max(
+                        flash_effect_decay_per_second_,
+                        exposure / duration);
+                    flash_effect_remaining_seconds_ = std::max(
+                        flash_effect_remaining_seconds_,
+                        duration);
+                }
+            }
             continue;
         }
 
@@ -353,6 +382,9 @@ void RuntimeWorld::Reset() {
     level_flow_.InitializeMission(1);
     guard_combat_states_.clear();
     fire_was_held_ = false;
+    flash_effect_strength_ = 0.0f;
+    flash_effect_decay_per_second_ = 0.0f;
+    flash_effect_remaining_seconds_ = 0.0f;
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
@@ -405,6 +437,21 @@ void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
+
+    if (flash_effect_remaining_seconds_ > 0.0f) {
+        flash_effect_remaining_seconds_ = std::max(
+            0.0f,
+            flash_effect_remaining_seconds_ - static_cast<float>(dt));
+        flash_effect_strength_ = std::max(
+            0.0f,
+            flash_effect_strength_ - flash_effect_decay_per_second_ *
+                static_cast<float>(dt));
+        if (flash_effect_remaining_seconds_ <= 0.0f) {
+            flash_effect_strength_ = 0.0f;
+            flash_effect_decay_per_second_ = 0.0f;
+        }
+    }
+
     std::vector<ObstacleCollider> obstacles;
     for (const auto& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {

@@ -751,6 +751,7 @@ void App::Frame(float delta_seconds) {
 		.prop_anim_ids_ = propAnimIds,
 		.prop_anim_active_id_ = propAnimActiveId,
 		.prop_anim_is_playing_ = propAnimIsPlaying,
+		.flash_effect_strength_ = gameplay_host_.GetWorld().GetFlashEffectStrength(),
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);

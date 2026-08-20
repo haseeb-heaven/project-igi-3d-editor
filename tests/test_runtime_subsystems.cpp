@@ -1009,6 +1009,25 @@ TEST(RuntimeWorldTest, ProjectileDetonationAppliesBlastDamageToNearbyGuard) {
     EXPECT_EQ(world.GetProjectiles().GetDetonations().size(), 1U);
 }
 
+TEST(RuntimeWorldTest, FlashbangAppliesVisiblePlayerExposureAndDecays) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().Reset(glm::vec3(0.0f));
+
+    ProjectileLaunch launch;
+    launch.position = world.GetPlayer().GetEyePosition();
+    launch.type = ProjectileType::Flashbang;
+    launch.fuse_ticks = 1;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_GT(world.GetFlashEffectStrength(), 0.9f);
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_LT(world.GetFlashEffectStrength(), 1.0f);
+    EXPECT_GT(world.GetFlashEffectStrength(), 0.0f);
+}
+
 TEST(RuntimeWorldTest, ProjectileWeaponLaunchesOncePerTriggerPress) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

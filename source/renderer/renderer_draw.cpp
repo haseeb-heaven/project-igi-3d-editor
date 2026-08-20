@@ -3131,6 +3131,21 @@ void Renderer::Draw(const draw_params_s &params,
         draw_text_sys(ox + 8, 22, task_tree_view.objective_text_.c_str(), 0.0f, 0.95f, 0.25f);
       }
 
+      // Flashbang exposure is drawn last so it washes out the weapon, HUD, and
+      // scene together, matching the player-facing effect instead of merely
+      // playing an audio cue.
+      const float flash_alpha = std::clamp(
+          task_tree_view.flash_effect_strength_, 0.0f, 1.0f);
+      if (flash_alpha > 0.0f) {
+        glColor4f(1.0f, 1.0f, 1.0f, flash_alpha);
+        glBegin(GL_QUADS);
+        glVertex2i(0, 0);
+        glVertex2i(vw, 0);
+        glVertex2i(vw, vh);
+        glVertex2i(0, vh);
+        glEnd();
+      }
+
       glDisable(GL_BLEND);
     }
 
