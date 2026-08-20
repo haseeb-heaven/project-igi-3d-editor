@@ -6,11 +6,13 @@
 #include "app_internal.h"
 #include "utils_igi1conv.h"
 #include "renderer/object_lightmap.h"
+#include "runtime/audio_system.h"
 #include <mmsystem.h>
 #include <future>
 #include <set>
 
 void App::PlayLevelMusic(int level_no) {
+    igi::AudioSystem::SetActiveLevel(level_no);
     StopLevelMusic();
 
     // Per-level override from qedconfig.qsc (QEDLevelMusic(level, "filename.wav")),
@@ -827,4 +829,3 @@ void App::ExportTextureMap() {
 		Utils::ShowError("Could not write to:\n" + outPath, "Export Texture Map");
 	}
 }
-

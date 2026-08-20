@@ -510,7 +510,9 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                     player_.GetEyePosition(),
                     fired_trace.direction,
                     active_weapon);
-                AudioSystem::Play(SoundEffect::ProjectileLaunch);
+                AudioSystem::PlayWeaponFire(
+                    active_weapon.fire_sound,
+                    SoundEffect::ProjectileLaunch);
             }
         } else {
             std::vector<BulletTrace> traces;
@@ -525,7 +527,9 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                     hit_guard = ApplyPlayerShotDamage(trace) || hit_guard;
                     hit_world_geometry = trace.hit_world_geometry || hit_world_geometry;
                 }
-                AudioSystem::Play(SoundEffect::Gunshot);
+                AudioSystem::PlayWeaponFire(
+                    active_weapon.fire_sound,
+                    SoundEffect::Gunshot);
                 if (hit_guard || hit_world_geometry) {
                     AudioSystem::Play(SoundEffect::BulletImpact);
                 }
@@ -862,7 +866,9 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
         }
 
         const bool hit_player = ApplyGuardShotDamage(trace);
-        AudioSystem::Play(SoundEffect::Gunshot);
+        AudioSystem::PlayWeaponFire(
+            combat_state.weapon.GetActiveWeapon().fire_sound,
+            SoundEffect::Gunshot);
         if (hit_player) {
             AudioSystem::Play(SoundEffect::Pain);
         }

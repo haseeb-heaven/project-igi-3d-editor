@@ -20,12 +20,17 @@ enum class SoundEffect {
 class AudioSystem {
 public:
     static void Initialize(const std::string& game_root = {});
+    static void SetActiveLevel(int level_number);
     static void Play(SoundEffect sfx);
+    static void PlayWeaponFire(
+        const std::string& authored_sound,
+        SoundEffect fallback = SoundEffect::Gunshot);
     static void PlayWavFile(const std::string& path);
 
 private:
     static std::filesystem::path FindExistingPath(const std::string& relative_path);
     static std::string game_root_;
+    static int active_level_number_;
 };
 
 } // namespace igi

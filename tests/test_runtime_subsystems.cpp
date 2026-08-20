@@ -707,6 +707,7 @@ TEST(RuntimeWeaponTest, UsesRetailPlayerCycleAndWeaponModels) {
     EXPECT_EQ(weapons.GetActiveWeapon().model_id, "103_01_1");
     EXPECT_EQ(weapons.GetActiveWeapon().rounds_per_minute, 700.0f);
     EXPECT_EQ(weapons.GetActiveWeapon().clip_capacity, 32U);
+    EXPECT_EQ(weapons.GetActiveWeapon().fire_sound, "mp5sd_loop");
 }
 
 TEST(RuntimeWeaponTest, ResolvesAuthoredWeaponIdentifiersWithDecorativeText) {
