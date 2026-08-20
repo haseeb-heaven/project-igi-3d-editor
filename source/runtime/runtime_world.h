@@ -63,6 +63,7 @@ private:
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     bool IsWorldLineBlocked(const glm::vec3& line_origin, const glm::vec3& line_target) const;
+    float FindWorldCeilingHeight(const glm::vec3& body_position) const;
     void DispatchGuardScripts();
     void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);

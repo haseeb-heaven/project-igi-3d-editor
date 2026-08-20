@@ -49,6 +49,10 @@ bool WallAtOneMeter(float, float y, float) {
     return y >= PlayerController::WORLD_METER;
 }
 
+bool LowRoofAtStandingHeight(float, float, float z) {
+    return z >= 6000.0f;
+}
+
 QVMFile BuildRetailAiPatrolScript() {
     QVMFile parsed_file;
     parsed_file.valid = true;
@@ -877,6 +881,22 @@ TEST(RuntimeWorldTest, SolidGeometryBlocksGuardPerception) {
     ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
     EXPECT_EQ(world.GetAi().GetGuards()[0].state, AiGuardState::Patrol);
     EXPECT_FLOAT_EQ(world.GetAi().GetGuards()[0].suspicion, 0.0f);
+}
+
+TEST(RuntimeWorldTest, StaticGeometryRoofPreventsPlayerFromStanding) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain, LowRoofAtStandingHeight);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    PlayerInputCmd crouch_command;
+    crouch_command.crouch = true;
+    world.UpdateSimulationTick(0, crouch_command);
+    EXPECT_EQ(world.GetPlayer().GetStance(), PlayerStanceState::Crouching);
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+
+    EXPECT_EQ(world.GetPlayer().GetStance(), PlayerStanceState::Crouching);
+    EXPECT_LT(world.GetPlayer().GetEyeHeight(), PlayerController::STANDING_EYE_HEIGHT);
 }
 
 TEST(RuntimeWorldTest, RetailAiQvmDrivesGuardActionsOnFixedTicks) {

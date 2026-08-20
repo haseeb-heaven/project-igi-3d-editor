@@ -2,6 +2,7 @@
 #include "audio_system.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace igi {
 
@@ -13,6 +14,9 @@ void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*c
     get_terrain_z_ = get_terrain_z;
     check_collision_ = check_collision;
     if (check_collision_) {
+        player_.SetCeilingQuery([this](const glm::vec3& body_position) {
+            return FindWorldCeilingHeight(body_position);
+        });
         ai_.SetMovementCollisionQuery([check_collision](const glm::vec3& position) {
             return check_collision(
                 position.x,
@@ -25,10 +29,67 @@ void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*c
             return !IsWorldLineBlocked(line_origin, line_target);
         });
     } else {
+        player_.SetCeilingQuery({});
         ai_.SetMovementCollisionQuery({});
         ai_.SetLineOfSightQuery({});
     }
     Reset();
+}
+
+float RuntimeWorld::FindWorldCeilingHeight(const glm::vec3& body_position) const {
+    if (!check_collision_) {
+        return std::numeric_limits<float>::max();
+    }
+
+    // Only the standing envelope is needed for stance transitions. Keeping
+    // this probe bounded prevents the per-tick ground query from scanning the
+    // entire level while still detecting roofs that can block the player.
+    constexpr float probe_start_offset = PlayerCollision::SkinWidthInUnits;
+    constexpr float probe_limit = PlayerController::STANDING_EYE_HEIGHT +
+        PlayerCollision::SkinWidthInUnits;
+    constexpr float probe_step = 256.0f;
+    constexpr int refinement_iterations = 12;
+
+    const float lower_bound = body_position.z + probe_start_offset;
+    const float upper_bound = body_position.z + probe_limit;
+    const auto is_solid = [this, &body_position](float height) {
+        return check_collision_(body_position.x, body_position.y, height);
+    };
+
+    if (is_solid(lower_bound)) {
+        return lower_bound;
+    }
+
+    float previous_height = lower_bound;
+    const int sample_count = std::max(
+        1,
+        static_cast<int>(std::ceil((upper_bound - lower_bound) / probe_step)));
+    for (int sample_index = 1; sample_index <= sample_count; ++sample_index) {
+        const float sample_fraction = static_cast<float>(sample_index) /
+            static_cast<float>(sample_count);
+        const float current_height = lower_bound +
+            (upper_bound - lower_bound) * sample_fraction;
+        if (!is_solid(current_height)) {
+            previous_height = current_height;
+            continue;
+        }
+
+        float lower_height = previous_height;
+        float upper_height = current_height;
+        for (int refinement_index = 0;
+             refinement_index < refinement_iterations;
+             ++refinement_index) {
+            const float middle_height = (lower_height + upper_height) * 0.5f;
+            if (is_solid(middle_height)) {
+                upper_height = middle_height;
+            } else {
+                lower_height = middle_height;
+            }
+        }
+        return upper_height;
+    }
+
+    return std::numeric_limits<float>::max();
 }
 
 void RuntimeWorld::Reset() {
