@@ -151,6 +151,7 @@ private:
   // editor & runtime
   bool in_game_mode_ = false;
   igi::GameplayHost gameplay_host_;
+  std::optional<LevelObjects> runtime_level_objects_;
   bool edit_mode_;
   bool terrain_edit_enabled_;
   bool pause_mode_;
@@ -577,12 +578,10 @@ private:
   // overlay offset so the 3D nodes/edges follow the task live (F7 view).
   void SyncGraphOverlayOffsetFromAIGraph();
   // Registers every in-level enemy (soldier family) into the runtime AiSystem
-  // using its AIGraph waypoints, and records their original positions so the
-  // edited level can be restored on exit.
+  // using its AIGraph waypoints. Runtime transforms are rendered through the
+  // session-owned LevelObjects copy.
   void SetupLevelAiGuards();
-  void RestoreAiGuardObjectPositions();
-  std::vector<int>       ai_guard_level_indices_;
-  std::vector<glm::dvec3> ai_guard_original_pos_;
+  LevelObjects& GetActiveRenderLevelObjects();
   void PushTaskEditorUndoState();
   void UndoTaskEditorChange();
   void RedoTaskEditorChange();

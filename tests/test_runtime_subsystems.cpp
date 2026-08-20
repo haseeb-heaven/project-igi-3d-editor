@@ -446,6 +446,8 @@ TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     EditorSnapshot snap;
     snap.camera_pos = glm::vec3(123.0f, 456.0f, 789.0f);
     snap.camera_yaw = 45.0f;
+    snap.was_noclip_mode = false;
+    snap.was_hud_visible = false;
 
     EXPECT_FALSE(host.IsGameplayActive());
     bool opened = host.OpenGameplay(snap);
@@ -461,4 +463,6 @@ TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     EXPECT_FALSE(host.IsGameplayActive());
     EXPECT_FLOAT_EQ(restored.camera_pos.x, 123.0f);
     EXPECT_FLOAT_EQ(restored.camera_yaw, 45.0f);
+    EXPECT_FALSE(restored.was_noclip_mode);
+    EXPECT_FALSE(restored.was_hud_visible);
 }

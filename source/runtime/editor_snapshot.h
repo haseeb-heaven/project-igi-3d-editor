@@ -13,6 +13,8 @@ struct EditorSnapshot {
     float camera_pitch = 0.0f;
     uint32_t selected_object_id = 0;
     bool was_edit_mode = true;
+    bool was_noclip_mode = true;
+    bool was_hud_visible = true;
     bool cursor_visible = true;
     std::string current_level_path;
 };

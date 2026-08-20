@@ -439,7 +439,7 @@ void App::Frame(float delta_seconds) {
 			.mouse_y_ = mouse_state_.prior_y_,
 			.tree_scroll_offset = tree_scroll_offset_,
 			.tree_decl_expanded = tree_decl_expanded_,
-			.level_objects_ = &level_.GetLevelObjects(),
+			.level_objects_ = &GetActiveRenderLevelObjects(),
 			.task_picker_open_ = task_picker_open_,
 			.task_picker_selected_idx_ = task_picker_selected_idx_,
 			.task_picker_scroll_offset_ = task_picker_scroll_offset_,
@@ -510,7 +510,7 @@ void App::Frame(float delta_seconds) {
 			.prop_anim_active_id_ = propAnimActiveId,
 			.prop_anim_is_playing_ = propAnimIsPlaying,
 		};
-		draw_params_.level_objects_ = &level_.GetLevelObjects();
+		draw_params_.level_objects_ = &GetActiveRenderLevelObjects();
 		draw_params_.selected_object_index_ = selected_object_index_;
 		draw_params_.show_magic_obj_spheres_ = show_magic_obj_spheres_;
 		// Paused: the pause menu (a 2D overlay drawn at the end of renderer_.Draw)
@@ -549,10 +549,10 @@ void App::Frame(float delta_seconds) {
 		viewer_.pitch_ = player.GetPitch();
 		UpdateViewerVectors();
 
-		// Write AI guard positions back to the level objects so enemies visibly
-		// patrol in the editor/rendered world.
+		// Update the session-owned render copy. Authoring objects remain immutable
+		// while gameplay is running and are restored by dropping this copy.
 		const auto& guards = gameplay_host_.GetWorld().GetAi().GetGuards();
-		auto& objects = level_.GetLevelObjects().GetObjects();
+		auto& objects = GetActiveRenderLevelObjects().GetObjects();
 		for (const auto& g : guards) {
 			if ((int)g.id < (int)objects.size()) {
 				objects[g.id].pos = glm::dvec3(g.position.x, g.position.y, g.position.z);
@@ -625,7 +625,7 @@ void App::Frame(float delta_seconds) {
 
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
-	draw_params_.level_objects_ = &level_.GetLevelObjects();
+	draw_params_.level_objects_ = &GetActiveRenderLevelObjects();
 	draw_params_.selected_object_index_ = in_game_mode_ ? -1 : selected_object_index_;
 	draw_params_.show_magic_obj_spheres_ = in_game_mode_ ? false : show_magic_obj_spheres_;
 	// All AI with an active, playing clip are skinned-replaced simultaneously
@@ -666,7 +666,7 @@ void App::Frame(float delta_seconds) {
 		.mouse_y_ = mouse_state_.prior_y_,
 		.tree_scroll_offset = tree_scroll_offset_,
 		.tree_decl_expanded = tree_decl_expanded_,
-		.level_objects_ = &level_.GetLevelObjects(),
+		.level_objects_ = &GetActiveRenderLevelObjects(),
 		.task_picker_open_ = in_game_mode_ ? false : task_picker_open_,
 		.task_picker_selected_idx_ = task_picker_selected_idx_,
 		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
@@ -922,6 +922,12 @@ bool App::GetPauseMode() const {
 	return pause_mode_;
 }
 
+LevelObjects& App::GetActiveRenderLevelObjects() {
+	return runtime_level_objects_.has_value()
+		? runtime_level_objects_.value()
+		: level_.GetLevelObjects();
+}
+
 void App::ToggleGamePlayMode() {
 	in_game_mode_ = !in_game_mode_;
 	if (in_game_mode_) {
@@ -930,7 +936,11 @@ void App::ToggleGamePlayMode() {
 		snap.camera_yaw = viewer_.yaw_;
 		snap.camera_pitch = viewer_.pitch_;
 		snap.was_edit_mode = edit_mode_;
+		snap.was_noclip_mode = noclip_mode_;
+		snap.was_hud_visible = show_hud_;
 		snap.selected_object_id = selected_object_index_;
+		runtime_level_objects_ = level_.GetLevelObjects();
+	noclip_mode_ = false;
 
 		// 1. Read config.qvm profile for controls, sensitivity, sound volume
 		igi::ProfileConfig profile = igi::ConfigQvmLoader::GetActiveProfile();
@@ -991,7 +1001,7 @@ void App::ToggleGamePlayMode() {
 		gameplay_host_.OpenGameplay(snap);
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
-		// come from each enemy's AIGraph). Restores positions on exit.
+		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
 		SetupLevelAiGuards();
 
 		// Initialize mission objectives for this specific level
@@ -1024,13 +1034,14 @@ void App::ToggleGamePlayMode() {
 	} else {
 		igi::EditorSnapshot snap;
 		gameplay_host_.CloseGameplay(snap);
-		RestoreAiGuardObjectPositions();
+		runtime_level_objects_.reset();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
 		edit_mode_ = snap.was_edit_mode;
 		selected_object_index_ = snap.selected_object_id;
-		show_hud_ = true;
+		noclip_mode_ = snap.was_noclip_mode;
+		show_hud_ = snap.was_hud_visible;
 		input_.keys_ = 0;
 		input_.mouse_delta_x_ = 0.0f;
 		input_.mouse_delta_y_ = 0.0f;
@@ -1043,16 +1054,13 @@ void App::ToggleGamePlayMode() {
 
 // Registers every in-level enemy (soldier family) into the runtime AiSystem so
 // they patrol along their AIGraph waypoints during Game Play mode. Guard ids
-// equal the level-object index, which the frame loop uses to write patrol
-// positions back into the rendered level. Original positions are kept so
-// exiting game mode restores the edited level untouched.
+// equal the level-object index, which the frame loop uses to update the
+// session-owned render copy.
 static bool LastTwoIntArgs(const std::string& qscLine, int& a, int& b);
 
 void App::SetupLevelAiGuards() {
 	auto& ai = gameplay_host_.GetWorld().GetAi();
 	ai.Clear();
-	ai_guard_level_indices_.clear();
-	ai_guard_original_pos_.clear();
 
 	auto& objects = level_.GetLevelObjects().GetObjects();
 
@@ -1171,23 +1179,9 @@ void App::SetupLevelAiGuards() {
 		}
 
 		ai.RegisterGuard(guard);
-		ai_guard_level_indices_.push_back(i);
-		ai_guard_original_pos_.push_back(obj.pos);
 	}
 	Logger::Get().Log(LogLevel::INFO, "[App] Registered " +
-		std::to_string(ai_guard_level_indices_.size()) + " enemy guards for Game Play");
-}
-
-void App::RestoreAiGuardObjectPositions() {
-	auto& objects = level_.GetLevelObjects().GetObjects();
-	for (size_t k = 0; k < ai_guard_level_indices_.size(); ++k) {
-		const int idx = ai_guard_level_indices_[k];
-		if (idx >= 0 && idx < (int)objects.size()) {
-			objects[idx].pos = ai_guard_original_pos_[k];
-		}
-	}
-	ai_guard_level_indices_.clear();
-	ai_guard_original_pos_.clear();
+		std::to_string(ai.GetGuards().size()) + " enemy guards for Game Play");
 }
 
 void App::SetEditBrush(int brush) {
@@ -1500,5 +1494,3 @@ void App::AdjustAutoSaveInterval(int delta_seconds) {
 	Config::Save();
 	status_message_ = "Auto-save interval: " + std::to_string(auto_save_interval_seconds_) + "s";
 }
-
-
