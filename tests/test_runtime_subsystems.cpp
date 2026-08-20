@@ -18,6 +18,7 @@
 #include "../source/runtime/runtime_world.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
+#include "../source/runtime/projectile_system.h"
 #include "../source/runtime/window_input_router.h"
 #include "../source/runtime/human_player_config.h"
 
@@ -127,6 +128,37 @@ QVMFile BuildRetailAiPatrolScript() {
 }
 
 } // namespace
+
+TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
+    ProjectileSystem projectiles;
+    projectiles.SetCollisionQuery(
+        [](const glm::vec3& start, const glm::vec3& end, ProjectileCollisionHit& hit) {
+            if (start.z > 0.0f && end.z <= 0.0f) {
+                hit.position = glm::vec3(end.x, end.y, 0.0f);
+                hit.normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                return true;
+            }
+            return false;
+        });
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(0.0f, 0.0f, 100.0f);
+    launch.velocity = glm::vec3(0.0f, 0.0f, -100.0f);
+    launch.type = ProjectileType::FragGrenade;
+    launch.fuse_ticks = 2;
+    launch.damage = 100.0f;
+    ASSERT_TRUE(projectiles.Spawn(launch));
+
+    projectiles.Tick();
+    ASSERT_EQ(projectiles.GetProjectiles().size(), 1U);
+    EXPECT_GT(projectiles.GetProjectiles()[0].position.z, 0.0f);
+    EXPECT_TRUE(projectiles.GetDetonations().empty());
+
+    projectiles.Tick();
+    EXPECT_TRUE(projectiles.GetProjectiles().empty());
+    ASSERT_EQ(projectiles.GetDetonations().size(), 1U);
+    EXPECT_EQ(projectiles.GetDetonations()[0].type, ProjectileType::FragGrenade);
+}
 
 // 1. Game Clock Determinism & Tick Tests
 TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {

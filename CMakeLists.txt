@@ -316,6 +316,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/window_input_router.cpp
     source/runtime/simulation_scheduler.cpp
     source/runtime/gameplay_host.cpp
+    source/runtime/projectile_system.cpp
     source/runtime/audio_system.cpp
     source/runtime/config_qvm.cpp
     source/runtime/human_player_config.cpp
