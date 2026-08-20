@@ -213,6 +213,7 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                     // Resolve it to a model ID for rendering via IGIModels.json
                     if (cur_a->type_ == QSC::arg_s::type_t::STR) {
                         std::string enumId = Utils::Trim(cur_a->str_);
+                        obj.weaponEnumId = enumId;
                         obj.modelId = ResolvePickupModelId(enumId);
                     }
                     break;
@@ -627,4 +628,3 @@ void LevelObjects::ResolveSoldierWeapon(int soldierIndex) {
     Logger::Get().Log(LogLevel::INFO, "[LevelObjects] Weapon attached for soldier task " + obj.taskId +
         ": " + weaponEnumId + " -> " + resolvedModelId);
 }
-

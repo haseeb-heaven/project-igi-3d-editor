@@ -52,6 +52,7 @@ public:
     WeaponSystem();
 
     bool SelectWeapon(uint32_t weapon_id);
+    bool SelectWeaponByScriptId(const std::string& script_id);
     bool SelectWeaponSlot(uint32_t player_cycle_slot);
     bool SelectNextWeapon();
     bool SelectPreviousWeapon();
@@ -72,6 +73,7 @@ public:
     float GetLastRecoilYawDegrees() const { return last_recoil_yaw_degrees_; }
 
     void SetReserveAmmo(uint32_t count);
+    void AddReserveAmmo(uint32_t count);
 
 private:
     struct AmmoState {

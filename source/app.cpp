@@ -196,6 +196,10 @@ bool App::Init(int argc, char** argv) {
 		return g_app.CheckCollision(glm::vec3(x, y, z));
 	};
 	gameplay_host_.Initialize(s_terrain_cb, s_collision_cb);
+	gameplay_host_.GetWorld().SetInteractionQuery(
+		[this](const glm::vec3& origin, const glm::vec3& direction) {
+			return HandleGameplayInteraction(origin, direction);
+		});
 
 	return true;
 }
@@ -990,6 +994,7 @@ void App::ToggleGamePlayMode() {
 		snap.was_hud_visible = show_hud_;
 		snap.selected_object_id = selected_object_index_;
 		runtime_level_objects_ = level_.GetLevelObjects();
+		opened_door_indices_.clear();
 	noclip_mode_ = false;
 
 		// 1. Read config.qvm profile for controls, sensitivity, sound volume
@@ -1115,6 +1120,7 @@ void App::ToggleGamePlayMode() {
 		}
 		in_game_mode_ = false;
 		runtime_level_objects_.reset();
+		opened_door_indices_.clear();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
@@ -1130,6 +1136,92 @@ void App::ToggleGamePlayMode() {
 		UpdateViewerVectors();
 		status_message_ = "Editor Mode Restored";
 	}
+}
+
+igi::RuntimeInteractionResult App::HandleGameplayInteraction(
+	const glm::vec3& interaction_origin,
+	const glm::vec3& interaction_direction) {
+	constexpr float interaction_range = 2.5f * igi::PlayerController::WORLD_METER;
+	constexpr float minimum_facing_dot = 0.2f;
+
+	glm::vec3 horizontal_direction(interaction_direction.x, interaction_direction.y, 0.0f);
+	const float direction_length = glm::length(horizontal_direction);
+	if (direction_length <= 0.0001f) {
+		return {};
+	}
+	horizontal_direction /= direction_length;
+
+	auto& objects = GetActiveRenderLevelObjects().GetObjects();
+	int nearest_index = -1;
+	float nearest_distance = interaction_range;
+	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
+		const auto& object = objects[object_index];
+		if (object.deleted ||
+			(object.type != "Door" && object.type != "Terminal" &&
+			 object.type != "Switch" && object.type != "Generator" &&
+			 object.type != "GunPickup" && object.type != "AmmoPickup")) {
+			continue;
+		}
+
+		const glm::vec3 offset = glm::vec3(object.pos) - interaction_origin;
+		const glm::vec2 horizontal_offset(offset.x, offset.y);
+		const float distance = glm::length(horizontal_offset);
+		if (distance <= 0.0001f || distance > nearest_distance) {
+			continue;
+		}
+
+		const glm::vec2 direction_to_object = horizontal_offset / distance;
+		const float facing_dot = glm::dot(
+			horizontal_direction,
+			glm::vec3(direction_to_object.x, direction_to_object.y, 0.0f));
+		if (facing_dot < minimum_facing_dot) {
+			continue;
+		}
+
+		nearest_index = object_index;
+		nearest_distance = distance;
+	}
+
+	if (nearest_index < 0) {
+		return {};
+	}
+
+	auto& target = objects[nearest_index];
+	if (target.type == "Door") {
+		opened_door_indices_.insert(nearest_index);
+		target.rot.z += glm::radians(90.0f);
+		status_message_ = "Door opened";
+		return {true, false};
+	}
+
+	if (target.type == "GunPickup") {
+		if (gameplay_host_.GetWorld().GetWeapons().SelectWeaponByScriptId(target.weaponEnumId)) {
+			target.deleted = true;
+			status_message_ = "Weapon acquired: " +
+				gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name;
+			return {true, false};
+		}
+		return {};
+	}
+
+	if (target.type == "AmmoPickup") {
+		uint32_t rounds = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity;
+		if (target.argTokens.size() > 10) {
+			try {
+				rounds = static_cast<uint32_t>(
+					std::stoul(StripQuotes(target.argTokens[10])));
+			} catch (...) {
+				// Preserve the clip-sized fallback for malformed authored counts.
+			}
+		}
+		gameplay_host_.GetWorld().GetWeapons().AddReserveAmmo(rounds);
+		target.deleted = true;
+		status_message_ = "Ammunition acquired";
+		return {true, false};
+	}
+
+	status_message_ = "Objective interaction complete";
+	return {true, true};
 }
 
 // Registers every in-level enemy (soldier family) into the runtime AiSystem so

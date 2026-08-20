@@ -397,12 +397,14 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     if (noclip_mode_) return false;
     if (level_.GetLevelNo() == 0) return false;
 
-    auto& objects = level_.GetLevelObjects().GetObjects();
+    auto& objects = GetActiveRenderLevelObjects().GetObjects();
     constexpr float BASE_SCALE   = 40.96f;
     constexpr float PLAYER_RADIUS = 300.0f; // ~0.075m
 
-    for (const auto& obj : objects) {
-        if (obj.deleted) continue;
+	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
+		const auto& obj = objects[object_index];
+		if (obj.deleted) continue;
+		if (in_game_mode_ && opened_door_indices_.contains(object_index)) continue;
         if (in_game_mode_ &&
             (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
              obj.type == "HumanSoldierRPG" || obj.type == "HumanPlayer" ||

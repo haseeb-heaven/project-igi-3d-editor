@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace igi {
 
@@ -151,6 +152,10 @@ void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
     extraction_zone_radius_ = std::max(0.0f, radius);
 }
 
+void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
+    interaction_query_ = std::move(interaction_query);
+}
+
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
     std::vector<ObstacleCollider> obstacles;
@@ -221,8 +226,27 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         AudioSystem::Play(SoundEffect::Reload);
     }
 
-    if (input_cmd.interact && level_flow_.CompleteFirstPendingPrimaryObjective()) {
-        AudioSystem::Play(SoundEffect::ObjectiveComplete);
+    if (input_cmd.interact) {
+        RuntimeInteractionResult interaction_result;
+        if (interaction_query_) {
+            const float yaw_radians = glm::radians(player_.GetYaw());
+            const float pitch_radians = glm::radians(player_.GetPitch());
+            const float cosine_pitch = std::cos(pitch_radians);
+            interaction_result = interaction_query_(
+                player_.GetEyePosition(),
+                glm::vec3(
+                    -std::sin(yaw_radians) * cosine_pitch,
+                    std::cos(yaw_radians) * cosine_pitch,
+                    std::sin(pitch_radians)));
+        }
+
+        const bool objective_completed = interaction_query_
+            ? (interaction_result.completed_objective &&
+                level_flow_.CompleteFirstPendingPrimaryObjective())
+            : level_flow_.CompleteFirstPendingPrimaryObjective();
+        if (objective_completed) {
+            AudioSystem::Play(SoundEffect::ObjectiveComplete);
+        }
     }
 
     // 3. Tick AI perception & state machine

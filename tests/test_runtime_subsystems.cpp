@@ -1071,6 +1071,22 @@ TEST(RuntimeWorldTest, ActivateCompletesTheCurrentMissionObjective) {
     EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
 }
 
+TEST(RuntimeWorldTest, InteractionProviderSeparatesDoorUseFromObjectiveCompletion) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetInteractionQuery(
+        [](const glm::vec3&, const glm::vec3&) {
+            return RuntimeInteractionResult{true, false};
+        });
+
+    PlayerInputCmd input;
+    input.interact = true;
+    world.UpdateSimulationTick(0, input);
+
+    ASSERT_FALSE(world.GetLevelFlow().GetObjectives().empty());
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Pending);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     GameplayHost host;

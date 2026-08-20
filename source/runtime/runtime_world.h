@@ -2,6 +2,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -17,6 +18,11 @@
 
 namespace igi {
 
+struct RuntimeInteractionResult {
+    bool handled = false;
+    bool completed_objective = false;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -26,6 +32,10 @@ public:
     void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Reset();
     void SetExtractionZone(const glm::vec3& center, float radius);
+    using InteractionQuery = std::function<RuntimeInteractionResult(
+        const glm::vec3& interaction_origin,
+        const glm::vec3& interaction_direction)>;
+    void SetInteractionQuery(InteractionQuery interaction_query);
 
     // Binds a parsed retail mission AI program to an already registered guard.
     bool AttachGuardScript(
@@ -94,6 +104,7 @@ private:
     };
 
     std::unordered_map<uint32_t, GuardCombatState> guard_combat_states_;
+    InteractionQuery interaction_query_;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;

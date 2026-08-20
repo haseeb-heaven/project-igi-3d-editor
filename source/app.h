@@ -152,6 +152,7 @@ private:
   bool in_game_mode_ = false;
   igi::GameplayHost gameplay_host_;
   std::optional<LevelObjects> runtime_level_objects_;
+  std::unordered_set<int> opened_door_indices_;
   bool edit_mode_;
   bool terrain_edit_enabled_;
   bool pause_mode_;
@@ -498,6 +499,9 @@ private:
 
   void ProcessInput(float delta_seconds);
   bool CheckCollision(const glm::vec3 &next_pos);
+  igi::RuntimeInteractionResult HandleGameplayInteraction(
+      const glm::vec3& interaction_origin,
+      const glm::vec3& interaction_direction);
   void SnapObjectsToTerrain();
   void EvaluateTrainTrackPositions();
 

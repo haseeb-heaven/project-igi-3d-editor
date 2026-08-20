@@ -204,6 +204,17 @@ bool WeaponSystem::SelectWeapon(uint32_t weapon_id) {
     return true;
 }
 
+bool WeaponSystem::SelectWeaponByScriptId(const std::string& script_id) {
+    const auto& catalog = GetVanillaWeaponCatalog();
+    const auto weapon = std::find_if(
+        catalog.begin(),
+        catalog.end(),
+        [&script_id](const WeaponDefinition& definition) {
+            return definition.script_id == script_id;
+        });
+    return weapon != catalog.end() && SelectWeapon(weapon->id);
+}
+
 bool WeaponSystem::SelectWeaponSlot(uint32_t player_cycle_slot) {
     const auto& cycle = GetVanillaPlayerWeaponCycle();
     if (player_cycle_slot >= cycle.size()) {
@@ -271,6 +282,11 @@ void WeaponSystem::ResetTransientState() {
 
 void WeaponSystem::SetReserveAmmo(uint32_t count) {
     reserve_ammo_ = count;
+    SaveActiveAmmoState();
+}
+
+void WeaponSystem::AddReserveAmmo(uint32_t count) {
+    reserve_ammo_ += count;
     SaveActiveAmmoState();
 }
 
