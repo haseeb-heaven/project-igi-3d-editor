@@ -53,6 +53,9 @@ public:
     const RuntimeWorld& GetWorld() const { return session_.GetWorld(); }
 
     WindowInputRouter& GetInputRouter() { return session_.GetInputRouter(); }
+    const WindowInputRouter& GetInputRouter() const {
+        return session_.GetInputRouter();
+    }
     SimulationScheduler& GetScheduler() { return session_.GetScheduler(); }
     const RuntimeRenderSnapshot& GetRenderSnapshot() const {
         return runtime_renderer_.GetSnapshot();
