@@ -61,6 +61,10 @@
       update order while preserving objective-set progression.
 - [x] Resolve authored objective `LinkTaskId` values to copied level-object
       positions and expose the active target through `RuntimeRenderSnapshot`.
+- [x] Add the grounded vanilla map-computer action, held-key edge suppression,
+      six-row objective snapshot, and phosphor-style gameplay HUD fallback;
+      keep the OpenIGI animated map-camera flight and tactical map interaction
+      pending for a later presentation slice.
 - [x] Publish authored player/guard death variables and one-tick interaction
       pulses; preserve concrete and generic pickup state aliases used by the
       vanilla objective expressions.
@@ -124,7 +128,8 @@
   objective-set progression, authored conditional-container visibility,
   authored GuardGenerator pre-authored-child gating,
   health/armor HUD, authored objective link positions, and objective/extraction
-  flow.
+  flow. The map-computer input/state and six-row objective HUD fallback are
+  also implemented; the animated tactical camera remains an explicit gap.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; the fixed-step player animation driver now feeds
