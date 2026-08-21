@@ -41,6 +41,8 @@ constexpr size_t kConditionalSoundRelativeArgumentIndex = 10;
 constexpr size_t kConditionalContainerConditionArgumentIndex = 3;
 constexpr size_t kConditionalContainerRunAtStartArgumentIndex = 4;
 constexpr size_t kConditionalContainerRunAtStopArgumentIndex = 5;
+constexpr size_t kGuardGeneratorConditionArgumentIndex = 3;
+constexpr size_t kGuardGeneratorMaximumSpawnsArgumentIndex = 4;
 constexpr size_t kExplodeObjectModelArgumentIndex = 9;
 constexpr size_t kExplodeObjectDestroyedModelArgumentIndex = 10;
 constexpr size_t kExplodeObjectDamageScaleArgumentIndex = 11;
@@ -147,7 +149,8 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
         if (task_source.task_id.empty() ||
             (task_source.task_id == "-1" &&
              task_source.task_type != "ExplodeObject" &&
-             task_source.task_type != "ConditionalContainer")) {
+             task_source.task_type != "ConditionalContainer" &&
+             task_source.task_type != "GuardGenerator")) {
             continue;
         }
 
@@ -341,6 +344,32 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 task_source.descendant_object_indices;
             definitions.conditional_containers.push_back(
                 std::move(conditional_container));
+            continue;
+        }
+
+        if (task_source.task_type == "GuardGenerator") {
+            if (task_source.argument_tokens.size() <=
+                    kGuardGeneratorMaximumSpawnsArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionGuardGenerator guard_generator;
+            guard_generator.object_index = task_source.object_index;
+            guard_generator.task_id = task_source.task_id;
+            guard_generator.condition_expression = TokenAt(
+                task_source.argument_tokens,
+                kGuardGeneratorConditionArgumentIndex);
+            if (guard_generator.condition_expression.empty() ||
+                !TryParseInteger(
+                    task_source.argument_tokens[
+                        kGuardGeneratorMaximumSpawnsArgumentIndex],
+                    guard_generator.maximum_spawns) ||
+                guard_generator.maximum_spawns < 0) {
+                continue;
+            }
+            guard_generator.guard_object_indices =
+                task_source.guard_object_indices;
+            definitions.guard_generators.push_back(std::move(guard_generator));
             continue;
         }
 

@@ -93,6 +93,17 @@ struct RuntimeConditionalContainerSnapshot {
     std::vector<int> descendant_object_indices;
 };
 
+// Immutable presentation state for one authored GuardGenerator. The runtime
+// gates pre-authored child guards deterministically; maximum_spawns documents
+// the retail allocation limit while dynamic soldier creation is still pending.
+struct RuntimeGuardGeneratorSnapshot {
+    int object_index = -1;
+    std::string task_id;
+    bool is_on = false;
+    int maximum_spawns = 0;
+    std::vector<int> guard_object_indices;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -127,7 +138,8 @@ public:
         std::vector<AuthoredMissionCutScene> cut_scenes = {},
         std::vector<AuthoredMissionConditionalSound> conditional_sounds = {},
         std::vector<AuthoredMissionExplodeObject> explode_objects = {},
-        std::vector<AuthoredMissionConditionalContainer> conditional_containers = {});
+        std::vector<AuthoredMissionConditionalContainer> conditional_containers = {},
+        std::vector<AuthoredMissionGuardGenerator> guard_generators = {});
     const std::vector<RuntimeExplodeObjectSnapshot>&
     GetExplodeObjectSnapshots() const {
         return authored_explode_object_snapshots_;
@@ -140,6 +152,15 @@ public:
     GetConditionalContainerSnapshots() const {
         return authored_conditional_container_snapshots_;
     }
+    const std::vector<RuntimeGuardGeneratorSnapshot>&
+    GetGuardGeneratorSnapshots() const {
+        return authored_guard_generator_snapshots_;
+    }
+    // App calls this after registering the editor's pre-authored guards. The
+    // mission condition is evaluated during SetAuthoredMissionState as well,
+    // but registration order is an application concern rather than simulation
+    // state, so this refresh is intentionally explicit.
+    void RefreshAuthoredGuardGeneratorStates();
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -265,10 +286,12 @@ private:
     void UpdateAuthoredMissionState();
     void UpdateAuthoredCutScenes();
     void UpdateAuthoredConditionalContainers();
+    void UpdateAuthoredGuardGenerators();
     void UpdateAuthoredConditionalSounds();
     void UpdateAuthoredExplodeObjects();
     void RefreshAuthoredExplodeObjectSnapshots();
     void RefreshAuthoredConditionalContainerSnapshots();
+    void RefreshAuthoredGuardGeneratorSnapshots();
     void PublishAuthoredConditionalContainerState(
         const AuthoredMissionConditionalContainer& definition,
         bool is_running);
@@ -359,6 +382,13 @@ private:
         mission_conditional_containers_;
     std::vector<RuntimeConditionalContainerSnapshot>
         authored_conditional_container_snapshots_;
+    struct AuthoredGuardGeneratorRuntime {
+        AuthoredMissionGuardGenerator definition;
+        bool is_on = false;
+    };
+    std::vector<AuthoredGuardGeneratorRuntime> mission_guard_generators_;
+    std::vector<RuntimeGuardGeneratorSnapshot>
+        authored_guard_generator_snapshots_;
     struct AuthoredExplodeObjectRuntime {
         AuthoredMissionExplodeObject definition;
         bool condition_active = false;

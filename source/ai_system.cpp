@@ -400,7 +400,9 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
     event_queue_.Pump(events);
 
     for (auto& guard : guards_) {
-        if (guard.state == AiGuardState::Dead) continue;
+        if (!guard.runtime_enabled || guard.state == AiGuardState::Dead) {
+            continue;
+        }
 
         const glm::vec3 previous_position = guard.position;
 

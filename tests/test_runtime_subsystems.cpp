@@ -2611,6 +2611,47 @@ TEST(RuntimeWorldTest, AuthoredConditionalContainersGateDescendantSnapshots) {
     EXPECT_TRUE(world.GetConditionalContainerSnapshots()[1].is_running);
 }
 
+TEST(RuntimeWorldTest, AuthoredGuardGeneratorGatesPreauthoredGuards) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity first_guard;
+    first_guard.id = 41;
+    first_guard.position = glm::vec3(4096.0f, 0.0f, 0.0f);
+    first_guard.waypoints = {first_guard.position};
+    world.GetAi().RegisterGuard(first_guard);
+
+    AiGuardEntity second_guard;
+    second_guard.id = 42;
+    second_guard.position = glm::vec3(8192.0f, 0.0f, 0.0f);
+    second_guard.waypoints = {second_guard.position};
+    world.GetAi().RegisterGuard(second_guard);
+
+    AuthoredMissionGuardGenerator guard_generator;
+    guard_generator.object_index = 40;
+    guard_generator.task_id = "-1";
+    guard_generator.condition_expression = "SpawnGuards";
+    guard_generator.maximum_spawns = 1;
+    guard_generator.guard_object_indices = {41, 42};
+
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {}, {}, {guard_generator});
+
+    ASSERT_EQ(world.GetGuardGeneratorSnapshots().size(), 1U);
+    EXPECT_FALSE(world.GetGuardGeneratorSnapshots()[0].is_on);
+    ASSERT_NE(world.GetAi().FindGuard(41), nullptr);
+    ASSERT_NE(world.GetAi().FindGuard(42), nullptr);
+    EXPECT_FALSE(world.GetAi().FindGuard(41)->runtime_enabled);
+    EXPECT_FALSE(world.GetAi().FindGuard(42)->runtime_enabled);
+
+    world.SetMissionStateBoolean("SpawnGuards", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_TRUE(world.GetGuardGeneratorSnapshots()[0].is_on);
+    EXPECT_TRUE(world.GetAi().FindGuard(41)->runtime_enabled);
+    EXPECT_FALSE(world.GetAi().FindGuard(42)->runtime_enabled);
+}
+
 TEST(RuntimeWorldTest, AuthoredConditionalSoundEmitsRisingAndStoppingEdges) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

@@ -86,6 +86,14 @@ glm::vec3 NormalizeOrFallback(
     return value / length;
 }
 
+std::string GuardGeneratorIdentity(
+    const AuthoredMissionGuardGenerator& definition) {
+    if (!definition.task_id.empty() && definition.task_id != "-1") {
+        return definition.task_id;
+    }
+    return std::to_string(definition.object_index);
+}
+
 void ApplyMissionVariableDelta(int& value, double expression_value, int direction) {
     int delta = 0;
     if (!TryTruncateMissionExpressionValue(expression_value, delta)) {
@@ -284,7 +292,7 @@ bool RuntimeWorld::FindProjectileCollision(
     glm::vec3 guard_collision_center(0.0f);
     bool found_guard_collision = false;
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
-        if (guard.state == AiGuardState::Dead) {
+        if (!guard.runtime_enabled || guard.state == AiGuardState::Dead) {
             continue;
         }
 
@@ -389,9 +397,9 @@ bool RuntimeWorld::IsProjectileTargetInRange(
     }
 
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
-        if (guard.state != AiGuardState::Dead && glm::distance(
-                center,
-                guard.position) <= radius_units) {
+        if (guard.runtime_enabled && guard.state != AiGuardState::Dead && glm::distance(
+            center,
+            guard.position) <= radius_units) {
             return true;
         }
     }
@@ -648,7 +656,7 @@ void RuntimeWorld::ApplyExplosionDamage(
     }
 
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
-        if (guard.state == AiGuardState::Dead ||
+        if (!guard.runtime_enabled || guard.state == AiGuardState::Dead ||
             guard.id == owner_entity_id) {
             continue;
         }
@@ -711,6 +719,8 @@ void RuntimeWorld::Reset() {
     mission_conditional_sounds_.clear();
     mission_conditional_containers_.clear();
     authored_conditional_container_snapshots_.clear();
+    mission_guard_generators_.clear();
+    authored_guard_generator_snapshots_.clear();
     mission_explode_objects_.clear();
     authored_explode_object_snapshots_.clear();
     explosion_render_states_.clear();
@@ -958,6 +968,7 @@ void RuntimeWorld::SetAuthoredDoors(
             authored_door.is_picked);
     }
     RefreshAuthoredDoorSnapshots();
+    UpdateAuthoredGuardGenerators();
 }
 
 bool RuntimeWorld::ToggleDoor(int object_index) {
@@ -1246,7 +1257,8 @@ void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionCutScene> cut_scenes,
     std::vector<AuthoredMissionConditionalSound> conditional_sounds,
     std::vector<AuthoredMissionExplodeObject> explode_objects,
-    std::vector<AuthoredMissionConditionalContainer> conditional_containers) {
+    std::vector<AuthoredMissionConditionalContainer> conditional_containers,
+    std::vector<AuthoredMissionGuardGenerator> guard_generators) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
@@ -1277,6 +1289,14 @@ void RuntimeWorld::SetAuthoredMissionState(
         mission_conditional_containers_.push_back(std::move(runtime_container));
     }
     authored_conditional_container_snapshots_.clear();
+    mission_guard_generators_.clear();
+    mission_guard_generators_.reserve(guard_generators.size());
+    for (AuthoredMissionGuardGenerator& definition : guard_generators) {
+        AuthoredGuardGeneratorRuntime runtime_generator;
+        runtime_generator.definition = std::move(definition);
+        mission_guard_generators_.push_back(std::move(runtime_generator));
+    }
+    authored_guard_generator_snapshots_.clear();
     mission_explode_objects_.clear();
     mission_explode_objects_.reserve(explode_objects.size());
     for (AuthoredMissionExplodeObject& definition : explode_objects) {
@@ -1393,6 +1413,7 @@ void RuntimeWorld::SetAuthoredMissionState(
             authored_door.is_picked);
     }
     RefreshAuthoredDoorSnapshots();
+    UpdateAuthoredGuardGenerators();
 }
 
 void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
@@ -1884,6 +1905,91 @@ void RuntimeWorld::UpdateAuthoredConditionalContainers() {
     RefreshAuthoredConditionalContainerSnapshots();
 }
 
+void RuntimeWorld::RefreshAuthoredGuardGeneratorStates() {
+    UpdateAuthoredGuardGenerators();
+}
+
+void RuntimeWorld::UpdateAuthoredGuardGenerators() {
+    // Every guard starts enabled for this evaluation. A guard referenced by
+    // multiple authored generators is enabled only when all of its generator
+    // gates allow it; this prevents object order from changing the result.
+    for (AiGuardEntity& guard : ai_.GetGuards()) {
+        guard.runtime_enabled = true;
+    }
+
+    std::unordered_map<uint32_t, bool> guard_enablement;
+    for (AuthoredGuardGeneratorRuntime& runtime_generator :
+         mission_guard_generators_) {
+        const AuthoredMissionGuardGenerator& definition =
+            runtime_generator.definition;
+        bool condition_result = false;
+        runtime_generator.is_on = !definition.condition_expression.empty() &&
+            mission_expression_state_.TryEvaluate(
+                definition.condition_expression,
+                condition_result) &&
+            condition_result;
+
+        const size_t maximum_spawn_count = runtime_generator.is_on
+            ? std::min(
+                definition.guard_object_indices.size(),
+                static_cast<size_t>(std::max(0, definition.maximum_spawns)))
+            : 0U;
+        for (size_t guard_index = 0;
+             guard_index < definition.guard_object_indices.size();
+             ++guard_index) {
+            const int object_index = definition.guard_object_indices[guard_index];
+            if (object_index < 0) {
+                continue;
+            }
+
+            const bool should_enable = guard_index < maximum_spawn_count;
+            const uint32_t guard_id = static_cast<uint32_t>(object_index);
+            const auto [iterator, inserted] = guard_enablement.emplace(
+                guard_id,
+                should_enable);
+            if (!inserted) {
+                iterator->second = iterator->second && should_enable;
+            }
+        }
+
+        const std::string expression_prefix =
+            "GuardGenerator_" + GuardGeneratorIdentity(definition);
+        mission_expression_state_.SetBoolean(
+            expression_prefix + ".isOn",
+            runtime_generator.is_on);
+        mission_expression_state_.SetNumber(
+            expression_prefix + ".nMaxSpawns",
+            definition.maximum_spawns);
+    }
+
+    for (const auto& [guard_id, should_enable] : guard_enablement) {
+        AiGuardEntity* guard = ai_.FindGuard(guard_id);
+        if (guard != nullptr) {
+            guard->runtime_enabled = should_enable;
+        }
+    }
+
+    RefreshAuthoredGuardGeneratorSnapshots();
+}
+
+void RuntimeWorld::RefreshAuthoredGuardGeneratorSnapshots() {
+    authored_guard_generator_snapshots_.clear();
+    authored_guard_generator_snapshots_.reserve(
+        mission_guard_generators_.size());
+
+    for (const AuthoredGuardGeneratorRuntime& runtime_generator :
+         mission_guard_generators_) {
+        RuntimeGuardGeneratorSnapshot snapshot;
+        snapshot.object_index = runtime_generator.definition.object_index;
+        snapshot.task_id = runtime_generator.definition.task_id;
+        snapshot.is_on = runtime_generator.is_on;
+        snapshot.maximum_spawns = runtime_generator.definition.maximum_spawns;
+        snapshot.guard_object_indices =
+            runtime_generator.definition.guard_object_indices;
+        authored_guard_generator_snapshots_.push_back(std::move(snapshot));
+    }
+}
+
 void RuntimeWorld::UpdateAuthoredConditionalSounds() {
     const auto evaluate_condition = [this](const std::string& expression) {
         bool result = false;
@@ -2120,6 +2226,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     UpdateAuthoredExplodeObjects();
     UpdateAuthoredDoors();
     UpdateMissionActorState();
+    UpdateAuthoredGuardGenerators();
 
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
     // lowers before the active weapon changes and raises after the new model
@@ -2272,6 +2379,9 @@ void RuntimeWorld::DispatchGuardScripts() {
     // script registry carries the current guard binding, so hash-map order
     // must never become part of the simulation result.
     for (AiGuardEntity& guard : ai_.GetGuards()) {
+        if (!guard.runtime_enabled) {
+            continue;
+        }
         const auto script_iterator = guard_scripts_.find(guard.id);
         if (script_iterator == guard_scripts_.end()) {
             continue;
@@ -2354,7 +2464,7 @@ bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {
     }
 
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
-        if (guard.state == AiGuardState::Dead) {
+        if (!guard.runtime_enabled || guard.state == AiGuardState::Dead) {
             continue;
         }
 
@@ -2556,7 +2666,9 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
     }
 
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
-        if (guard.state != AiGuardState::Combat || guard.health <= 0.0f) {
+        if (!guard.runtime_enabled ||
+            guard.state != AiGuardState::Combat ||
+            guard.health <= 0.0f) {
             continue;
         }
         if (glm::distance(guard.position, player_.GetPosition()) > combat_range) {

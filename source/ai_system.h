@@ -69,6 +69,9 @@ struct AiGuardEntity {
     float pitch = 0.0f;
     float health = 100.0f;
     AiGuardState state = AiGuardState::Patrol;
+    // Authored GuardGenerator tasks can temporarily remove a pre-authored
+    // soldier from the active simulation without destroying its state.
+    bool runtime_enabled = true;
     float suspicion = 0.0f; // [0.0 - 1.0]
     uint32_t current_waypoint = 0;
     std::vector<glm::vec3> waypoints;

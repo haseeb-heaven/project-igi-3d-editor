@@ -90,6 +90,19 @@ struct AuthoredMissionConditionalContainer {
     std::vector<int> descendant_object_indices;
 };
 
+// Authored GuardGenerator state. The retail task creates soldiers below the
+// generator at runtime; the current vertical slice keeps those pre-authored
+// soldiers as stable editor objects and gates their AI/render visibility from
+// this condition. maximum_spawns remains explicit metadata until dynamic
+// soldier allocation is ported.
+struct AuthoredMissionGuardGenerator {
+    int object_index = -1;
+    std::string task_id;
+    std::string condition_expression;
+    int maximum_spawns = 0;
+    std::vector<int> guard_object_indices;
+};
+
 // Authored ExplodeObject state. The object index is the stable identity for
 // the common -1 task ids used by vanilla placed props; named tasks retain
 // their task id for mission-expression publication and diagnostics.

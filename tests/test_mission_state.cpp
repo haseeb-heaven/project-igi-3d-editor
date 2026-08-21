@@ -185,6 +185,34 @@ TEST(MissionStateLoaderTest, LoadsConditionalContainerGateAndDescendants) {
               std::vector<int>({13, 14, 15}));
 }
 
+TEST(MissionStateLoaderTest, LoadsGuardGeneratorConditionAndSpawnChildren) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "GuardGenerator";
+    source.task_id = "-1";
+    source.object_index = 30;
+    source.argument_tokens = {
+        "-1", "GuardGenerator", "AI Army",
+        "AlarmControl_97.isAlarm", "2",
+    };
+    source.guard_object_indices = {31, 32, 33};
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    ASSERT_EQ(definitions.guard_generators.size(), 1U);
+    const igi::AuthoredMissionGuardGenerator& guard_generator =
+        definitions.guard_generators.front();
+    EXPECT_EQ(guard_generator.object_index, 30);
+    EXPECT_EQ(guard_generator.task_id, "-1");
+    EXPECT_EQ(
+        guard_generator.condition_expression,
+        "AlarmControl_97.isAlarm");
+    EXPECT_EQ(guard_generator.maximum_spawns, 2);
+    EXPECT_EQ(
+        guard_generator.guard_object_indices,
+        std::vector<int>({31, 32, 33}));
+}
+
 TEST(MissionStateLoaderTest, LoadsVanillaExplodeObjectArguments) {
     igi::MissionStateTaskSource source;
     source.task_type = "ExplodeObject";
