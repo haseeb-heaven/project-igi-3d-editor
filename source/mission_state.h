@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,16 @@ struct AuthoredMissionStatusMessage {
     bool send_once = false;
     bool cutscene_message = false;
     float duration_seconds = 2.0f;
+};
+
+// Immutable render-facing view of one authored status message currently in a
+// retail message slot. The renderer owns no mission state and only receives
+// this presentation snapshot.
+struct MissionStatusMessageDisplay {
+    std::string text;
+    uint32_t revealed_characters = 0;
+    uint32_t display_frame = 0;
+    bool cutscene_message = false;
 };
 
 } // namespace igi
