@@ -251,6 +251,8 @@ void App::Shutdown() {
 		gameplay_host_.CloseGameplay(restored_snapshot);
 		in_game_mode_ = false;
 		runtime_level_objects_.reset();
+		runtime_initial_deleted_flags_.clear();
+		runtime_conditionally_hidden_flags_.clear();
 	}
 	gameplay_host_.ShutdownGameplayWindow();
 	if (game_process_.running) {
@@ -726,6 +728,7 @@ void App::Frame(float delta_seconds) {
 		// OnIdle owns the simulation update. Display callbacks may run once per
 		// window, so a zero render delta must never advance gameplay a second time.
 		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
+		ApplyRuntimeConditionalContainerStates();
 		ApplyRuntimeDoorStates();
 		ApplyRuntimeExplodeObjectStates();
 
@@ -1374,7 +1377,16 @@ void App::ToggleGamePlayMode() {
 		snap.selected_object_id = selected_object_index_;
 		gameplay_editor_snapshot_ = snap;
 		runtime_level_objects_ = level_.GetLevelObjects();
-	noclip_mode_ = false;
+		runtime_initial_deleted_flags_.clear();
+		runtime_initial_deleted_flags_.reserve(
+			runtime_level_objects_->GetObjects().size());
+		runtime_conditionally_hidden_flags_.assign(
+			runtime_level_objects_->GetObjects().size(),
+			0U);
+		for (const LevelObject& object : runtime_level_objects_->GetObjects()) {
+			runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
+		}
+		noclip_mode_ = false;
 
 		// 1. Read config.qvm profile for controls, sensitivity, sound volume
 		igi::ProfileConfig profile = igi::ConfigQvmLoader::GetActiveProfile();
@@ -1455,6 +1467,8 @@ void App::ToggleGamePlayMode() {
 		if (!gameplay_host_.OpenGameplay(snap)) {
 			gameplay_editor_snapshot_.reset();
 			runtime_level_objects_.reset();
+			runtime_initial_deleted_flags_.clear();
+			runtime_conditionally_hidden_flags_.clear();
 			status_message_ = "Cannot enter Game Play: runtime session is already active";
 			return;
 		}
@@ -1463,6 +1477,8 @@ void App::ToggleGamePlayMode() {
 			gameplay_host_.CloseGameplay(ignored_snapshot);
 			gameplay_editor_snapshot_.reset();
 			runtime_level_objects_.reset();
+			runtime_initial_deleted_flags_.clear();
+			runtime_conditionally_hidden_flags_.clear();
 			status_message_ = "Cannot enter Game Play: gameplay window is unavailable";
 			return;
 		}
@@ -1473,12 +1489,16 @@ void App::ToggleGamePlayMode() {
 		mouse_state_.prior_y_ = gameplay_viewport_height_ >> 1;
 		glutWarpPointer(mouse_state_.prior_x_, mouse_state_.prior_y_);
 
+		// Resolve authored gates before registering dynamic actors. Runtime
+		// transforms and visibility stay in the gameplay object copy.
+		SetupRuntimeMissionState();
+		ApplyRuntimeConditionalContainerStates();
+
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
 		SetupLevelAiGuards();
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
-		SetupRuntimeMissionState();
 		SetupRuntimeDoors();
 		SetupRuntimeInteractionState();
 
@@ -1532,6 +1552,8 @@ void App::ToggleGamePlayMode() {
 		in_game_mode_ = false;
 		gameplay_editor_snapshot_.reset();
 		runtime_level_objects_.reset();
+		runtime_initial_deleted_flags_.clear();
+		runtime_conditionally_hidden_flags_.clear();
 		runtime_animation_request_serials_.clear();
 		player_animation_driver_.ClearAnimationClips();
 		viewer_.pos_ = snap.camera_pos;
@@ -1565,6 +1587,15 @@ void App::ApplyAndRestartGameplay() {
 	// source LevelObjects remain untouched; runtime deaths, door motion, and
 	// animation requests are discarded as part of the explicit restart.
 	runtime_level_objects_ = level_.GetLevelObjects();
+	runtime_initial_deleted_flags_.clear();
+	runtime_initial_deleted_flags_.reserve(
+		runtime_level_objects_->GetObjects().size());
+	runtime_conditionally_hidden_flags_.assign(
+		runtime_level_objects_->GetObjects().size(),
+		0U);
+	for (const LevelObject& object : runtime_level_objects_->GetObjects()) {
+		runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
+	}
 	runtime_animation_request_serials_.clear();
 
 	if (!gameplay_host_.ApplyAndRestartGameplay(*gameplay_editor_snapshot_)) {
@@ -1572,10 +1603,11 @@ void App::ApplyAndRestartGameplay() {
 		return;
 	}
 
+	SetupRuntimeMissionState();
+	ApplyRuntimeConditionalContainerStates();
 	SetupLevelAiGuards();
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
-	SetupRuntimeMissionState();
 	SetupRuntimeDoors();
 	SetupRuntimeInteractionState();
 	InitializeGameplayMissionObjectives();
@@ -1629,6 +1661,21 @@ void App::SetupRuntimeMissionState() {
 			parent_index = authored_objects[parent_index].parentIndex;
 		}
 		return false;
+	};
+
+	const auto collect_descendants = [
+		&authored_objects,
+		&is_descendant_of](int ancestor_index) {
+		std::vector<int> descendant_indices;
+		for (int object_index = 0;
+			 object_index < static_cast<int>(authored_objects.size());
+			 ++object_index) {
+			if (object_index != ancestor_index &&
+				is_descendant_of(object_index, ancestor_index)) {
+				descendant_indices.push_back(object_index);
+			}
+		}
+		return descendant_indices;
 	};
 
 	const auto try_read_finite_float = [](const std::string& token, float& value) {
@@ -1721,6 +1768,7 @@ void App::SetupRuntimeMissionState() {
 				authored_object.type != "StatusMessage" &&
 				authored_object.type != "CutScene" &&
 				authored_object.type != "ConditionalSound" &&
+				authored_object.type != "ConditionalContainer" &&
 				authored_object.type != "ExplodeObject")) {
 			continue;
 		}
@@ -1737,6 +1785,10 @@ void App::SetupRuntimeMissionState() {
 				task_source.authored_camera_shots) {
 				task_source.authored_duration_seconds += shot.duration_seconds;
 			}
+		}
+		if (authored_object.type == "ConditionalContainer") {
+			task_source.descendant_object_indices =
+				collect_descendants(object_index);
 		}
 		task_sources.push_back(std::move(task_source));
 	}
@@ -1759,6 +1811,8 @@ void App::SetupRuntimeMissionState() {
 	const size_t timer_count = definitions.level_timers.size();
 	const size_t cut_scene_count = definitions.cut_scenes.size();
 	const size_t conditional_sound_count = definitions.conditional_sounds.size();
+	const size_t conditional_container_count =
+		definitions.conditional_containers.size();
 	const size_t explode_object_count = definitions.explode_objects.size();
 	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
@@ -1768,7 +1822,8 @@ void App::SetupRuntimeMissionState() {
 		std::move(definitions.status_messages),
 		std::move(definitions.cut_scenes),
 		std::move(definitions.conditional_sounds),
-		std::move(definitions.explode_objects));
+		std::move(definitions.explode_objects),
+		std::move(definitions.conditional_containers));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
@@ -1782,6 +1837,8 @@ void App::SetupRuntimeMissionState() {
 		" CutScene task(s), " +
 		std::to_string(conditional_sound_count) +
 		" ConditionalSound task(s), " +
+		std::to_string(conditional_container_count) +
+		" ConditionalContainer task(s), " +
 		std::to_string(explode_object_count) +
 		" ExplodeObject task(s), " +
 		std::to_string(status_message_count) +
@@ -1926,6 +1983,60 @@ void App::ApplyRuntimeDoorStates() {
 			glm::dvec3(world_slide_offset);
 		object.rot.z = static_cast<double>(snapshot.closed_rotation_radians) +
 			snapshot.angle_radians;
+	}
+}
+
+void App::ApplyRuntimeConditionalContainerStates() {
+	if (!runtime_level_objects_.has_value()) {
+		return;
+	}
+
+	auto& objects = runtime_level_objects_->GetObjects();
+	if (runtime_initial_deleted_flags_.size() != objects.size()) {
+		runtime_initial_deleted_flags_.clear();
+		runtime_initial_deleted_flags_.reserve(objects.size());
+		runtime_conditionally_hidden_flags_.assign(objects.size(), 0U);
+		for (const LevelObject& object : objects) {
+			runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
+		}
+	} else if (runtime_conditionally_hidden_flags_.size() != objects.size()) {
+		runtime_conditionally_hidden_flags_.assign(objects.size(), 0U);
+	}
+
+	std::vector<uint8_t> visible_by_conditional_container(
+		objects.size(),
+		1U);
+	for (const igi::RuntimeConditionalContainerSnapshot& snapshot :
+		 gameplay_host_.GetWorld().GetConditionalContainerSnapshots()) {
+		if (snapshot.is_running) {
+			continue;
+		}
+		for (const int descendant_index : snapshot.descendant_object_indices) {
+			if (descendant_index >= 0 &&
+				descendant_index < static_cast<int>(objects.size())) {
+				visible_by_conditional_container[
+					static_cast<size_t>(descendant_index)] = 0U;
+			}
+		}
+	}
+
+	for (size_t object_index = 0; object_index < objects.size(); ++object_index) {
+		if (runtime_initial_deleted_flags_[object_index] != 0U) {
+			objects[object_index].deleted = true;
+			continue;
+		}
+
+		const bool is_conditionally_hidden =
+			visible_by_conditional_container[object_index] == 0U;
+		if (is_conditionally_hidden) {
+			objects[object_index].deleted = true;
+		} else if (runtime_conditionally_hidden_flags_[object_index] != 0U) {
+			// Only restore visibility that this gate hid. A pickup, dead guard,
+			// or authored explosion deleted by gameplay remains deleted.
+			objects[object_index].deleted = false;
+		}
+		runtime_conditionally_hidden_flags_[object_index] =
+			is_conditionally_hidden ? 1U : 0U;
 	}
 }
 
@@ -2221,7 +2332,7 @@ void App::SetupLevelAiGuards() {
 	ai.Clear();
 	gameplay_host_.GetWorld().ClearGuardScripts();
 
-	auto& objects = level_.GetLevelObjects().GetObjects();
+	auto& objects = GetActiveRenderLevelObjects().GetObjects();
 
 	// Build a lookup of AIGraph taskId -> world pos (node coords in the .dat are
 	// local to the AIGraph task's own position).

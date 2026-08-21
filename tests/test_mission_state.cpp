@@ -155,6 +155,36 @@ TEST(MissionStateLoaderTest, LoadsConditionalSoundEdgeDefinition) {
     EXPECT_TRUE(sound.relative_to_microphone);
 }
 
+TEST(MissionStateLoaderTest, LoadsConditionalContainerGateAndDescendants) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "ConditionalContainer";
+    source.task_id = "4001";
+    source.object_index = 12;
+    source.argument_tokens = {
+        "4001", "ConditionalContainer", "Intro cutscene",
+        "!CutScene_1203.isFinished && !EditVariable_4004.nValue",
+        "MenuManager_SetEnabled(FALSE)",
+        "MenuManager_SetEnabled(TRUE)",
+    };
+    source.descendant_object_indices = {13, 14, 15};
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    ASSERT_EQ(definitions.conditional_containers.size(), 1U);
+    const igi::AuthoredMissionConditionalContainer& container =
+        definitions.conditional_containers.front();
+    EXPECT_EQ(container.object_index, 12);
+    EXPECT_EQ(container.task_id, "4001");
+    EXPECT_EQ(
+        container.condition_expression,
+        "!CutScene_1203.isFinished && !EditVariable_4004.nValue");
+    EXPECT_EQ(container.run_at_start_expression, "MenuManager_SetEnabled(FALSE)");
+    EXPECT_EQ(container.run_at_stop_expression, "MenuManager_SetEnabled(TRUE)");
+    EXPECT_EQ(container.descendant_object_indices,
+              std::vector<int>({13, 14, 15}));
+}
+
 TEST(MissionStateLoaderTest, LoadsVanillaExplodeObjectArguments) {
     igi::MissionStateTaskSource source;
     source.task_type = "ExplodeObject";

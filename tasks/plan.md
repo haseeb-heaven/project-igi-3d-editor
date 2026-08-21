@@ -150,6 +150,9 @@ parity claims remain gated on IGI1 evidence.
   task order and publish the last valid definition to the runtime HUD.
 - [x] Publish fixed-step actor death state, transient switch/terminal pulses,
   and concrete/generic pickup aliases for authored mission expressions.
+- [x] Port authored ConditionalContainer conditions and descendant visibility
+  snapshots; apply them to the copied scene before AI registration and during
+  fixed-step rendering without resurrecting gameplay-deleted objects.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; evaluate the preserved expressions and replace the
   synthetic extraction zone after scanning level/Common/Weapons QVMs.

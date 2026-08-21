@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -72,6 +73,17 @@ struct RuntimeExplosionRenderState {
     bool is_flashbang = false;
 };
 
+// Immutable presentation state for one authored ConditionalContainer. The
+// descendant indices belong to the editor-owned runtime object copy; keeping
+// them in the snapshot lets rendering, collision, interaction, and AI setup
+// apply one consistent visibility decision.
+struct RuntimeConditionalContainerSnapshot {
+    int object_index = -1;
+    std::string task_id;
+    bool is_running = true;
+    std::vector<int> descendant_object_indices;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -105,7 +117,8 @@ public:
         std::vector<AuthoredMissionStatusMessage> status_messages = {},
         std::vector<AuthoredMissionCutScene> cut_scenes = {},
         std::vector<AuthoredMissionConditionalSound> conditional_sounds = {},
-        std::vector<AuthoredMissionExplodeObject> explode_objects = {});
+        std::vector<AuthoredMissionExplodeObject> explode_objects = {},
+        std::vector<AuthoredMissionConditionalContainer> conditional_containers = {});
     const std::vector<RuntimeExplodeObjectSnapshot>&
     GetExplodeObjectSnapshots() const {
         return authored_explode_object_snapshots_;
@@ -113,6 +126,10 @@ public:
     const std::vector<RuntimeExplosionRenderState>&
     GetExplosionRenderStates() const {
         return explosion_render_states_;
+    }
+    const std::vector<RuntimeConditionalContainerSnapshot>&
+    GetConditionalContainerSnapshots() const {
+        return authored_conditional_container_snapshots_;
     }
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
@@ -224,9 +241,14 @@ private:
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
     void UpdateAuthoredCutScenes();
+    void UpdateAuthoredConditionalContainers();
     void UpdateAuthoredConditionalSounds();
     void UpdateAuthoredExplodeObjects();
     void RefreshAuthoredExplodeObjectSnapshots();
+    void RefreshAuthoredConditionalContainerSnapshots();
+    void PublishAuthoredConditionalContainerState(
+        const AuthoredMissionConditionalContainer& definition,
+        bool is_running);
     void TriggerAuthoredExplodeObject(
         struct AuthoredExplodeObjectRuntime& runtime_object);
     void UpdateAuthoredCutSceneCamera(
@@ -306,6 +328,14 @@ private:
     };
     std::vector<AuthoredConditionalSoundRuntime> mission_conditional_sounds_;
     MissionSoundEventHandler mission_sound_event_handler_;
+    struct AuthoredConditionalContainerRuntime {
+        AuthoredMissionConditionalContainer definition;
+        bool is_running = false;
+    };
+    std::vector<AuthoredConditionalContainerRuntime>
+        mission_conditional_containers_;
+    std::vector<RuntimeConditionalContainerSnapshot>
+        authored_conditional_container_snapshots_;
     struct AuthoredExplodeObjectRuntime {
         AuthoredMissionExplodeObject definition;
         bool condition_active = false;

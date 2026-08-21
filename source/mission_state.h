@@ -78,6 +78,18 @@ struct AuthoredMissionConditionalSound {
     bool relative_to_microphone = false;
 };
 
+// Authored ConditionalContainer state. The runtime owns the gate latch while
+// the editor supplies the stable descendant object indices used to hide or
+// restore the copied gameplay scene without mutating authoring data.
+struct AuthoredMissionConditionalContainer {
+    int object_index = -1;
+    std::string task_id;
+    std::string condition_expression;
+    std::string run_at_start_expression;
+    std::string run_at_stop_expression;
+    std::vector<int> descendant_object_indices;
+};
+
 // Authored ExplodeObject state. The object index is the stable identity for
 // the common -1 task ids used by vanilla placed props; named tasks retain
 // their task id for mission-expression publication and diagnostics.

@@ -38,6 +38,9 @@ constexpr size_t kConditionalSoundPositionArgumentIndex = 5;
 constexpr size_t kConditionalSoundSimpleArgumentIndex = 8;
 constexpr size_t kConditionalSoundOneShotArgumentIndex = 9;
 constexpr size_t kConditionalSoundRelativeArgumentIndex = 10;
+constexpr size_t kConditionalContainerConditionArgumentIndex = 3;
+constexpr size_t kConditionalContainerRunAtStartArgumentIndex = 4;
+constexpr size_t kConditionalContainerRunAtStopArgumentIndex = 5;
 constexpr size_t kExplodeObjectModelArgumentIndex = 9;
 constexpr size_t kExplodeObjectDestroyedModelArgumentIndex = 10;
 constexpr size_t kExplodeObjectDamageScaleArgumentIndex = 11;
@@ -143,7 +146,8 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
     for (const MissionStateTaskSource& task_source : task_sources) {
         if (task_source.task_id.empty() ||
             (task_source.task_id == "-1" &&
-             task_source.task_type != "ExplodeObject")) {
+             task_source.task_type != "ExplodeObject" &&
+             task_source.task_type != "ConditionalContainer")) {
             continue;
         }
 
@@ -312,6 +316,31 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 continue;
             }
             definitions.conditional_sounds.push_back(std::move(conditional_sound));
+            continue;
+        }
+
+        if (task_source.task_type == "ConditionalContainer") {
+            if (task_source.argument_tokens.size() <=
+                    kConditionalContainerRunAtStopArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionConditionalContainer conditional_container;
+            conditional_container.object_index = task_source.object_index;
+            conditional_container.task_id = task_source.task_id;
+            conditional_container.condition_expression = TokenAt(
+                task_source.argument_tokens,
+                kConditionalContainerConditionArgumentIndex);
+            conditional_container.run_at_start_expression = TokenAt(
+                task_source.argument_tokens,
+                kConditionalContainerRunAtStartArgumentIndex);
+            conditional_container.run_at_stop_expression = TokenAt(
+                task_source.argument_tokens,
+                kConditionalContainerRunAtStopArgumentIndex);
+            conditional_container.descendant_object_indices =
+                task_source.descendant_object_indices;
+            definitions.conditional_containers.push_back(
+                std::move(conditional_container));
             continue;
         }
 

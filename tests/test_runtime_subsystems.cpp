@@ -2546,6 +2546,40 @@ TEST(RuntimeWorldTest, AuthoredCutScenePublishesCameraSnapshot) {
     EXPECT_EQ(camera.shot_index, 0);
 }
 
+TEST(RuntimeWorldTest, AuthoredConditionalContainersGateDescendantSnapshots) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionConditionalContainer parent_container;
+    parent_container.object_index = 10;
+    parent_container.task_id = "10";
+    parent_container.condition_expression = "ContainerGate";
+    parent_container.descendant_object_indices = {11, 12};
+
+    AuthoredMissionConditionalContainer child_container;
+    child_container.object_index = 11;
+    child_container.task_id = "11";
+    child_container.condition_expression = "TRUE";
+    child_container.descendant_object_indices = {13};
+
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {},
+        {parent_container, child_container});
+
+    ASSERT_EQ(world.GetConditionalContainerSnapshots().size(), 2U);
+    EXPECT_FALSE(world.GetConditionalContainerSnapshots()[0].is_running);
+    EXPECT_TRUE(world.GetConditionalContainerSnapshots()[1].is_running);
+    EXPECT_EQ(
+        world.GetConditionalContainerSnapshots()[0].descendant_object_indices,
+        std::vector<int>({11, 12}));
+
+    world.SetMissionStateBoolean("ContainerGate", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_TRUE(world.GetConditionalContainerSnapshots()[0].is_running);
+    EXPECT_TRUE(world.GetConditionalContainerSnapshots()[1].is_running);
+}
+
 TEST(RuntimeWorldTest, AuthoredConditionalSoundEmitsRisingAndStoppingEdges) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

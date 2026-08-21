@@ -21,6 +21,10 @@
       presentation.
 - [x] Authored ConditionalSound rising/falling edges with Windows per-task
       looping channels and deterministic stop/close lifecycle.
+- [x] Authored ConditionalContainer gates publish fixed-step visibility
+      snapshots for descendant render/collision/interaction state; initial
+      hidden guards are excluded from AI registration and runtime visibility
+      restoration preserves pickup, death, and explosion deletions.
 - [x] Impact rockets collide with living guard volumes before static geometry;
       fixed-step detonation and blast damage are covered by a runtime smoke.
 - [x] Authored guard weapon selection, scripted/patrol animation request
@@ -104,8 +108,8 @@
 - `implemented-slice`: player movement/jump/crouch/health, weapon states,
   world-occluded hits, guard patrol/perception/combat, authored weapon
   selection, projectile simulation, flash exposure, muzzle flash, recoil, zoom, landing audio and
-  lazy packed/loose vanilla sound resolution, authored objective text and
-  objective-set progression,
+  lazy packed/loose vanilla sound resolution, authored objective text,
+  objective-set progression, and authored conditional-container visibility,
   health/armor HUD, and objective/extraction flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform

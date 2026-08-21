@@ -16,6 +16,7 @@ struct MissionStateTaskSource {
     std::vector<std::string> argument_tokens;
     float authored_duration_seconds = 0.0f;
     std::vector<AuthoredMissionCutSceneShot> authored_camera_shots;
+    std::vector<int> descendant_object_indices;
 };
 
 struct AuthoredMissionStateDefinitions {
@@ -24,6 +25,7 @@ struct AuthoredMissionStateDefinitions {
     std::vector<AuthoredMissionLevelTimer> level_timers;
     std::vector<AuthoredMissionCutScene> cut_scenes;
     std::vector<AuthoredMissionConditionalSound> conditional_sounds;
+    std::vector<AuthoredMissionConditionalContainer> conditional_containers;
     std::vector<AuthoredMissionExplodeObject> explode_objects;
     std::vector<AuthoredMissionStatusMessage> status_messages;
 };

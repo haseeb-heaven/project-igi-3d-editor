@@ -16,6 +16,7 @@
 #include "runtime/gameplay_host.h"
 #include "runtime/render_target.h"
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <unordered_set>
@@ -166,6 +167,8 @@ private:
   igi::GameplayHost gameplay_host_;
   std::optional<igi::EditorSnapshot> gameplay_editor_snapshot_;
   std::optional<LevelObjects> runtime_level_objects_;
+  std::vector<uint8_t> runtime_initial_deleted_flags_;
+  std::vector<uint8_t> runtime_conditionally_hidden_flags_;
   glm::vec3 gameplay_spawn_position_ = glm::vec3(0.0f);
   float gameplay_spawn_yaw_ = 0.0f;
   float gameplay_spawn_pitch_ = 0.0f;
@@ -646,6 +649,7 @@ private:
   void SetupRuntimeMissionState();
   void SetupRuntimeInteractionState();
   void SetupRuntimeDoors();
+  void ApplyRuntimeConditionalContainerStates();
   void ApplyRuntimeDoorStates();
   void ApplyRuntimeExplodeObjectStates();
   void SetupRuntimeLadders();

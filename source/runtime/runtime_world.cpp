@@ -663,6 +663,8 @@ void RuntimeWorld::Reset() {
         AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
     }
     mission_conditional_sounds_.clear();
+    mission_conditional_containers_.clear();
+    authored_conditional_container_snapshots_.clear();
     mission_explode_objects_.clear();
     authored_explode_object_snapshots_.clear();
     explosion_render_states_.clear();
@@ -1195,7 +1197,8 @@ void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionStatusMessage> status_messages,
     std::vector<AuthoredMissionCutScene> cut_scenes,
     std::vector<AuthoredMissionConditionalSound> conditional_sounds,
-    std::vector<AuthoredMissionExplodeObject> explode_objects) {
+    std::vector<AuthoredMissionExplodeObject> explode_objects,
+    std::vector<AuthoredMissionConditionalContainer> conditional_containers) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
@@ -1218,6 +1221,14 @@ void RuntimeWorld::SetAuthoredMissionState(
         runtime_sound.definition = std::move(definition);
         mission_conditional_sounds_.push_back(std::move(runtime_sound));
     }
+    mission_conditional_containers_.clear();
+    mission_conditional_containers_.reserve(conditional_containers.size());
+    for (AuthoredMissionConditionalContainer& definition : conditional_containers) {
+        AuthoredConditionalContainerRuntime runtime_container;
+        runtime_container.definition = std::move(definition);
+        mission_conditional_containers_.push_back(std::move(runtime_container));
+    }
+    authored_conditional_container_snapshots_.clear();
     mission_explode_objects_.clear();
     mission_explode_objects_.reserve(explode_objects.size());
     for (AuthoredMissionExplodeObject& definition : explode_objects) {
@@ -1318,6 +1329,13 @@ void RuntimeWorld::SetAuthoredMissionState(
             -1,
             0);
     }
+
+    // ConditionalContainer conditions are evaluated once after all authored
+    // task variables have their initial values. This removes cut-scene-only
+    // actors before AI setup and gives the first gameplay frame the same
+    // registration state as the fixed-step updates that follow.
+    UpdateMissionActorState();
+    UpdateAuthoredConditionalContainers();
 
     for (const AuthoredDoorRuntime& authored_door : authored_doors_) {
         PublishAuthoredDoorState(
@@ -1746,6 +1764,78 @@ void RuntimeWorld::UpdateAuthoredCutScenes() {
     }
 }
 
+void RuntimeWorld::PublishAuthoredConditionalContainerState(
+    const AuthoredMissionConditionalContainer& definition,
+    bool is_running) {
+    if (definition.task_id.empty() || definition.task_id == "-1") {
+        return;
+    }
+
+    mission_expression_state_.SetBoolean(
+        "ConditionalContainer_" + definition.task_id + ".isRun",
+        is_running);
+}
+
+void RuntimeWorld::RefreshAuthoredConditionalContainerSnapshots() {
+    authored_conditional_container_snapshots_.clear();
+    authored_conditional_container_snapshots_.reserve(
+        mission_conditional_containers_.size());
+
+    for (const AuthoredConditionalContainerRuntime& runtime_container :
+         mission_conditional_containers_) {
+        RuntimeConditionalContainerSnapshot snapshot;
+        snapshot.object_index = runtime_container.definition.object_index;
+        snapshot.task_id = runtime_container.definition.task_id;
+        snapshot.is_running = runtime_container.is_running;
+        snapshot.descendant_object_indices =
+            runtime_container.definition.descendant_object_indices;
+        authored_conditional_container_snapshots_.push_back(std::move(snapshot));
+    }
+}
+
+void RuntimeWorld::UpdateAuthoredConditionalContainers() {
+    // Publish the previous latch before resolving the next one. This gives
+    // expressions using `this.isRun` the same self-reference semantics as the
+    // vanilla task variable, while cross-container references resolve in the
+    // authored task order supplied by the editor snapshot.
+    for (const AuthoredConditionalContainerRuntime& runtime_container :
+         mission_conditional_containers_) {
+        PublishAuthoredConditionalContainerState(
+            runtime_container.definition,
+            runtime_container.is_running);
+    }
+
+    for (AuthoredConditionalContainerRuntime& runtime_container :
+         mission_conditional_containers_) {
+        const AuthoredMissionConditionalContainer& definition =
+            runtime_container.definition;
+        mission_expression_state_.SetBoolean(
+            "this.isRun",
+            runtime_container.is_running);
+
+        bool next_is_running = true;
+        if (!definition.condition_expression.empty()) {
+            bool condition_result = false;
+            next_is_running = mission_expression_state_.TryEvaluate(
+                definition.condition_expression,
+                condition_result) && condition_result;
+        }
+
+        runtime_container.is_running = next_is_running;
+        PublishAuthoredConditionalContainerState(
+            definition,
+            runtime_container.is_running);
+
+        // Run-at-start/stop expressions are retained in the authored
+        // definition for diagnostics, but the editor's mission bridge does
+        // not execute arbitrary QVM/native statements from this state-only
+        // path. Visibility remains deterministic and fail-closed for an
+        // unsupported condition rather than leaking cut-scene actors.
+    }
+
+    RefreshAuthoredConditionalContainerSnapshots();
+}
+
 void RuntimeWorld::UpdateAuthoredConditionalSounds() {
     const auto evaluate_condition = [this](const std::string& expression) {
         bool result = false;
@@ -2092,6 +2182,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     projectiles_.Tick();
     ApplyProjectileDetonations();
     UpdateMissionActorState();
+    UpdateAuthoredConditionalContainers();
 
     // 4. Tick runtime task tree
     task_tree_.Update(dt);
