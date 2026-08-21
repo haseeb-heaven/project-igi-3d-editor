@@ -164,6 +164,8 @@ parity claims remain gated on IGI1 evidence.
   camera as a later presentation-fidelity slice.
 - [x] Copy fixed-step guard transforms and animation-request metadata into the
   immutable render snapshot before synchronizing the gameplay scene copy.
+- [x] Reset the AI simulation clock when clearing a runtime world so restart
+  does not retain stale delayed patrol/QVM timing.
 - [x] Resolve Play-mode spawn from the authored HumanPlayer task before using
   editor-camera or level-start fallbacks, matching OpenIGI PlayerSpawn selection.
 - [x] Publish fixed-step actor death state, transient switch/terminal pulses,

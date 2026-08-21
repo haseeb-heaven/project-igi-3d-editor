@@ -70,6 +70,8 @@
 - [x] Publish moving guard transforms and animation-request metadata through
       `RuntimeRenderSnapshot`; gameplay scene synchronization consumes that
       immutable copy instead of iterating the mutable AI vector directly.
+- [x] Reset the AI fixed-step simulation tick with guard/event state so F5 and
+      session restart replay delayed patrol behavior deterministically.
 - [x] Prefer the authored vanilla `HumanPlayer` task (script id zero, then the
       first authored player) for Play-mode spawn placement; retain editor-camera
       and level-start positions only as incomplete-level fallbacks.

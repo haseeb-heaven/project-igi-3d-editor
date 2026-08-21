@@ -13,6 +13,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `AudioAssetResolver` / `WeaponSystem` | Loose level sound precedence, case-insensitive packed `SOUNDS.RES` extraction/cache, active-level archive precedence, missing-sound behavior, and vanilla-QVM weapon sound names. |
 | `RuntimeWorld` / `RuntimeRenderer` | Fixed-step firearm muzzle cue after a successful player shot, deterministic two-tick decay, and snapshot isolation. |
 | `AiSystem` / `RuntimeRenderer` / `App` | Moving guard transforms, lifecycle state, and animation-request metadata cross the immutable render boundary before gameplay scene synchronization. |
+| `AiSystem` | Clearing a runtime AI world resets the fixed-step simulation tick used by delayed patrol/QVM behavior. |
 | `WeaponViewRecoil` / `RuntimeWorld` | Inferred three-tick visual recoil recovery, firearm classification, and render-snapshot transfer of the weapon kick. |
 | `MissionObjectiveLoader` / `LevelFlow` | Vanilla six-slot objective parsing, resource-key/expression preservation, localized text fallback, last-valid-definition selection, and authored definition progression. |
 | `LevelFlow` / `RuntimeRenderer` | Authored objective `LinkTaskId` resolution to copied task positions and immutable presentation transfer for the active primary objective. |
