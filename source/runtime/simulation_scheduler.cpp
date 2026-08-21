@@ -20,6 +20,12 @@ void SimulationScheduler::Update(int64_t now_milliseconds) {
         }
         world_.UpdateSimulationTick(clock_.GetTickCount(), input);
         clock_.CompleteTick();
+        // The reference loop renders between the first startup ticks; emulate
+        // that here so a single host frame can still run the guarded startup
+        // batch instead of advancing one tick per frame until the guard lifts.
+        if (clock_.GetTickCount() < GameClock::GUARDED_STARTUP_TICKS) {
+            clock_.CompleteRender();
+        }
     }
 
     // The scheduler is called once per presented host frame. Rendering is a
