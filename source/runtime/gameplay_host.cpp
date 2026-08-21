@@ -1,6 +1,8 @@
 // gameplay_host.cpp - Host controller for gameplay runtime, simulation, and twin-window lifecycle implementation
 #include "gameplay_host.h"
 
+#include "audio_system.h"
+
 #include <utility>
 
 namespace igi {
@@ -13,28 +15,41 @@ GameplayHost::~GameplayHost() {
 }
 
 void GameplayHost::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
+    DispatchPendingAudioEvents();
     session_.Initialize(get_terrain_z, check_collision);
+    DispatchPendingAudioEvents();
 }
 
 void GameplayHost::Shutdown() {
+    DispatchPendingAudioEvents();
     session_.Shutdown();
+    DispatchPendingAudioEvents();
     runtime_renderer_.Clear();
 }
 
 bool GameplayHost::OpenGameplay(const EditorSnapshot& snapshot) {
-    return session_.Open(snapshot);
+    const bool opened = session_.Open(snapshot);
+    DispatchPendingAudioEvents();
+    return opened;
 }
 
 bool GameplayHost::CloseGameplay(EditorSnapshot& out_snapshot) {
-    return session_.Close(out_snapshot);
+    const bool closed = session_.Close(out_snapshot);
+    DispatchPendingAudioEvents();
+    return closed;
 }
 
 bool GameplayHost::ApplyAndRestartGameplay(const EditorSnapshot& snapshot) {
-    return session_.ApplyEditorSnapshot(snapshot);
+    DispatchPendingAudioEvents();
+    const bool applied = session_.ApplyEditorSnapshot(snapshot);
+    DispatchPendingAudioEvents();
+    return applied;
 }
 
 void GameplayHost::RestartGameplay() {
+    DispatchPendingAudioEvents();
     session_.Restart();
+    DispatchPendingAudioEvents();
 }
 
 void GameplayHost::SetGameplayInputModifier(
@@ -48,6 +63,7 @@ void GameplayHost::SetPaused(bool paused) {
 
 void GameplayHost::Update(int64_t now_milliseconds) {
     session_.Update(now_milliseconds);
+    DispatchPendingAudioEvents();
 }
 
 void GameplayHost::Render(const RuntimeRenderCamera& camera) {
@@ -95,6 +111,32 @@ void GameplayHost::FocusEditorWindow() {
 
 void GameplayHost::MakeGameplayWindowCurrent() const {
     gameplay_window_.MakeCurrent();
+}
+
+void GameplayHost::DispatchPendingAudioEvents() {
+    for (const RuntimeAudioEvent& audio_event :
+         session_.GetWorld().ConsumePendingAudioEvents()) {
+        switch (audio_event.type) {
+            case RuntimeAudioEventType::OneShot:
+                if (audio_event.authored_sound.empty()) {
+                    AudioSystem::Play(audio_event.fallback_effect);
+                } else {
+                    AudioSystem::PlayWeaponFire(
+                        audio_event.authored_sound,
+                        audio_event.fallback_effect);
+                }
+                break;
+            case RuntimeAudioEventType::StartLoop:
+                AudioSystem::PlayConditionalSound(
+                    audio_event.channel_id,
+                    audio_event.authored_sound,
+                    audio_event.fallback_effect);
+                break;
+            case RuntimeAudioEventType::StopLoop:
+                AudioSystem::StopConditionalSound(audio_event.channel_id);
+                break;
+        }
+    }
 }
 
 } // namespace igi

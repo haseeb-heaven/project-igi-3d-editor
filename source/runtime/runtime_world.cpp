@@ -1,5 +1,4 @@
 #include "runtime_world.h"
-#include "audio_system.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -132,6 +131,49 @@ bool WeaponProducesMuzzleFlash(const WeaponDefinition& weapon) {
 RuntimeWorld::RuntimeWorld()
     : ai_script_host_(qvm_registry_) {}
 RuntimeWorld::~RuntimeWorld() = default;
+
+std::vector<RuntimeAudioEvent> RuntimeWorld::ConsumePendingAudioEvents() {
+    std::vector<RuntimeAudioEvent> audio_events = std::move(pending_audio_events_);
+    pending_audio_events_.clear();
+    return audio_events;
+}
+
+void RuntimeWorld::QueueAudioEvent(RuntimeAudioEvent audio_event) {
+    pending_audio_events_.push_back(std::move(audio_event));
+}
+
+void RuntimeWorld::QueueOneShotAudio(
+    SoundEffect fallback_effect,
+    const std::string& authored_sound) {
+    RuntimeAudioEvent audio_event;
+    audio_event.type = RuntimeAudioEventType::OneShot;
+    audio_event.fallback_effect = fallback_effect;
+    audio_event.authored_sound = authored_sound;
+    QueueAudioEvent(std::move(audio_event));
+}
+
+void RuntimeWorld::QueueLoopStart(
+    const std::string& channel_id,
+    const std::string& authored_sound,
+    SoundEffect fallback_effect,
+    const glm::vec3& position,
+    bool relative_to_microphone) {
+    RuntimeAudioEvent audio_event;
+    audio_event.type = RuntimeAudioEventType::StartLoop;
+    audio_event.fallback_effect = fallback_effect;
+    audio_event.authored_sound = authored_sound;
+    audio_event.channel_id = channel_id;
+    audio_event.position = position;
+    audio_event.relative_to_microphone = relative_to_microphone;
+    QueueAudioEvent(std::move(audio_event));
+}
+
+void RuntimeWorld::QueueLoopStop(const std::string& channel_id) {
+    RuntimeAudioEvent audio_event;
+    audio_event.type = RuntimeAudioEventType::StopLoop;
+    audio_event.channel_id = channel_id;
+    QueueAudioEvent(std::move(audio_event));
+}
 
 void RuntimeWorld::Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z)) {
     get_terrain_z_ = get_terrain_z;
@@ -463,7 +505,7 @@ void RuntimeWorld::ApplyProjectileDetonations() {
             detonation.explosion_radius_units,
             detonation.type == ProjectileType::Flashbang);
         if (detonation.type == ProjectileType::Flashbang) {
-            AudioSystem::Play(SoundEffect::Flashbang);
+            QueueOneShotAudio(SoundEffect::Flashbang);
             if (player_.IsAlive()) {
                 const float player_distance = glm::distance(
                     detonation.position,
@@ -493,7 +535,7 @@ void RuntimeWorld::ApplyProjectileDetonations() {
             continue;
         }
 
-        AudioSystem::Play(SoundEffect::Explosion);
+        QueueOneShotAudio(SoundEffect::Explosion);
         ApplyExplosionDamage(
             detonation.position,
             detonation.explosion_radius_units,
@@ -677,6 +719,10 @@ void RuntimeWorld::ApplyExplosionDamage(
 }
 
 void RuntimeWorld::Reset() {
+    // Discard stale one-shots from the previous run. Conditional loops are
+    // stopped below and their teardown events are retained for the host.
+    pending_audio_events_.clear();
+
     glm::vec3 spawn_pos(0.0f, 0.0f, 100.0f);
     if (get_terrain_z_) {
         spawn_pos.z = get_terrain_z_(spawn_pos.x, spawn_pos.y);
@@ -714,7 +760,7 @@ void RuntimeWorld::Reset() {
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
     for (const AuthoredConditionalSoundRuntime& runtime_sound :
          mission_conditional_sounds_) {
-        AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+        QueueLoopStop(runtime_sound.definition.task_id);
     }
     mission_conditional_sounds_.clear();
     mission_conditional_containers_.clear();
@@ -1081,22 +1127,22 @@ void RuntimeWorld::UpdateAuthoredDoors() {
         if (authored_door.state.IsFullyOpen() &&
             !authored_door.state.WasFullyOpen() &&
             !definition.open_sound.empty()) {
-            AudioSystem::PlayWeaponFire(
-                definition.open_sound,
-                SoundEffect::ObjectiveComplete);
+            QueueOneShotAudio(
+                SoundEffect::ObjectiveComplete,
+                definition.open_sound);
         }
         if (authored_door.state.IsFullyClosed() &&
             !authored_door.state.WasFullyClosed() &&
             !definition.close_sound.empty()) {
-            AudioSystem::PlayWeaponFire(
-                definition.close_sound,
-                SoundEffect::ObjectiveComplete);
+            QueueOneShotAudio(
+                SoundEffect::ObjectiveComplete,
+                definition.close_sound);
         }
         if (!was_moving && authored_door.state.IsMoving() &&
             !definition.move_sound.empty()) {
-            AudioSystem::PlayWeaponFire(
-                definition.move_sound,
-                SoundEffect::ObjectiveComplete);
+            QueueOneShotAudio(
+                SoundEffect::ObjectiveComplete,
+                definition.move_sound);
         }
 
         PublishAuthoredDoorState(
@@ -1176,9 +1222,9 @@ void RuntimeWorld::UpdateAuthoredMissionStatusMessages(uint64_t tick_number) {
                 message.is_finished_display = false;
                 message.ticks_since_finished_display = 0;
                 if (!definition.sound_name.empty()) {
-                    AudioSystem::PlayWeaponFire(
-                        definition.sound_name,
-                        SoundEffect::ObjectiveComplete);
+                    QueueOneShotAudio(
+                        SoundEffect::ObjectiveComplete,
+                        definition.sound_name);
                 }
             }
         }
@@ -1272,7 +1318,7 @@ void RuntimeWorld::SetAuthoredMissionState(
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
     for (const AuthoredConditionalSoundRuntime& runtime_sound :
          mission_conditional_sounds_) {
-        AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+        QueueLoopStop(runtime_sound.definition.task_id);
     }
     mission_conditional_sounds_.clear();
     mission_conditional_sounds_.reserve(conditional_sounds.size());
@@ -2003,14 +2049,16 @@ void RuntimeWorld::UpdateAuthoredConditionalSounds() {
             (!runtime_sound.definition.one_shot || !runtime_sound.has_played)) {
             runtime_sound.has_played = true;
             if (runtime_sound.definition.simple) {
-                AudioSystem::PlayWeaponFire(
-                    runtime_sound.definition.sound_name,
-                    SoundEffect::ObjectiveComplete);
+                QueueOneShotAudio(
+                    SoundEffect::ObjectiveComplete,
+                    runtime_sound.definition.sound_name);
             } else {
-                AudioSystem::PlayConditionalSound(
+                QueueLoopStart(
                     runtime_sound.definition.task_id,
                     runtime_sound.definition.sound_name,
-                    SoundEffect::ObjectiveComplete);
+                    SoundEffect::ObjectiveComplete,
+                    runtime_sound.definition.position,
+                    runtime_sound.definition.relative_to_microphone);
             }
             if (mission_sound_event_handler_) {
                 mission_sound_event_handler_({
@@ -2025,7 +2073,7 @@ void RuntimeWorld::UpdateAuthoredConditionalSounds() {
         } else if (!is_running && runtime_sound.is_running &&
                    !runtime_sound.definition.simple &&
                    runtime_sound.has_played) {
-            AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+            QueueLoopStop(runtime_sound.definition.task_id);
             if (mission_sound_event_handler_) {
                 mission_sound_event_handler_({
                     runtime_sound.definition.task_id,
@@ -2055,11 +2103,11 @@ void RuntimeWorld::TriggerAuthoredExplodeObject(
         true);
 
     if (runtime_object.definition.explosion_sound.empty()) {
-        AudioSystem::Play(SoundEffect::Explosion);
+        QueueOneShotAudio(SoundEffect::Explosion);
     } else {
-        AudioSystem::PlayWeaponFire(
-            runtime_object.definition.explosion_sound,
-            SoundEffect::Explosion);
+        QueueOneShotAudio(
+            SoundEffect::Explosion,
+            runtime_object.definition.explosion_sound);
     }
     QueueExplosionRenderState(
         runtime_object.definition.position,
@@ -2210,10 +2258,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         }
         if (landing_impact.damage > 0.0f) {
             player_damage_effect_strength_ = 1.0f;
-            AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
+            QueueOneShotAudio(SoundEffect::Pain, landing_impact.sound_name);
         }
         if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
-            AudioSystem::Play(SoundEffect::Jump);
+            QueueOneShotAudio(SoundEffect::Jump);
         }
         PlayFootstepIfNeeded(input_cmd, was_grounded);
     }
@@ -2265,9 +2313,9 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                     player_.GetEyePosition(),
                     fired_trace.direction,
                     active_weapon);
-                AudioSystem::PlayWeaponFire(
-                    active_weapon.fire_sound,
-                    SoundEffect::ProjectileLaunch);
+                QueueOneShotAudio(
+                    SoundEffect::ProjectileLaunch,
+                    active_weapon.fire_sound);
             }
         } else {
             std::vector<BulletTrace> traces;
@@ -2288,11 +2336,11 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                     hit_guard = ApplyPlayerShotDamage(trace) || hit_guard;
                     hit_world_geometry = trace.hit_world_geometry || hit_world_geometry;
                 }
-                AudioSystem::PlayWeaponFire(
-                    active_weapon.fire_sound,
-                    SoundEffect::Gunshot);
+                QueueOneShotAudio(
+                    SoundEffect::Gunshot,
+                    active_weapon.fire_sound);
                 if (hit_guard || hit_world_geometry) {
-                    AudioSystem::Play(SoundEffect::BulletImpact);
+                    QueueOneShotAudio(SoundEffect::BulletImpact);
                 }
                 // Post gunshot stimulus to AI
                 AiStimulusEvent gunshot;
@@ -2309,7 +2357,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
 
     if (weapon_controls_ready && input_cmd.reload) {
         weapons_.Reload();
-        AudioSystem::Play(SoundEffect::Reload);
+        QueueOneShotAudio(SoundEffect::Reload);
     }
 
     if (input_cmd.interact && !ladder_tick_handled) {
@@ -2331,7 +2379,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                 level_flow_.CompleteFirstPendingPrimaryObjective())
             : level_flow_.CompleteFirstPendingPrimaryObjective();
         if (objective_completed) {
-            AudioSystem::Play(SoundEffect::ObjectiveComplete);
+            QueueOneShotAudio(SoundEffect::ObjectiveComplete);
         }
     }
 
@@ -2719,14 +2767,14 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
         }
 
         const bool hit_player = ApplyGuardShotDamage(trace);
-        AudioSystem::PlayWeaponFire(
-            combat_state.weapon.GetActiveWeapon().fire_sound,
-            SoundEffect::Gunshot);
+        QueueOneShotAudio(
+            SoundEffect::Gunshot,
+            combat_state.weapon.GetActiveWeapon().fire_sound);
         if (hit_player) {
-            AudioSystem::Play(SoundEffect::Pain);
+            QueueOneShotAudio(SoundEffect::Pain);
         }
         if (hit_player || trace.hit_world_geometry) {
-            AudioSystem::Play(SoundEffect::BulletImpact);
+            QueueOneShotAudio(SoundEffect::BulletImpact);
         }
 
         AiStimulusEvent gunshot;
@@ -2752,7 +2800,7 @@ void RuntimeWorld::PlayFootstepIfNeeded(const PlayerInputCmd& input_command, boo
         return;
     }
 
-    AudioSystem::Play(SoundEffect::Footstep);
+    QueueOneShotAudio(SoundEffect::Footstep);
     footstep_timer_seconds_ = 0.35;
 }
 

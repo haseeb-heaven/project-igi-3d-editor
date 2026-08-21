@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <utility>
 #include "../game_clock.h"
 #include "../player_controller.h"
 #include "../player_ladder.h"
@@ -25,6 +26,7 @@
 #include "../mission_state.h"
 #include "../weapon_view_sway.h"
 #include "../weapon_view_recoil.h"
+#include "sound_effect.h"
 
 namespace igi {
 
@@ -54,6 +56,24 @@ struct RuntimeMissionSoundEvent {
     glm::vec3 position = glm::vec3(0.0f);
     bool playing = false;
     bool simple = false;
+    bool relative_to_microphone = false;
+};
+
+enum class RuntimeAudioEventType {
+    OneShot,
+    StartLoop,
+    StopLoop,
+};
+
+// Fixed-step sound intent emitted by the simulation. The gameplay host drains
+// these events and forwards them to the platform audio adapter; RuntimeWorld
+// never needs a Windows audio device to execute deterministic gameplay tests.
+struct RuntimeAudioEvent {
+    RuntimeAudioEventType type = RuntimeAudioEventType::OneShot;
+    SoundEffect fallback_effect = SoundEffect::ObjectiveComplete;
+    std::string authored_sound;
+    std::string channel_id;
+    glm::vec3 position = glm::vec3(0.0f);
     bool relative_to_microphone = false;
 };
 
@@ -119,6 +139,7 @@ public:
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
     void SetMissionStatePulse(const std::string& variable_name);
+    std::vector<RuntimeAudioEvent> ConsumePendingAudioEvents();
     using MissionSoundEventHandler = std::function<void(
         const RuntimeMissionSoundEvent& sound_event)>;
     void SetMissionSoundEventHandler(MissionSoundEventHandler event_handler) {
@@ -324,6 +345,17 @@ private:
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
     void EndLadderTraversal();
+    void QueueAudioEvent(RuntimeAudioEvent audio_event);
+    void QueueOneShotAudio(
+        SoundEffect fallback_effect,
+        const std::string& authored_sound = {});
+    void QueueLoopStart(
+        const std::string& channel_id,
+        const std::string& authored_sound,
+        SoundEffect fallback_effect,
+        const glm::vec3& position,
+        bool relative_to_microphone);
+    void QueueLoopStop(const std::string& channel_id);
 
     struct GuardScriptState {
         QvmProgram program;
@@ -374,6 +406,7 @@ private:
     };
     std::vector<AuthoredConditionalSoundRuntime> mission_conditional_sounds_;
     MissionSoundEventHandler mission_sound_event_handler_;
+    std::vector<RuntimeAudioEvent> pending_audio_events_;
     struct AuthoredConditionalContainerRuntime {
         AuthoredMissionConditionalContainer definition;
         bool is_running = false;

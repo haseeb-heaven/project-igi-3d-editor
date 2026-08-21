@@ -37,6 +37,9 @@
 - [x] Resolve authored vanilla weapon and gameplay sounds from loose WAVs or
       packed `COMMON/SOUNDS/SOUNDS.RES` entries with a session cache; keep the
       catalog's weapon sound names aligned with the vanilla QVM evidence.
+- [x] Route fixed-step sound intents through `GameplayHost` so `RuntimeWorld`
+      remains platform-independent while Windows still plays authored/fallback
+      one-shots and conditional loops.
 - [x] Expose fixed-step firearm muzzle flash state through the presentation
       snapshot and render a labeled fallback cue when authored sprites are absent.
 - [x] Expose fixed-step guard muzzle flashes and player incoming-damage feedback

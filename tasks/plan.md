@@ -132,6 +132,9 @@ parity claims remain gated on IGI1 evidence.
   `COMMON/SOUNDS/SOUNDS.RES` entries, lazily materialize them in a cache, and
   keep the packed archive index warm so repeated fire events stay fixed-step
   friendly; align the weapon catalog with names present in the vanilla QVMs.
+- [x] Emit typed fixed-step audio intents from `RuntimeWorld` and dispatch them
+  from `GameplayHost`, keeping Windows WAV/RES playback out of simulation code
+  while preserving one-shot and conditional-loop sound timing.
 - [x] Carry a fixed-step firearm muzzle cue through `RuntimeRenderSnapshot` and
   draw a deterministic screen-space fallback when the authored muzzle sprite is
   unavailable.

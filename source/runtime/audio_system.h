@@ -4,20 +4,9 @@
 #include <string>
 #include <unordered_map>
 
-namespace igi {
+#include "sound_effect.h"
 
-enum class SoundEffect {
-    Gunshot,
-    Reload,
-    BulletImpact,
-    Jump,
-    Footstep,
-    Pain,
-    ObjectiveComplete,
-    ProjectileLaunch,
-    Explosion,
-    Flashbang
-};
+namespace igi {
 
 class AudioSystem {
 public:

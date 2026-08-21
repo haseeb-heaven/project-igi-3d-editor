@@ -62,6 +62,8 @@ public:
     }
 
 private:
+    void DispatchPendingAudioEvents();
+
     RuntimeSession session_;
     GameplayWindowHost gameplay_window_;
     RuntimeRenderer runtime_renderer_;

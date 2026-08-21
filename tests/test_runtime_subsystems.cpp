@@ -2715,6 +2715,58 @@ TEST(RuntimeWorldTest, AuthoredOneShotSoundDoesNotRetrigger) {
     EXPECT_EQ(play_count, 1);
 }
 
+TEST(RuntimeWorldTest, FixedStepGameplayQueuesOneShotAudioEvents) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    ASSERT_TRUE(world.GetWeapons().SelectWeapon(4));
+    PlayerInputCmd fire_command;
+    fire_command.fire = true;
+
+    world.UpdateSimulationTick(0, fire_command);
+
+    const std::vector<RuntimeAudioEvent> audio_events =
+        world.ConsumePendingAudioEvents();
+    const auto gunshot_event = std::find_if(
+        audio_events.begin(),
+        audio_events.end(),
+        [](const RuntimeAudioEvent& audio_event) {
+            return audio_event.type == RuntimeAudioEventType::OneShot &&
+                audio_event.fallback_effect == SoundEffect::Gunshot;
+        });
+    ASSERT_NE(gunshot_event, audio_events.end());
+    EXPECT_EQ(gunshot_event->authored_sound, "m16_loop");
+    EXPECT_TRUE(world.ConsumePendingAudioEvents().empty());
+}
+
+TEST(RuntimeWorldTest, FixedStepGameplayQueuesConditionalSoundEdges) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionConditionalSound conditional_sound;
+    conditional_sound.task_id = "Alarm";
+    conditional_sound.condition_expression = "AlarmActive";
+    conditional_sound.sound_name = "alarm_loop";
+    world.SetAuthoredMissionState({}, {}, {}, {}, {}, {conditional_sound});
+
+    world.SetMissionStateBoolean("AlarmActive", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd{});
+    const std::vector<RuntimeAudioEvent> start_events =
+        world.ConsumePendingAudioEvents();
+    ASSERT_EQ(start_events.size(), 1U);
+    EXPECT_EQ(start_events[0].type, RuntimeAudioEventType::StartLoop);
+    EXPECT_EQ(start_events[0].channel_id, "Alarm");
+    EXPECT_EQ(start_events[0].authored_sound, "alarm_loop");
+
+    world.SetMissionStateBoolean("AlarmActive", false);
+    world.UpdateSimulationTick(1, PlayerInputCmd{});
+    const std::vector<RuntimeAudioEvent> stop_events =
+        world.ConsumePendingAudioEvents();
+    ASSERT_EQ(stop_events.size(), 1U);
+    EXPECT_EQ(stop_events[0].type, RuntimeAudioEventType::StopLoop);
+    EXPECT_EQ(stop_events[0].channel_id, "Alarm");
+}
+
 TEST(RuntimeWorldTest, AuthoredExplodeObjectPublishesDelayedDestroyedState) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);
