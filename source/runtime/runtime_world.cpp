@@ -2347,15 +2347,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
 
     if (!ladder_tick_handled) {
-        const glm::vec3 position_before_tick = player_.GetPosition();
         player_.Tick(player_input, get_terrain_z_, {}, check_collision_);
-        // Vanilla human-vs-human pass: refuse the move if it closed the gap to
-        // any live guard; a body already overlapping can still walk out.
-        player_.SetPosition(HumanSeparation::ResolveAll(
-            position_before_tick,
-            player_.GetPosition(),
-            human_blockers.begin(),
-            human_blockers.end()));
         const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
         if (landing_impact.hearing_radius_units > 0.0f) {
             AiStimulusEvent ground_impact;
@@ -2408,9 +2400,12 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
     // lowers before the active weapon changes and raises after the new model
     // is selected; keep those transition ticks out of the fire/reload path.
-    const bool weapon_controls_ready = !map_computer_open_ &&
-        UpdateWeaponSelection(input_cmd);
-    weapons_.Update(dt, weapon_controls_ready && input_cmd.fire);
+	const bool weapon_controls_ready = !map_computer_open_ &&
+		UpdateWeaponSelection(input_cmd);
+	// Weapon presentation/fireplay is disabled by product decision: play mode
+	// is the engine/interaction slice. The weapon system still ticks its
+	// selection state machine but never fires, zooms, or reloads.
+	weapons_.Update(dt, false);
     const WeaponDefinition& active_weapon = weapons_.GetActiveWeapon();
     const bool is_projectile_weapon =
         active_weapon.projectile_type != ProjectileType::None;

@@ -558,15 +558,13 @@ void AiSystem::Update(
         guard.blocked_move_ticks = 0;
 
         // Locomotion clip request from the soldier state table (retail
-        // 0x53ED10): walking is state 1 → animation 34 (looping), running is
-        // state 17 → animation 48 (looping), and stopping returns to the
-        // task's declared Stand Animation. Scripted Animation commands keep
-        // their explicit clips; locomotion only fills the gap on change.
-        if (guard.requested_animation < 0) {
+        // 0x53ED10): normal patrol locomotion is the looping WALK, animation
+        // 34 (state 1). Animation 48 is state 17, the alarm/panic RUN — it
+        // must never play as a default idle-patrol gait, so combat chase
+        // keeps the walk clip until the alarm-driven panic state lands.
+        if (guard.requested_animation < 0 && guard.state != AiGuardState::Combat) {
             const bool moved = guard.position != previous_position;
-            const int desired = !moved
-                ? guard.stand_animation
-                : (guard.walking ? 34 : 48);
+            const int desired = moved ? 34 : guard.stand_animation;
             if (desired != guard.locomotion_anim) {
                 guard.locomotion_anim = desired;
                 guard.requested_animation = desired;

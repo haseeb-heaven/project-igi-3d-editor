@@ -10,12 +10,11 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 	if (in_game_mode_ && IsGameplayInputFocused() &&
 		!gameplay_host_.IsGameplayWindowCurrent()) return;
 	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
+		// Weapon switching is disabled in play mode; only the map computer
+		// consumes the wheel for zoom.
 		if (gameplay_host_.GetWorld().IsMapComputerOpen()) {
 			gameplay_host_.GetInputRouter().OnMouseWheel(direction);
-			return;
 		}
-		if (direction > 0) gameplay_host_.GetWorld().GetWeapons().SelectNextWeapon();
-		else gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
 		return;
 	}
 	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
@@ -48,24 +47,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		!gameplay_host_.IsGameplayWindowCurrent()) return;
 
 	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
-		if (button == GLUT_LEFT_BUTTON) {
-			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
-		} else if (button == GLUT_RIGHT_BUTTON) {
-			gameplay_host_.GetInputRouter().OnMouseButton(2, state == GLUT_DOWN);
-		} else if (button == GLUT_MIDDLE_BUTTON) {
+		// Weapon fire/aim buttons are disabled in play mode (no weapon
+		// gameplay); swallow them so nothing downstream reacts.
+		if (gameplay_host_.GetWorld().IsMapComputerOpen()) {
 			gameplay_host_.GetInputRouter().OnMouseButton(1, state == GLUT_DOWN);
-		} else if (button == 3 && state == GLUT_DOWN) { // Wheel Up: Next weapon
-			if (gameplay_host_.GetWorld().IsMapComputerOpen()) {
-				gameplay_host_.GetInputRouter().OnMouseWheel(1);
-			} else {
-				gameplay_host_.GetWorld().GetWeapons().SelectNextWeapon();
-			}
-		} else if (button == 4 && state == GLUT_DOWN) { // Wheel Down: Prev weapon
-			if (gameplay_host_.GetWorld().IsMapComputerOpen()) {
-				gameplay_host_.GetInputRouter().OnMouseWheel(-1);
-			} else {
-				gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
-			}
 		}
 		// Keep relative-look deltas measured from the recenter point. A click
 		// event may arrive at an arbitrary screen coordinate and must not create
