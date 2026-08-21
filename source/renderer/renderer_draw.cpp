@@ -7,6 +7,7 @@
 #include "graph_overlay.h"
 #include "object_lightmap.h"
 #include "tex_writer.h"
+#include "../runtime/map_computer_projection.h"
 #include "../utils.h"
 #include <vector>
 #include <unordered_map>
@@ -3284,6 +3285,76 @@ void Renderer::Draw(const draw_params_s &params,
                       "MAP COMPUTER", 0.0f, 1.0f, 0.30f);
         draw_text_sys(panel_left + 18, panel_top + 44,
                       "OBJECTIVES", 0.0f, 0.75f, 0.22f);
+
+        // The map rows remain readable text, but the linked task locations
+        // also need a spatial cue to make the tactical computer useful during
+        // play. The simulation publishes immutable world positions; this
+        // projection converts them to the current top-down map panel without
+        // exposing mutable mission state to the renderer.
+        const int map_left = panel_left + 18;
+        const int map_top = panel_top + 64;
+        const int map_right = panel_right - 18;
+        const int map_bottom = panel_bottom - 64;
+        const igi::RuntimeMapComputerProjection map_projection =
+            igi::BuildRuntimeMapComputerProjection(
+                params.view_define_->pos_,
+                params.view_define_->fovy_,
+                params.view_define_->viewport_width_,
+                params.view_define_->viewport_height_,
+                map_left,
+                map_top,
+                map_right,
+                map_bottom);
+
+        glColor4f(0.0f, 0.35f, 0.12f, 0.55f);
+        glBegin(GL_LINES);
+        for (int grid_line = 0; grid_line <= 8; ++grid_line) {
+          const float horizontal_amount = static_cast<float>(grid_line) / 8.0f;
+          const float x = static_cast<float>(map_left) +
+              horizontal_amount * static_cast<float>(map_right - map_left);
+          const float y = static_cast<float>(map_top) +
+              horizontal_amount * static_cast<float>(map_bottom - map_top);
+          glVertex2f(x, static_cast<float>(map_top));
+          glVertex2f(x, static_cast<float>(map_bottom));
+          glVertex2f(static_cast<float>(map_left), y);
+          glVertex2f(static_cast<float>(map_right), y);
+        }
+        glEnd();
+
+        const glm::vec2 player_marker = map_projection.Project(
+            params.view_define_->pos_);
+        glColor4f(0.2f, 1.0f, 0.35f, 0.95f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(player_marker.x, player_marker.y + 8.0f);
+        glVertex2f(player_marker.x + 8.0f, player_marker.y);
+        glVertex2f(player_marker.x, player_marker.y - 8.0f);
+        glVertex2f(player_marker.x - 8.0f, player_marker.y);
+        glEnd();
+
+        for (const igi::RuntimeMapComputerObjective& objective :
+             task_tree_view.map_computer_objectives_) {
+          if (!objective.has_location) {
+            continue;
+          }
+          const glm::vec2 marker = map_projection.Project(objective.location);
+          if (!map_projection.Contains(marker)) {
+            continue;
+          }
+
+          if (objective.state == igi::ObjectiveState::Failed) {
+            glColor4f(1.0f, 0.15f, 0.10f, 0.95f);
+          } else if (objective.state == igi::ObjectiveState::Completed) {
+            glColor4f(0.25f, 0.75f, 1.0f, 0.95f);
+          } else {
+            glColor4f(1.0f, 0.85f, 0.15f, 0.95f);
+          }
+          glBegin(GL_LINE_LOOP);
+          glVertex2f(marker.x, marker.y + 6.0f);
+          glVertex2f(marker.x + 6.0f, marker.y);
+          glVertex2f(marker.x, marker.y - 6.0f);
+          glVertex2f(marker.x - 6.0f, marker.y);
+          glEnd();
+        }
 
         for (size_t objective_index = 0;
              objective_index < task_tree_view.map_computer_objectives_.size();

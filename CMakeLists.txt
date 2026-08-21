@@ -346,6 +346,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/human_player_config.cpp
     source/runtime/magic_object_registry.cpp
     source/runtime/map_computer_camera.cpp
+    source/runtime/map_computer_projection.cpp
 )
 
 set_source_files_properties(

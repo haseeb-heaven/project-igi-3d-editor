@@ -37,6 +37,7 @@
 #include "../source/runtime/magic_object_registry.h"
 #include "../source/runtime/simulation_scheduler.h"
 #include "../source/runtime/map_computer_camera.h"
+#include "../source/runtime/map_computer_projection.h"
 
 using namespace igi;
 
@@ -3488,4 +3489,27 @@ TEST(MapComputerCameraTest, CloseDuringOpeningFlightRemainsContinuous) {
     EXPECT_EQ(camera.GetPhase(), RuntimeMapComputerPhase::Shutdown);
     EXPECT_EQ(camera.GetPose().position, close_start.position);
     EXPECT_FLOAT_EQ(camera.GetPose().yaw, close_start.yaw);
+}
+
+TEST(MapComputerProjectionTest, CentersPlayerAndRejectsOffPanelMarkers) {
+    const RuntimeMapComputerProjection projection =
+        BuildRuntimeMapComputerProjection(
+            glm::vec3(1000.0f, 2000.0f, 40960.0f),
+            1.57079632679f,
+            1600,
+            900,
+            100,
+            50,
+            900,
+            650);
+
+    const glm::vec2 center = projection.Project(
+        glm::vec3(1000.0f, 2000.0f, 0.0f));
+    EXPECT_NEAR(center.x, 500.0f, 0.01f);
+    EXPECT_NEAR(center.y, 350.0f, 0.01f);
+    EXPECT_TRUE(projection.Contains(center));
+
+    const glm::vec2 outside = projection.Project(
+        glm::vec3(200000.0f, 2000.0f, 0.0f));
+    EXPECT_FALSE(projection.Contains(outside));
 }
