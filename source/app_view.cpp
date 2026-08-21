@@ -231,42 +231,55 @@ void App::ProcessInput(float delta_seconds) {
 }
 
 void App::UpdateViewerVectors() {
-	// clamp yaw, pitch & roll
+	UpdateViewerVectors(viewer_);
+}
 
-	while (viewer_.yaw_ < 0.0f) {
-		viewer_.yaw_ += 360.0f;
+void App::UpdateGameplayViewerVectors() {
+	UpdateViewerVectors(gameplay_viewer_);
+}
+
+void App::UpdateViewerVectors(viewer_s& viewer) {
+	while (viewer.yaw_ < 0.0f) {
+		viewer.yaw_ += 360.0f;
 	}
 
-	while (viewer_.yaw_ > 360.0f) {
-		viewer_.yaw_ -= 360.0f;
+	while (viewer.yaw_ > 360.0f) {
+		viewer.yaw_ -= 360.0f;
 	}
 
-	if (viewer_.pitch_ < -89.0f) {
-		viewer_.pitch_ = -89.0f;
+	viewer.pitch_ = std::clamp(viewer.pitch_, -89.0f, 89.0f);
+
+	while (viewer.roll_ < 0.0f) {
+		viewer.roll_ += 360.0f;
 	}
 
-	if (viewer_.pitch_ > 89.0f) {
-		viewer_.pitch_ = 89.0f;
+	while (viewer.roll_ > 360.0f) {
+		viewer.roll_ -= 360.0f;
 	}
 
-	while (viewer_.roll_ < 0.0f) {
-		viewer_.roll_ += 360.0f;
-	}
-
-	while (viewer_.roll_ > 360.0f) {
-		viewer_.roll_ -= 360.0f;
-	}
-
-	AngleToVectors(viewer_.yaw_, viewer_.pitch_, viewer_.roll_,
-		viewer_.forward_, viewer_.right_, viewer_.up_);
+	AngleToVectors(
+		viewer.yaw_,
+		viewer.pitch_,
+		viewer.roll_,
+		viewer.forward_,
+		viewer.right_,
+		viewer.up_);
 }
 
 void App::UpdateViewDefine() {
-	view_define_.pos_ = viewer_.pos_;
-	view_define_.forward_ = viewer_.forward_;
-	view_define_.right_ = viewer_.right_;
-	view_define_.up_ = viewer_.up_;
-	view_define_.render_z_near_ = RENDER_Z_NEAR;
+	UpdateViewDefine(viewer_, view_define_);
+}
+
+void App::UpdateGameplayViewDefine() {
+	UpdateViewDefine(gameplay_viewer_, view_define_);
+}
+
+void App::UpdateViewDefine(const viewer_s& viewer, view_define_s& view_define) {
+	view_define.pos_ = viewer.pos_;
+	view_define.forward_ = viewer.forward_;
+	view_define.right_ = viewer.right_;
+	view_define.up_ = viewer.up_;
+	view_define.render_z_near_ = RENDER_Z_NEAR;
 
 	/* rotate to coordinate:
 
@@ -282,17 +295,17 @@ void App::UpdateViewDefine() {
 	 */
 
 	// rotation only, with out translate
-	view_define_.mat_rot_[0][0] = view_define_.right_.x;
-	view_define_.mat_rot_[1][0] = view_define_.right_.y;
-	view_define_.mat_rot_[2][0] = view_define_.right_.z;
+	view_define.mat_rot_[0][0] = view_define.right_.x;
+	view_define.mat_rot_[1][0] = view_define.right_.y;
+	view_define.mat_rot_[2][0] = view_define.right_.z;
 
-	view_define_.mat_rot_[0][1] = -view_define_.up_.x;
-	view_define_.mat_rot_[1][1] = -view_define_.up_.y;
-	view_define_.mat_rot_[2][1] = -view_define_.up_.z;
+	view_define.mat_rot_[0][1] = -view_define.up_.x;
+	view_define.mat_rot_[1][1] = -view_define.up_.y;
+	view_define.mat_rot_[2][1] = -view_define.up_.z;
 
-	view_define_.mat_rot_[0][2] = view_define_.forward_.x;
-	view_define_.mat_rot_[1][2] = view_define_.forward_.y;
-	view_define_.mat_rot_[2][2] = view_define_.forward_.z;
+	view_define.mat_rot_[0][2] = view_define.forward_.x;
+	view_define.mat_rot_[1][2] = view_define.forward_.y;
+	view_define.mat_rot_[2][2] = view_define.forward_.z;
 }
 
 void App::EditorProcessClick() {

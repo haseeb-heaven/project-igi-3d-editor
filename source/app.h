@@ -481,6 +481,7 @@ private:
     bool clip_to_z_;
     bool on_ground_;
   } viewer_;
+  viewer_s gameplay_viewer_;
 
   enum class ManipulationMode {
     None,
@@ -528,7 +529,11 @@ private:
   bool stick_to_ground_ = false;
   bool noclip_mode_ = true; // By default true as requested by user
   void UpdateViewerVectors();
+  void UpdateGameplayViewerVectors();
+  void UpdateViewerVectors(viewer_s& viewer);
   void UpdateViewDefine();
+  void UpdateGameplayViewDefine();
+  void UpdateViewDefine(const viewer_s& viewer, view_define_s& view_define);
   void EditorProcessClick();
   void ApplyPropPositionDrag(); // per-frame velocity-ramped position drag (pad
                                 // / Z slider)

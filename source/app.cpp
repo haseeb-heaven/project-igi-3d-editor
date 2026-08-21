@@ -79,6 +79,10 @@ App::App():
 	viewer_.clip_to_z_ = false;
 	viewer_.move_speed_ = MIN_MOVE_SPEED;
 	viewer_.jump_speed_ = MIN_JUMP_SPEED;
+	memset(&gameplay_viewer_, 0, sizeof(gameplay_viewer_));
+	gameplay_viewer_.clip_to_z_ = false;
+	gameplay_viewer_.move_speed_ = MIN_MOVE_SPEED;
+	gameplay_viewer_.jump_speed_ = MIN_JUMP_SPEED;
 	window_state_.cursor_visible_ = true;
 }
 
@@ -478,7 +482,8 @@ void App::Frame(float delta_seconds) {
 
 	if (pause_mode_) {
 		// Skip all updates when paused, just render
-		UpdateViewDefine();
+		if (in_game_mode_) UpdateGameplayViewDefine();
+		else UpdateViewDefine();
 		if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
 			hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
 			if (hover_object_index_ >= Renderer::kAttaPickBase) hover_object_index_ = -1; // ATTA hovered (clickable; promote on click)
@@ -486,7 +491,8 @@ void App::Frame(float delta_seconds) {
 			last_pick_y_ = mouse_state_.prior_y_;
 		}
 		float ground_z = 0.0f;
-		level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
+		const viewer_s& active_viewer = in_game_mode_ ? gameplay_viewer_ : viewer_;
+		level_.GetTerrainZ(active_viewer.pos_.x, active_viewer.pos_.y, ground_z);
 		int propAnimBoneHierarchy; std::vector<int> propAnimIds; int propAnimActiveId; bool propAnimIsPlaying;
 		ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 		Renderer::task_tree_view_params_s task_tree_view = {
@@ -619,10 +625,10 @@ void App::Frame(float delta_seconds) {
 		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
 
 		const auto& player = gameplay_host_.GetWorld().GetPlayer();
-		viewer_.pos_ = player.GetEyePosition();
-		viewer_.yaw_ = player.GetYaw();
-		viewer_.pitch_ = player.GetPitch();
-		UpdateViewerVectors();
+		gameplay_viewer_.pos_ = player.GetEyePosition();
+		gameplay_viewer_.yaw_ = player.GetYaw();
+		gameplay_viewer_.pitch_ = player.GetPitch();
+		UpdateGameplayViewerVectors();
 
 		// Update the session-owned render copy. Authoring objects remain immutable
 		// while gameplay is running and are restored by dropping this copy.
@@ -659,7 +665,8 @@ void App::Frame(float delta_seconds) {
 		EditorProcessClick();
 	}
 
-	UpdateViewDefine();
+	if (in_game_mode_) UpdateGameplayViewDefine();
+	else UpdateViewDefine();
 	if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
 		bool camMode    = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 		bool overPanel  = prop_editor_open_ &&
@@ -980,10 +987,10 @@ void App::DrawGameplayPlayerWeapon() {
 	const auto& weapon = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon();
 	if (weapon.model_id.empty() || !player.IsAlive()) return;
 
-	const glm::vec3 forward = glm::normalize(viewer_.forward_);
-	const glm::vec3 right = glm::normalize(viewer_.right_);
-	const glm::vec3 up = glm::normalize(viewer_.up_);
-	const glm::vec3 weapon_position = viewer_.pos_ +
+	const glm::vec3 forward = glm::normalize(gameplay_viewer_.forward_);
+	const glm::vec3 right = glm::normalize(gameplay_viewer_.right_);
+	const glm::vec3 up = glm::normalize(gameplay_viewer_.up_);
+	const glm::vec3 weapon_position = gameplay_viewer_.pos_ +
 		forward * (0.75f * igi::PlayerController::WORLD_METER) +
 		right * (0.24f * igi::PlayerController::WORLD_METER) -
 		up * (0.24f * igi::PlayerController::WORLD_METER);
@@ -1242,11 +1249,11 @@ void App::ToggleGamePlayMode() {
 		gameplay_host_.GetWorld().SetExtractionZone(
 			extraction_center,
 			8.0f * igi::PlayerController::WORLD_METER);
-		viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
-		viewer_.yaw_ = spawn_yaw;
-		viewer_.pitch_ = spawn_pitch;
-		viewer_.roll_ = 0.0f;
-		UpdateViewerVectors();
+		gameplay_viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
+		gameplay_viewer_.yaw_ = spawn_yaw;
+		gameplay_viewer_.pitch_ = spawn_pitch;
+		gameplay_viewer_.roll_ = 0.0f;
+		UpdateGameplayViewerVectors();
 
 		// Disable all editor modes and editor tools
 		edit_mode_ = false;
