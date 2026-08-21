@@ -36,6 +36,7 @@ public:
     void Show();
     void Hide();
     void Focus();
+    void FocusEditor();
     void MakeCurrent() const;
 
     bool IsCreated() const { return gameplay_window_id_ != 0; }

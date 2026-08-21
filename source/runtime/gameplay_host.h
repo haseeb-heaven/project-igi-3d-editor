@@ -36,6 +36,7 @@ public:
     void ShowGameplayWindow();
     void HideGameplayWindow();
     void FocusGameplayWindow();
+    void FocusEditorWindow();
     void MakeGameplayWindowCurrent() const;
     bool HasGameplayWindow() const { return gameplay_window_.IsCreated(); }
     bool IsGameplayWindowCurrent() const { return gameplay_window_.IsCurrent(); }

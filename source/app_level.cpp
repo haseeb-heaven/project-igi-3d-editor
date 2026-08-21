@@ -123,6 +123,12 @@ void App::ToggleLightmaps() {
 }
 
 void App::LoadLevel(int level_no) {
+	if (in_game_mode_) {
+		status_message_ = "Close gameplay before loading a different level";
+		Logger::Get().Log(LogLevel::WARNING, "[App] Ignoring level load while gameplay session is active");
+		return;
+	}
+
 	try {
 		Logger::Get().Log(LogLevel::INFO, "[App] ==========================================");
 		Logger::Get().Log(LogLevel::INFO, "[App] LoadLevel() START for level " + std::to_string(level_no));

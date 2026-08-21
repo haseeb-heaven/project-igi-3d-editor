@@ -95,8 +95,13 @@ parity claims remain gated on IGI1 evidence.
 - [x] Add an explicit `F5` apply/restart boundary: the host replaces the
   captured editor snapshot, rebuilds mutable runtime adapters from copied
   level objects, and never silently writes source files or mutates the running
-  world. Native editor-window editing while gameplay is focused remains a
-  separate focus-routing gap.
+  world.
+- [x] Add deterministic `F6` editor / `F7` gameplay focus routing. The editor
+  can receive authoring input and repaint its source view while the active
+  runtime continues through the fixed-step scheduler; focus changes do not
+  restart the session. Terrain editing and level switching remain blocked
+  while gameplay is active because their immutable asset snapshot boundary is
+  not yet complete.
 
 ### Phase 6: Fidelity and fixture coverage
 

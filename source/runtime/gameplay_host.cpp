@@ -78,6 +78,12 @@ void GameplayHost::HideGameplayWindow() {
 
 void GameplayHost::FocusGameplayWindow() {
     gameplay_window_.Focus();
+    session_.GetInputRouter().SetFocus(WindowFocusTarget::GameplayWindow);
+}
+
+void GameplayHost::FocusEditorWindow() {
+    gameplay_window_.FocusEditor();
+    session_.GetInputRouter().SetFocus(WindowFocusTarget::EditorWindow);
 }
 
 void GameplayHost::MakeGameplayWindowCurrent() const {

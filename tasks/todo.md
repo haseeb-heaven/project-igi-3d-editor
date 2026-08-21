@@ -37,7 +37,10 @@
 - [x] Add explicit `F5` apply/restart semantics for a live gameplay session;
       the session captures the replacement snapshot, rebuilds copied runtime
       objects, resets mission/AI state, and never silently mutates authoring
-      data. Editor-window focus routing for editing during gameplay remains.
+      data. `F6` focuses the editor for authoring changes and `F7` returns to
+      gameplay; switching focus does not restart simulation. Auto-save,
+      terrain editing, and level switching stay gated during an active run
+      until immutable terrain/asset snapshots are complete.
 - [ ] Port/verify remaining selected-vanilla-fixture traversal (ladder and
       root-motion where exercised), authored mission patrol routes, and
       non-demo extraction conditions from OpenIGI/retail evidence.

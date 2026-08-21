@@ -649,6 +649,11 @@ void App::DispatchEventBindings() {
 #endif
 
 void App::ResetLevel() {
+	if (in_game_mode_) {
+		status_message_ = "Close gameplay before resetting the level";
+		return;
+	}
+
 	int levelNo = level_.GetLevelNo();
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo));
@@ -778,6 +783,5 @@ void App::ResetScript() {
 	// Reload the level to apply changes
 	LoadLevel(levelNo);
 }
-
 
 

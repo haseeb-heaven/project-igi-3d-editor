@@ -541,6 +541,16 @@ private:
   bool noclip_mode_ = true; // By default true as requested by user
   void UpdateViewerVectors();
   void UpdateGameplayViewerVectors();
+  void FocusGameplayWindow();
+  void FocusEditorWindow();
+  void CaptureEditorSnapshotForGameplayApply();
+  bool IsGameplayInputFocused() const {
+    return gameplay_host_.GetInputRouter().GetFocus() ==
+      igi::WindowFocusTarget::GameplayWindow;
+  }
+  bool IsEditorInputActive() const {
+    return !in_game_mode_ || !IsGameplayInputFocused();
+  }
   void UpdateViewerVectors(viewer_s& viewer);
   void UpdateViewDefine();
   void UpdateGameplayViewDefine();

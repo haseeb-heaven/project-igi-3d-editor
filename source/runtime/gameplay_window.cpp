@@ -103,6 +103,7 @@ void GameplayWindowHost::Show() {
 void GameplayWindowHost::Hide() {
 #if defined(_WIN32)
     if (!IsCreated()) return;
+    glutSetWindow(gameplay_window_id_);
     glutHideWindow();
     if (editor_window_id_ != 0) glutSetWindow(editor_window_id_);
 #endif
@@ -121,6 +122,21 @@ void GameplayWindowHost::Focus() {
     if (gameplay_window_handle != nullptr) {
         SetForegroundWindow(gameplay_window_handle);
         SetFocus(gameplay_window_handle);
+    }
+#endif
+}
+
+void GameplayWindowHost::FocusEditor() {
+#if defined(_WIN32)
+    if (editor_window_id_ == 0) return;
+
+    glutSetWindow(editor_window_id_);
+    glutShowWindow();
+
+    HWND editor_window_handle = FindWindowA(nullptr, "IGI Editor");
+    if (editor_window_handle != nullptr) {
+        SetForegroundWindow(editor_window_handle);
+        SetFocus(editor_window_handle);
     }
 #endif
 }

@@ -6,13 +6,23 @@
 #include "app_internal.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
-	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && key == GLUT_KEY_F6) {
+		FocusEditorWindow();
+		return;
+	}
+	if (in_game_mode_ && key == GLUT_KEY_F7) {
+		FocusGameplayWindow();
+		return;
+	}
 	if (in_game_mode_ && key == GLUT_KEY_F5) {
+		if (!IsGameplayInputFocused()) CaptureEditorSnapshotForGameplayApply();
 		ApplyAndRestartGameplay();
 		return;
 	}
-	if (in_game_mode_ && pause_mode_) return;
-	if (in_game_mode_ && !pause_mode_) {
+	if (in_game_mode_ && IsGameplayInputFocused() &&
+		!gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
 		return;
 	}
 
@@ -432,9 +442,10 @@ void App::Input_OnSpecial(int key, int x, int y) {
 }
 
 void App::Input_OnSpecialUp(int key, int x, int y) {
-	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
-	if (in_game_mode_ && pause_mode_) return;
-	if (in_game_mode_ && !pause_mode_) {
+	if (in_game_mode_ && IsGameplayInputFocused() &&
+		!gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
 		return;
 	}
 
@@ -528,8 +539,9 @@ bool App::InlineAutocomplete() {
 void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
-	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
-	if (in_game_mode_ && !pause_mode_) {
+	if (in_game_mode_ && IsGameplayInputFocused() &&
+		!gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
 		if (key == 27) { // ESC
 			TogglePauseMenu();
 			return;
@@ -548,7 +560,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	if (pause_mode_) {
+	if (pause_mode_ && IsGameplayInputFocused()) {
 		if (key == 13) { // Enter
 			if (pause_active_input_ == 1) {
 				// Submit model search
@@ -568,6 +580,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				if (!pause_level_input_.empty()) {
 					int lvl = std::atoi(pause_level_input_.c_str());
 					if (lvl >= 1 && lvl <= 14) {
+						if (in_game_mode_) {
+							status_message_ = "Close gameplay before loading a different level";
+							return;
+						}
 						LoadLevel(lvl);
 						TogglePauseMenu();
 					} else {
@@ -1350,7 +1366,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	if (pause_mode_) {
+	if (pause_mode_ && IsGameplayInputFocused()) {
 		return;
 
 	}
@@ -1459,12 +1475,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
 
-	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
-	if (in_game_mode_ && !pause_mode_) {
+	if (in_game_mode_ && IsGameplayInputFocused() &&
+		!gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
 		gameplay_host_.GetInputRouter().OnKeyboardKey(key, false);
 		return;
 	}
-	if (in_game_mode_ && pause_mode_) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
 
 	// Check for modifier keys - if pressed, skip movement key checks
 	int modifiers = glutGetModifiers();

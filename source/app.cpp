@@ -390,6 +390,48 @@ void App::OnGameplayWindowClose() {
     gameplay_window_close_requested_ = true;
 }
 
+void App::FocusGameplayWindow() {
+	if (!in_game_mode_) return;
+
+	gameplay_host_.FocusGameplayWindow();
+	ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
+	glutSetCursor(GLUT_CURSOR_NONE);
+	mouse_state_.prior_x_ = gameplay_viewport_width_ >> 1;
+	mouse_state_.prior_y_ = gameplay_viewport_height_ >> 1;
+	glutWarpPointer(mouse_state_.prior_x_, mouse_state_.prior_y_);
+	edit_mode_ = false;
+	terrain_edit_enabled_ = false;
+	show_hud_ = false;
+	status_message_ = "Gameplay focus active (F6 focuses editor)";
+}
+
+void App::FocusEditorWindow() {
+	if (!in_game_mode_) return;
+
+	gameplay_host_.FocusEditorWindow();
+	RestoreEditorViewport();
+	glutSetCursor(GLUT_CURSOR_NONE);
+	edit_mode_ = true;
+	terrain_edit_enabled_ = false;
+	show_hud_ = true;
+	if (gameplay_editor_snapshot_.has_value()) {
+		selected_object_index_ = gameplay_editor_snapshot_->selected_object_id;
+	}
+	status_message_ = "Editor focus active; press F5 to apply changes and restart gameplay";
+}
+
+void App::CaptureEditorSnapshotForGameplayApply() {
+	if (!gameplay_editor_snapshot_.has_value()) return;
+
+	// Preserve the original editor-mode flags captured at OpenGameplay while
+	// refreshing the authoring camera/selection that may have changed in the
+	// editor window during this focused-edit interval.
+	gameplay_editor_snapshot_->camera_pos = viewer_.pos_;
+	gameplay_editor_snapshot_->camera_yaw = viewer_.yaw_;
+	gameplay_editor_snapshot_->camera_pitch = viewer_.pitch_;
+	gameplay_editor_snapshot_->selected_object_id = selected_object_index_;
+}
+
 // AI text editor helpers — must be defined before Input_OnMouse and Input_OnSpecial.
 
 // Returns flat text offsets of each visual line start.
@@ -463,11 +505,22 @@ void App::OnIdle() {
 		return;
 	}
 
-	if (in_game_mode_) {
+	if (in_game_mode_ && IsGameplayInputFocused()) {
 		gameplay_host_.MakeGameplayWindowCurrent();
 		ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
+		Frame(delta_time * 0.001f); // convert to seconds
+	} else if (in_game_mode_) {
+		// The editor may own OS focus while the runtime remains active. Advance
+		// the fixed-step session explicitly, then render only the authoring
+		// window so editor input and painting do not become gameplay updates.
+		gameplay_host_.Update(cur_time);
+		ApplyViewportSize(editor_viewport_width_, editor_viewport_height_);
+		rendering_editor_window_ = true;
+		Frame(delta_time * 0.001f); // editor camera and authoring tools still tick
+		rendering_editor_window_ = false;
+	} else {
+		Frame(delta_time * 0.001f); // convert to seconds
 	}
-	Frame(delta_time * 0.001f);	// convert to seconds
 
 	prior_frame_time_ = cur_time;
 }
@@ -476,11 +529,11 @@ void App::Frame(float delta_seconds) {
 	const bool render_gameplay = IsGameplayRenderTarget();
 	const igi::RuntimeRenderSnapshot& render_snapshot =
 		gameplay_host_.GetRenderSnapshot();
-	if (developer_mode_ && !rendering_editor_window_) {
+	if (developer_mode_ && (!rendering_editor_window_ || IsEditorInputActive())) {
 		debug_cmd_mgr_.Update();
 	}
 	// Auto-save timer
-	if (!rendering_editor_window_ && auto_save_enabled_ && !pause_mode_ &&
+	if (!in_game_mode_ && auto_save_enabled_ && !pause_mode_ &&
 		level_.GetLevelNo() > 0) {
 		int64_t now = Sys_Milliseconds();
 		if (now - auto_save_last_time_ms_ >= (int64_t)auto_save_interval_seconds_ * 1000) {
@@ -656,26 +709,26 @@ void App::Frame(float delta_seconds) {
 			}
 		}
 		ApplyRuntimeAiAnimationRequests();
-	} else if (!in_game_mode_) {
+	} else if (!in_game_mode_ || IsEditorInputActive()) {
 		ProcessInput(delta_seconds);
 	}
 	UpdateGameplayFieldOfView();
 
 	// Update animation playback (auto-play for AI NPCs)
-	if (!rendering_editor_window_) {
+	if (!rendering_editor_window_ || IsEditorInputActive()) {
 		UpdateAnimations(delta_seconds);
 		CheckMusicLoop();
 	}
 
 	// Per-frame position-drag velocity: the pad / Z slider accelerate while held in
 	// a direction and keep moving when the cursor is pinned at the window edge.
-	if (!rendering_editor_window_ && mouse_state_.left_button_down_ &&
+	if (IsEditorInputActive() && mouse_state_.left_button_down_ &&
 		prop_field_index_ >= 0 && selected_object_index_ >= 0 &&
 	    !Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)) {
 		ApplyPropPositionDrag();
 	}
 
-	if (!rendering_editor_window_ && edit_mode_ && terrain_edit_enabled_ &&
+	if (IsEditorInputActive() && edit_mode_ && terrain_edit_enabled_ &&
 		mouse_state_.left_button_down_) {
 		EditorProcessClick();
 	}
@@ -683,7 +736,7 @@ void App::Frame(float delta_seconds) {
 	if (render_gameplay) UpdateGameplayViewDefine();
 	else UpdateViewDefine();
 	if (render_gameplay) CaptureGameplayRenderSnapshot();
-	if (!in_game_mode_ &&
+	if (IsEditorInputActive() &&
 		(mouse_state_.prior_x_ != last_pick_x_ ||
 		 mouse_state_.prior_y_ != last_pick_y_)) {
 		bool camMode    = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
@@ -1117,6 +1170,14 @@ void App::SetEditMode(bool enabled) {
 }
 
 void App::SetTerrainEditEnabled(bool enabled) {
+	if (enabled && in_game_mode_) {
+		// Terrain queries are part of the live runtime collision contract. Keep
+		// authoring terrain immutable until gameplay is closed or explicitly
+		// rebuilt, rather than letting a brush edit alter an active session.
+		terrain_edit_enabled_ = false;
+		status_message_ = "Terrain editing is disabled during gameplay; close gameplay before changing terrain";
+		return;
+	}
 	terrain_edit_enabled_ = enabled;
 	if (enabled) {
 		static const char* kNames[] = {"Raise","Lower","Soften","Flatten"};
@@ -1330,7 +1391,7 @@ void App::ToggleGamePlayMode() {
 		show_hud_ = false;
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
-		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, F5 apply/restart, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, F5 apply/restart, F6 editor, F7 gameplay, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		if (!gameplay_host_.CloseGameplay(snap)) {
@@ -1366,6 +1427,9 @@ void App::ApplyAndRestartGameplay() {
 		!gameplay_editor_snapshot_.has_value()) {
 		status_message_ = "Cannot apply gameplay: no active runtime session";
 		return;
+	}
+	if (!IsGameplayInputFocused()) {
+		CaptureEditorSnapshotForGameplayApply();
 	}
 
 	// Rebuild every mutable adapter from the current authoring level copy. The
@@ -1411,8 +1475,8 @@ void App::ApplyAndRestartGameplay() {
 	UpdateGameplayViewerVectors();
 	pause_mode_ = false;
 	gameplay_host_.SetPaused(false);
+	FocusGameplayWindow();
 	status_message_ = "Gameplay applied and restarted from the current editor snapshot";
-	gameplay_host_.FocusGameplayWindow();
 }
 
 igi::RuntimeInteractionResult App::HandleGameplayInteraction(

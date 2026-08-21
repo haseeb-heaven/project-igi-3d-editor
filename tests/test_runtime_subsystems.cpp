@@ -1653,3 +1653,24 @@ TEST(RuntimeHostTest, ApplyAndRestartRequiresAnActiveGameplaySession) {
     EditorSnapshot restored_snapshot;
     ASSERT_TRUE(host.CloseGameplay(restored_snapshot));
 }
+
+TEST(RuntimeHostTest, FocusCommandsMoveInputOwnershipWithoutRestartingGameplay) {
+    GameplayHost host;
+    host.Initialize(FlatTerrain);
+
+    EditorSnapshot snapshot;
+    ASSERT_TRUE(host.OpenGameplay(snapshot));
+    host.GetInputRouter().OnKeyboardKey('W', true);
+    EXPECT_EQ(host.GetInputRouter().GetFocus(), WindowFocusTarget::GameplayWindow);
+
+    host.FocusEditorWindow();
+    EXPECT_EQ(host.GetInputRouter().GetFocus(), WindowFocusTarget::EditorWindow);
+    EXPECT_TRUE(host.IsGameplayActive());
+
+    host.FocusGameplayWindow();
+    EXPECT_EQ(host.GetInputRouter().GetFocus(), WindowFocusTarget::GameplayWindow);
+    EXPECT_TRUE(host.IsGameplayActive());
+
+    EditorSnapshot restored_snapshot;
+    ASSERT_TRUE(host.CloseGameplay(restored_snapshot));
+}
