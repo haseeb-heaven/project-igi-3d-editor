@@ -252,6 +252,9 @@ public:
     }
     bool IsZoomActive() const { return zoom_active_; }
     bool IsMapComputerOpen() const { return map_computer_open_; }
+    glm::vec3 GetMapComputerCenter() const;
+    float GetMapComputerFieldOfView() const;
+    int GetMapComputerZoomLevel() const { return map_computer_zoom_level_; }
     bool IsPlayerOnLadder() const { return ladder_traversal_.IsOnLadder(); }
     const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
 
@@ -344,6 +347,7 @@ private:
         int64_t finished_display_tick,
         int64_t ticks_since_finished_display);
     void UpdateMissionActorState();
+    void UpdateMapComputerViewport(const PlayerInputCmd& input_command);
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
     void EndLadderTraversal();
@@ -482,6 +486,8 @@ private:
     bool zoom_active_ = false;
     bool map_computer_open_ = false;
     bool map_computer_input_was_held_ = false;
+    int map_computer_zoom_level_ = 1;
+    glm::vec2 map_computer_center_ = glm::vec2(0.0f);
     float flash_effect_strength_ = 0.0f;
     float flash_effect_decay_per_second_ = 0.0f;
     float flash_effect_remaining_seconds_ = 0.0f;

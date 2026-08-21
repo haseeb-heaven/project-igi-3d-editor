@@ -26,6 +26,8 @@ public:
     void OnKeyboardKey(int key, bool is_down);
     void OnMouseMove(float delta_x, float delta_y);
     void OnMouseButton(int button, bool is_down);
+    void OnMouseWheel(int direction);
+    void SetMapComputerOpen(bool is_open);
 
     PlayerInputCmd ConsumeGameplayInput();
 
@@ -42,6 +44,8 @@ private:
     bool left_strafe_key_down_ = false;
     bool right_strafe_key_down_ = false;
     bool map_computer_key_down_ = false;
+    bool map_computer_open_ = false;
+    bool map_drag_active_ = false;
 };
 
 } // namespace igi

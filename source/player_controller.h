@@ -26,6 +26,11 @@ struct PlayerInputCmd {
     bool interact = false;
     // Rising-edge action for the vanilla map-computer weapon state.
     bool map_computer = false;
+    // Map-computer pointer deltas are normalized by the input router so the
+    // simulation can apply the same world-space pan on every viewport size.
+    float map_pan_delta_x = 0.0f;
+    float map_pan_delta_y = 0.0f;
+    int map_zoom_delta = 0;
     int switch_weapon = -1;
 
     // Animation-local translation sampled for this fixed simulation tick.

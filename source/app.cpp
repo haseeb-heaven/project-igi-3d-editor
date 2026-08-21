@@ -549,14 +549,22 @@ void App::OnIdle() {
 	}
 
 	if (in_game_mode_ && IsGameplayInputFocused()) {
+		gameplay_host_.GetInputRouter().SetMapComputerOpen(
+			gameplay_host_.GetWorld().IsMapComputerOpen());
 		gameplay_host_.MakeGameplayWindowCurrent();
 		ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
 		Frame(delta_time * 0.001f); // convert to seconds
+		gameplay_host_.GetInputRouter().SetMapComputerOpen(
+			gameplay_host_.GetWorld().IsMapComputerOpen());
 	} else if (in_game_mode_) {
 		// The editor may own OS focus while the runtime remains active. Advance
 		// the fixed-step session explicitly, then render only the authoring
 		// window so editor input and painting do not become gameplay updates.
+		gameplay_host_.GetInputRouter().SetMapComputerOpen(
+			gameplay_host_.GetWorld().IsMapComputerOpen());
 		gameplay_host_.Update(cur_time);
+		gameplay_host_.GetInputRouter().SetMapComputerOpen(
+			gameplay_host_.GetWorld().IsMapComputerOpen());
 		ApplyViewportSize(editor_viewport_width_, editor_viewport_height_);
 		rendering_editor_window_ = true;
 		Frame(delta_time * 0.001f); // editor camera and authoring tools still tick
@@ -1174,11 +1182,13 @@ void App::UpdateGameplayMapComputerCamera(float delta_seconds) {
 
     // The authored camera source does not expose a separate C++ map-camera
     // task. Keep the presentation bridge deterministic and renderer-free: the
-    // player position is the map pivot and this fixed height is an inferred
-    // tactical vantage, while transition timings live in the tested seam.
+    // The map computer owns a separate overhead view. Its center and discrete
+    // field-of-view levels are fixed-step runtime state so drag/zoom input is
+    // deterministic and the camera bridge only presents that state.
     constexpr float map_vantage_height_units =
-        64.0f * igi::PlayerController::WORLD_METER;
-    const igi::PlayerController& player = gameplay_host_.GetWorld().GetPlayer();
+        900.0f * igi::PlayerController::WORLD_METER;
+    igi::RuntimeWorld& runtime_world = gameplay_host_.GetWorld();
+    const igi::PlayerController& player = runtime_world.GetPlayer();
     const float player_field_of_view = glm::radians(
         gameplay_host_.GetWorld().IsZoomActive() ? 40.0f : FOVY_IN_DEGREE);
     const igi::RuntimeMapComputerPose live_eye{
@@ -1186,14 +1196,13 @@ void App::UpdateGameplayMapComputerCamera(float delta_seconds) {
         glm::radians(player.GetYaw()),
         glm::radians(player.GetPitch())};
     const glm::vec3 player_position = player.GetPosition();
+    const glm::vec3 map_center = runtime_world.GetMapComputerCenter();
     const igi::RuntimeMapComputerPose live_vantage{
-        glm::vec3(
-            player_position.x,
-            player_position.y,
+        glm::vec3(map_center.x, map_center.y,
             player_position.z + map_vantage_height_units),
         0.0f,
         igi::RuntimeMapComputerCamera::kMapPitchRadians};
-    const float map_field_of_view = glm::radians(18.0f);
+    const float map_field_of_view = runtime_world.GetMapComputerFieldOfView();
     const bool map_computer_open =
         gameplay_host_.GetWorld().IsMapComputerOpen();
 
@@ -1207,8 +1216,8 @@ void App::UpdateGameplayMapComputerCamera(float delta_seconds) {
     } else if (!map_computer_open && gameplay_map_computer_open_) {
         if (gameplay_map_computer_camera_.CanClose()) {
             gameplay_map_computer_camera_.BeginClose(
-                gameplay_map_computer_camera_.GetPose(),
-                gameplay_map_computer_camera_.GetFieldOfView(),
+                live_vantage,
+                map_field_of_view,
                 live_eye,
                 player_field_of_view);
         }

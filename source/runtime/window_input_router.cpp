@@ -24,6 +24,7 @@ void WindowInputRouter::ResetInputState() {
     left_strafe_key_down_ = false;
     right_strafe_key_down_ = false;
     map_computer_key_down_ = false;
+    map_drag_active_ = false;
 }
 
 void WindowInputRouter::UpdateMovementAxes() {
@@ -89,6 +90,13 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
 void WindowInputRouter::OnMouseMove(float delta_x, float delta_y) {
     if (focus_target_ != WindowFocusTarget::GameplayWindow) return;
 
+    if (map_computer_open_ && map_drag_active_) {
+        constexpr float map_pointer_normalization = 0.001f;
+        current_cmd_.map_pan_delta_x += delta_x * map_pointer_normalization;
+        current_cmd_.map_pan_delta_y += delta_y * map_pointer_normalization;
+        return;
+    }
+
     float sensitivity = profile_.mouse_sensitivity * 0.35f;
     if (sensitivity <= 0.001f) sensitivity = 0.15f;
 
@@ -101,11 +109,32 @@ void WindowInputRouter::OnMouseMove(float delta_x, float delta_y) {
 void WindowInputRouter::OnMouseButton(int button, bool is_down) {
     if (focus_target_ != WindowFocusTarget::GameplayWindow) return;
 
+    if (button == 1 && map_computer_open_) {
+        map_drag_active_ = is_down;
+        return;
+    }
+
     int fire_btn = profile_.GetMouseButtonForAction("Fire", 0);
     if (button == fire_btn || button == 0) { // 0 = Left click
         current_cmd_.fire = is_down;
     } else if (button == 2) { // 2 = Right click (Zoom / Aim down sights)
         current_cmd_.zoom = is_down;
+    }
+}
+
+void WindowInputRouter::OnMouseWheel(int direction) {
+    if (focus_target_ != WindowFocusTarget::GameplayWindow ||
+        !map_computer_open_ || direction == 0) {
+        return;
+    }
+
+    current_cmd_.map_zoom_delta += direction > 0 ? 1 : -1;
+}
+
+void WindowInputRouter::SetMapComputerOpen(bool is_open) {
+    map_computer_open_ = is_open;
+    if (!is_open) {
+        map_drag_active_ = false;
     }
 }
 
@@ -118,6 +147,9 @@ PlayerInputCmd WindowInputRouter::ConsumeGameplayInput() {
     current_cmd_.reload = false;
     current_cmd_.interact = false;
     current_cmd_.map_computer = false;
+    current_cmd_.map_pan_delta_x = 0.0f;
+    current_cmd_.map_pan_delta_y = 0.0f;
+    current_cmd_.map_zoom_delta = 0;
     current_cmd_.switch_weapon = -1;
     return cmd;
 }

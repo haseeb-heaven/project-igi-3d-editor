@@ -1903,6 +1903,24 @@ TEST(RuntimeInputTest, MapComputerActionIsMomentaryAndFocusGated) {
     EXPECT_FALSE(router.ConsumeGameplayInput().map_computer);
 }
 
+TEST(RuntimeInputTest, MapComputerDragAndWheelDoNotBecomePlayerLookOrFire) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.SetMapComputerOpen(true);
+
+    router.OnMouseButton(1, true);
+    router.OnMouseMove(40.0f, -20.0f);
+    router.OnMouseWheel(1);
+    router.OnMouseButton(1, false);
+
+    const PlayerInputCmd command = router.ConsumeGameplayInput();
+    EXPECT_FLOAT_EQ(command.yaw_delta, 0.0f);
+    EXPECT_FLOAT_EQ(command.pitch_delta, 0.0f);
+    EXPECT_FLOAT_EQ(command.map_pan_delta_x, 0.04f);
+    EXPECT_FLOAT_EQ(command.map_pan_delta_y, -0.02f);
+    EXPECT_EQ(command.map_zoom_delta, 1);
+}
+
 TEST(RuntimeInputTest, VanillaDefaultSeparatesRightCtrlCrouchFromMapComputer) {
     WindowInputRouter router;
     router.SetFocus(WindowFocusTarget::GameplayWindow);
@@ -1959,6 +1977,31 @@ TEST(RuntimeWorldTest, MapComputerSuppressesWeaponControlsUntilClosed) {
     EXPECT_LT(
         world.GetWeapons().GetCurrentClipAmmo(),
         ammo_before_map_fire);
+}
+
+TEST(RuntimeWorldTest, MapComputerPanAndZoomUpdateTheVanillaViewport) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    PlayerInputCmd open_command;
+    open_command.map_computer = true;
+    world.UpdateSimulationTick(0, open_command);
+    ASSERT_TRUE(world.IsMapComputerOpen());
+
+    const glm::vec3 center_before = world.GetMapComputerCenter();
+    const float field_of_view_before = world.GetMapComputerFieldOfView();
+
+    PlayerInputCmd map_command;
+    map_command.map_pan_delta_x = 0.01f;
+    map_command.map_pan_delta_y = -0.01f;
+    map_command.map_zoom_delta = 1;
+    world.UpdateSimulationTick(1, map_command);
+
+    const glm::vec3 center_after = world.GetMapComputerCenter();
+    EXPECT_LT(center_after.x, center_before.x);
+    EXPECT_LT(center_after.y, center_before.y);
+    EXPECT_LT(world.GetMapComputerFieldOfView(), field_of_view_before);
+    EXPECT_EQ(world.GetMapComputerZoomLevel(), 2);
 }
 
 TEST(RuntimeWorldTest, MapComputerFreezesPlayerPresentationAndInteractionInput) {

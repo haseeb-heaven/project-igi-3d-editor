@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <limits>
@@ -15,6 +16,14 @@ namespace {
 constexpr float kTransientPresentationStrengthDecayPerTick = 0.5f;
 constexpr int kStatusMessageSendCooldownTicks = 210;
 constexpr int kStatusMessageRevealWarmupTicks = 9;
+constexpr float kMapComputerVantageHeightUnits = 900.0f * 4096.0f;
+constexpr std::array<float, 4> kMapComputerFieldOfViews = {
+    0.7853982f,
+    0.3272492f,
+    0.1396263f,
+    0.009599311f,
+};
+constexpr float kMapComputerViewportAspect = 16.0f / 9.0f;
 
 bool MissionCriteriaAcceptsPlayer(const std::string& criteria) {
     std::string normalized_criteria;
@@ -807,6 +816,10 @@ void RuntimeWorld::Reset() {
     zoom_active_ = false;
     map_computer_open_ = false;
     map_computer_input_was_held_ = false;
+    map_computer_zoom_level_ = 1;
+    map_computer_center_ = glm::vec2(
+        player_.GetPosition().x,
+        player_.GetPosition().y);
     flash_effect_strength_ = 0.0f;
     flash_effect_decay_per_second_ = 0.0f;
     flash_effect_remaining_seconds_ = 0.0f;
@@ -945,6 +958,32 @@ void RuntimeWorld::UpdateMissionActorState() {
             guard.mission_state_type + "_" + guard.mission_task_id + ".isDead",
             guard.state == AiGuardState::Dead);
     }
+}
+
+glm::vec3 RuntimeWorld::GetMapComputerCenter() const {
+    return glm::vec3(
+        map_computer_center_.x,
+        map_computer_center_.y,
+        player_.GetPosition().z);
+}
+
+float RuntimeWorld::GetMapComputerFieldOfView() const {
+    return kMapComputerFieldOfViews[static_cast<size_t>(
+        std::clamp(map_computer_zoom_level_, 0, 3))];
+}
+
+void RuntimeWorld::UpdateMapComputerViewport(
+    const PlayerInputCmd& input_command) {
+    map_computer_zoom_level_ = std::clamp(
+        map_computer_zoom_level_ + input_command.map_zoom_delta,
+        0,
+        static_cast<int>(kMapComputerFieldOfViews.size()) - 1);
+
+    const float half_map_height = kMapComputerVantageHeightUnits *
+        std::tan(GetMapComputerFieldOfView() * 0.5f);
+    const float half_map_width = half_map_height * kMapComputerViewportAspect;
+    map_computer_center_.x -= input_command.map_pan_delta_x * 2.0f * half_map_width;
+    map_computer_center_.y += input_command.map_pan_delta_y * 2.0f * half_map_height;
 }
 
 bool RuntimeWorld::AttachGuardScript(
@@ -2233,6 +2272,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // player controller or authored interaction bridge.
     PlayerInputCmd player_input = input_cmd;
     if (map_computer_open_) {
+        UpdateMapComputerViewport(input_cmd);
         player_input.forward = 0.0f;
         player_input.strafe = 0.0f;
         player_input.yaw_delta = 0.0f;
@@ -2323,6 +2363,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         if (map_computer_open_) {
             map_computer_open_ = false;
         } else if (player_.IsGrounded() && player_.IsAlive()) {
+            map_computer_center_ = glm::vec2(
+                player_.GetPosition().x,
+                player_.GetPosition().y);
+            map_computer_zoom_level_ = 1;
             map_computer_open_ = true;
         }
     }
