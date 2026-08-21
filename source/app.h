@@ -12,6 +12,7 @@
 #include "animation.h"
 #include "debug_command_manager.h"
 #include "runtime/gameplay_host.h"
+#include "runtime/render_target.h"
 #include <atomic>
 #include <optional>
 #include <set>
@@ -461,6 +462,10 @@ private:
       false}; // set by monitor thread when game process exits
   HWND editor_hwnd_ = NULL;
   bool gameplay_window_close_requested_ = false;
+  // True only while an OS repaint is rendering the editor window during an
+  // active gameplay session. This keeps the editor surface visible without
+  // allowing that repaint to advance or mutate the runtime session.
+  bool rendering_editor_window_ = false;
 
   bool orbit_active_ = false;
   glm::vec3 orbit_target_pos_ = glm::vec3(0.0f);
@@ -534,6 +539,11 @@ private:
   void UpdateViewDefine();
   void UpdateGameplayViewDefine();
   void UpdateViewDefine(const viewer_s& viewer, view_define_s& view_define);
+  bool IsGameplayRenderTarget() const {
+    return igi::ResolveRenderTarget(
+               in_game_mode_, rendering_editor_window_) ==
+           igi::RenderTarget::Gameplay;
+  }
   void EditorProcessClick();
   void ApplyPropPositionDrag(); // per-frame velocity-ramped position drag (pad
                                 // / Z slider)

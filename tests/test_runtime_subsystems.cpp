@@ -22,6 +22,7 @@
 #include "../source/runtime/projectile_system.h"
 #include "../source/runtime/window_input_router.h"
 #include "../source/runtime/human_player_config.h"
+#include "../source/runtime/render_target.h"
 
 using namespace igi;
 
@@ -129,6 +130,21 @@ QVMFile BuildRetailAiPatrolScript() {
 }
 
 } // namespace
+
+TEST(RuntimeRenderTargetTest, EditorRepaintCannotBecomeGameplayTarget) {
+    EXPECT_EQ(
+        ResolveRenderTarget(false, false),
+        RenderTarget::Editor);
+    EXPECT_EQ(
+        ResolveRenderTarget(true, false),
+        RenderTarget::Gameplay);
+    EXPECT_EQ(
+        ResolveRenderTarget(true, true),
+        RenderTarget::Editor);
+    EXPECT_EQ(
+        ResolveRenderTarget(false, true),
+        RenderTarget::Editor);
+}
 
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     ProjectileSystem projectiles;

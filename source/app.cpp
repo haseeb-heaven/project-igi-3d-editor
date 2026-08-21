@@ -355,11 +355,13 @@ void App::OnDisplay() {
 		OnGameplayDisplay();
 		return;
 	}
-	// Keep the last authoring frame visible while gameplay owns the other
-	// window. Editor input is ignored during active gameplay by the input
-	// adapters, so this cannot accidentally edit the source level.
-	if (in_game_mode_) return;
+	// Repaint the editor surface from its authoring state while gameplay owns
+	// the other window. The render-only flag prevents this zero-delta repaint
+	// from advancing physics, consuming input, or changing runtime objects.
+	ApplyViewportSize(editor_viewport_width_, editor_viewport_height_);
+	rendering_editor_window_ = in_game_mode_;
 	Frame(0.0f);
+	rendering_editor_window_ = false;
 }
 
 bool App::InitializeGameplayWindow(
@@ -379,6 +381,7 @@ void App::ShutdownGameplayWindow() {
 
 void App::OnGameplayDisplay() {
 	if (!in_game_mode_ || !gameplay_host_.IsGameplayWindowCurrent()) return;
+	ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
 	Frame(0.0f);
 }
 
@@ -460,18 +463,23 @@ void App::OnIdle() {
 		return;
 	}
 
-	if (in_game_mode_) gameplay_host_.MakeGameplayWindowCurrent();
+	if (in_game_mode_) {
+		gameplay_host_.MakeGameplayWindowCurrent();
+		ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
+	}
 	Frame(delta_time * 0.001f);	// convert to seconds
 
 	prior_frame_time_ = cur_time;
 }
 
 void App::Frame(float delta_seconds) {
-	if (developer_mode_) {
+	const bool render_gameplay = IsGameplayRenderTarget();
+	if (developer_mode_ && !rendering_editor_window_) {
 		debug_cmd_mgr_.Update();
 	}
 	// Auto-save timer
-	if (auto_save_enabled_ && !pause_mode_ && level_.GetLevelNo() > 0) {
+	if (!rendering_editor_window_ && auto_save_enabled_ && !pause_mode_ &&
+		level_.GetLevelNo() > 0) {
 		int64_t now = Sys_Milliseconds();
 		if (now - auto_save_last_time_ms_ >= (int64_t)auto_save_interval_seconds_ * 1000) {
 			auto_save_last_time_ms_ = now;
@@ -480,9 +488,9 @@ void App::Frame(float delta_seconds) {
 		}
 	}
 
-	if (pause_mode_) {
+	if (pause_mode_ && !rendering_editor_window_) {
 		// Skip all updates when paused, just render
-		if (in_game_mode_) UpdateGameplayViewDefine();
+		if (render_gameplay) UpdateGameplayViewDefine();
 		else UpdateViewDefine();
 		if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
 			hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
@@ -491,7 +499,7 @@ void App::Frame(float delta_seconds) {
 			last_pick_y_ = mouse_state_.prior_y_;
 		}
 		float ground_z = 0.0f;
-		const viewer_s& active_viewer = in_game_mode_ ? gameplay_viewer_ : viewer_;
+		const viewer_s& active_viewer = render_gameplay ? gameplay_viewer_ : viewer_;
 		level_.GetTerrainZ(active_viewer.pos_.x, active_viewer.pos_.y, ground_z);
 		int propAnimBoneHierarchy; std::vector<int> propAnimIds; int propAnimActiveId; bool propAnimIsPlaying;
 		ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
@@ -543,7 +551,7 @@ void App::Frame(float delta_seconds) {
 					return t == "HumanSoldier" || t == "HumanSoldierFemale" ||
 					       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 				 }())),
-			.in_game_mode_         = in_game_mode_,
+			.in_game_mode_         = render_gameplay,
 			.noclip_mode_          = noclip_mode_,
 			.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
 			.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
@@ -618,7 +626,7 @@ void App::Frame(float delta_seconds) {
 	extern float g_renderer_delta_secs;
 	g_renderer_delta_secs = delta_seconds;
 
-	if (in_game_mode_) {
+	if (render_gameplay) {
 		int64_t now_ms = Sys_Milliseconds();
 		// OnIdle owns the simulation update. Display callbacks may run once per
 		// window, so a zero render delta must never advance gameplay a second time.
@@ -645,29 +653,35 @@ void App::Frame(float delta_seconds) {
 			}
 		}
 		ApplyRuntimeAiAnimationRequests();
-	} else {
+	} else if (!in_game_mode_) {
 		ProcessInput(delta_seconds);
 	}
 	UpdateGameplayFieldOfView();
 
 	// Update animation playback (auto-play for AI NPCs)
-	UpdateAnimations(delta_seconds);
-	CheckMusicLoop();
+	if (!rendering_editor_window_) {
+		UpdateAnimations(delta_seconds);
+		CheckMusicLoop();
+	}
 
 	// Per-frame position-drag velocity: the pad / Z slider accelerate while held in
 	// a direction and keep moving when the cursor is pinned at the window edge.
-	if (mouse_state_.left_button_down_ && prop_field_index_ >= 0 && selected_object_index_ >= 0 &&
+	if (!rendering_editor_window_ && mouse_state_.left_button_down_ &&
+		prop_field_index_ >= 0 && selected_object_index_ >= 0 &&
 	    !Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera)) {
 		ApplyPropPositionDrag();
 	}
 
-	if (edit_mode_ && terrain_edit_enabled_ && mouse_state_.left_button_down_) {
+	if (!rendering_editor_window_ && edit_mode_ && terrain_edit_enabled_ &&
+		mouse_state_.left_button_down_) {
 		EditorProcessClick();
 	}
 
-	if (in_game_mode_) UpdateGameplayViewDefine();
+	if (render_gameplay) UpdateGameplayViewDefine();
 	else UpdateViewDefine();
-	if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
+	if (!in_game_mode_ &&
+		(mouse_state_.prior_x_ != last_pick_x_ ||
+		 mouse_state_.prior_y_ != last_pick_y_)) {
 		bool camMode    = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 		bool overPanel  = prop_editor_open_ &&
 		                  mouse_state_.prior_x_ < (PropPanel::kLeft + PropPanel::kWidth);
@@ -714,53 +728,56 @@ void App::Frame(float delta_seconds) {
 	draw_params_.flat_sky_layer_is_visible_ = update_params.flat_sky_layer_is_visible_;
 	draw_params_.num_terrain_render_chunk_ = update_params.num_terrain_render_chunk_;
 	draw_params_.level_objects_ = &GetActiveRenderLevelObjects();
-	draw_params_.selected_object_index_ = in_game_mode_ ? -1 : selected_object_index_;
-	draw_params_.show_magic_obj_spheres_ = in_game_mode_ ? false : show_magic_obj_spheres_;
+	draw_params_.selected_object_index_ = render_gameplay ? -1 : selected_object_index_;
+	draw_params_.show_magic_obj_spheres_ = render_gameplay ? false : show_magic_obj_spheres_;
 	// All AI with an active, playing clip are skinned-replaced simultaneously
 	// (skinnedReplacementIndices must outlive renderer_.Draw() below, so it's a
 	// local in this Frame() call, not a temporary).
-	std::unordered_set<int> skinnedReplacementIndices = GetSkinnedReplacementObjectIndices();
+	std::unordered_set<int> skinnedReplacementIndices =
+		render_gameplay ? GetSkinnedReplacementObjectIndices()
+						 : std::unordered_set<int>{};
 	draw_params_.skip_static_draw_indices_ = &skinnedReplacementIndices;
 	draw_params_.terrain_id_at_world_xy_ =
 		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
 
 
 	float ground_z = 0.0f;
-	bridge_.SetEnabled(show_hud_ && !in_game_mode_);
+	bridge_.SetEnabled(show_hud_ && !render_gameplay);
 	IGIBridge::PositionData data = bridge_.GetLatestData();
-	level_.GetTerrainZ(viewer_.pos_.x, viewer_.pos_.y, ground_z);
+	const viewer_s& render_viewer = render_gameplay ? gameplay_viewer_ : viewer_;
+	level_.GetTerrainZ(render_viewer.pos_.x, render_viewer.pos_.y, ground_z);
 
 	int propAnimBoneHierarchy; std::vector<int> propAnimIds; int propAnimActiveId; bool propAnimIsPlaying;
 	ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 
 	Renderer::task_tree_view_params_s task_tree_view = {
-		.show_hud_ = in_game_mode_ ? false : show_hud_,
+		.show_hud_ = render_gameplay ? false : show_hud_,
 		.status_msg_ = status_message_,
-		.pause_mode_ = pause_mode_,
+		.pause_mode_ = render_gameplay ? pause_mode_ : false,
 		.pause_active_input_ = pause_active_input_,
 		.pause_level_input_ = pause_level_input_,
 		.pause_search_input_ = pause_search_input_,
 		.pause_terrain_expanded_ = pause_terrain_expanded_,
 		.terrain_draw_options_ = GetTerrainDrawOptions(),
-		.show_debug_ = in_game_mode_ ? false : show_debug_,
-		.show_help_ = in_game_mode_ ? false : show_help_,
-		.edit_mode_ = in_game_mode_ ? false : edit_mode_,
-		.terrain_edit_enabled_ = in_game_mode_ ? false : terrain_edit_enabled_,
+		.show_debug_ = render_gameplay ? false : show_debug_,
+		.show_help_ = render_gameplay ? false : show_help_,
+		.edit_mode_ = render_gameplay ? false : edit_mode_,
+		.terrain_edit_enabled_ = render_gameplay ? false : terrain_edit_enabled_,
 		.terrain_mod_options_ = terrain_mod_options_,
-		.selected_object_index_ = in_game_mode_ ? -1 : selected_object_index_,
-		.hover_object_index_ = in_game_mode_ ? -1 : hover_object_index_,
-		.hover_tree_index_ = in_game_mode_ ? -1 : hover_tree_index_,
+		.selected_object_index_ = render_gameplay ? -1 : selected_object_index_,
+		.hover_object_index_ = render_gameplay ? -1 : hover_object_index_,
+		.hover_tree_index_ = render_gameplay ? -1 : hover_tree_index_,
 		.mouse_x_ = mouse_state_.prior_x_,
 		.mouse_y_ = mouse_state_.prior_y_,
 		.tree_scroll_offset = tree_scroll_offset_,
 		.tree_decl_expanded = tree_decl_expanded_,
 		.level_objects_ = &GetActiveRenderLevelObjects(),
-		.task_picker_open_ = in_game_mode_ ? false : task_picker_open_,
+		.task_picker_open_ = render_gameplay ? false : task_picker_open_,
 		.task_picker_selected_idx_ = task_picker_selected_idx_,
 		.task_picker_scroll_offset_ = task_picker_scroll_offset_,
 		.task_picker_search_ = task_picker_search_,
-		.enable_camera_mode_ = in_game_mode_ ? false : Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
-		.prop_editor_open_     = in_game_mode_ ? false : prop_editor_open_,
+		.enable_camera_mode_ = render_gameplay ? false : Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera),
+		.prop_editor_open_     = render_gameplay ? false : prop_editor_open_,
 		.prop_field_index_     = prop_field_index_,
 		.prop_text_edit_field_ = prop_text_edit_field_,
 		.prop_edit_obj_index_  = prop_edit_obj_index_,
@@ -781,7 +798,7 @@ void App::Frame(float delta_seconds) {
 				return t == "HumanSoldier" || t == "HumanSoldierFemale" ||
 				       t == "HumanPlayer" || t == "HumanSoldierRPG" || t == "HumanAI";
 			 }())),
-		.in_game_mode_         = in_game_mode_,
+		.in_game_mode_         = render_gameplay,
 		.noclip_mode_          = noclip_mode_,
 		.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
 		.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
@@ -827,7 +844,9 @@ void App::Frame(float delta_seconds) {
 		.prop_anim_ids_ = propAnimIds,
 		.prop_anim_active_id_ = propAnimActiveId,
 		.prop_anim_is_playing_ = propAnimIsPlaying,
-		.flash_effect_strength_ = gameplay_host_.GetWorld().GetFlashEffectStrength(),
+		.flash_effect_strength_ = render_gameplay
+			? gameplay_host_.GetWorld().GetFlashEffectStrength()
+			: 0.0f,
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
@@ -953,7 +972,7 @@ void App::Frame(float delta_seconds) {
 void App::UpdateGameplayFieldOfView() {
     constexpr float default_field_of_view_degrees = FOVY_IN_DEGREE;
     constexpr float zoomed_field_of_view_degrees = 40.0f;
-    const bool zoom_active = in_game_mode_ &&
+    const bool zoom_active = IsGameplayRenderTarget() &&
         gameplay_host_.GetWorld().IsZoomActive();
     const float desired_field_of_view = glm::radians(
         zoom_active
@@ -981,7 +1000,7 @@ void App::UpdateGameplayFieldOfView() {
 }
 
 void App::DrawGameplayPlayerWeapon() {
-	if (!in_game_mode_) return;
+	if (!IsGameplayRenderTarget()) return;
 
 	const auto& player = gameplay_host_.GetWorld().GetPlayer();
 	const auto& weapon = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon();
@@ -1009,7 +1028,7 @@ void App::DrawGameplayPlayerWeapon() {
 }
 
 void App::DrawGameplayProjectiles() {
-	if (!in_game_mode_) return;
+	if (!IsGameplayRenderTarget()) return;
 
 	const auto& projectiles = gameplay_host_.GetWorld().GetProjectiles().GetProjectiles();
 	for (const auto& projectile : projectiles) {
@@ -1118,7 +1137,7 @@ bool App::GetPauseMode() const {
 }
 
 LevelObjects& App::GetActiveRenderLevelObjects() {
-	return runtime_level_objects_.has_value()
+	return IsGameplayRenderTarget() && runtime_level_objects_.has_value()
 		? runtime_level_objects_.value()
 		: level_.GetLevelObjects();
 }
