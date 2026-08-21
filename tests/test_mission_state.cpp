@@ -154,3 +154,33 @@ TEST(MissionStateLoaderTest, LoadsConditionalSoundEdgeDefinition) {
     EXPECT_TRUE(sound.one_shot);
     EXPECT_TRUE(sound.relative_to_microphone);
 }
+
+TEST(MissionStateLoaderTest, LoadsVanillaExplodeObjectArguments) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "ExplodeObject";
+    source.task_id = "-1";
+    source.object_index = 77;
+    source.argument_tokens = {
+        "-1", "ExplodeObject", "Barrel", "100", "200", "300",
+        "0", "0", "1.5708", "300_04_1", "300_02_1", "1.0",
+        "2.0", "1.5", "1.0", "3.0", "3", "3",
+        "CutScene_667.nTick > 15", "explo_02_m",
+    };
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    ASSERT_EQ(definitions.explode_objects.size(), 1U);
+    const igi::AuthoredMissionExplodeObject& explode_object =
+        definitions.explode_objects.front();
+    EXPECT_EQ(explode_object.object_index, 77);
+    EXPECT_EQ(explode_object.task_id, "-1");
+    EXPECT_EQ(explode_object.position, glm::vec3(100.0f, 200.0f, 300.0f));
+    EXPECT_EQ(explode_object.model_name, "300_04_1");
+    EXPECT_EQ(explode_object.destroyed_model_name, "300_02_1");
+    EXPECT_FLOAT_EQ(explode_object.explosion_radius_meters, 2.0f);
+    EXPECT_FLOAT_EQ(explode_object.explosion_falloff_radius_meters, 1.5f);
+    EXPECT_FLOAT_EQ(explode_object.explosion_delay_seconds, 3.0f);
+    EXPECT_EQ(explode_object.explosion_expression, "CutScene_667.nTick > 15");
+    EXPECT_EQ(explode_object.explosion_sound, "explo_02_m");
+}

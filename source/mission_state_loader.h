@@ -12,6 +12,7 @@ namespace igi {
 struct MissionStateTaskSource {
     std::string task_type;
     std::string task_id;
+    int object_index = -1;
     std::vector<std::string> argument_tokens;
     float authored_duration_seconds = 0.0f;
     std::vector<AuthoredMissionCutSceneShot> authored_camera_shots;
@@ -23,6 +24,7 @@ struct AuthoredMissionStateDefinitions {
     std::vector<AuthoredMissionLevelTimer> level_timers;
     std::vector<AuthoredMissionCutScene> cut_scenes;
     std::vector<AuthoredMissionConditionalSound> conditional_sounds;
+    std::vector<AuthoredMissionExplodeObject> explode_objects;
     std::vector<AuthoredMissionStatusMessage> status_messages;
 };
 

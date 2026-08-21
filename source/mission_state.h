@@ -78,6 +78,24 @@ struct AuthoredMissionConditionalSound {
     bool relative_to_microphone = false;
 };
 
+// Authored ExplodeObject state. The object index is the stable identity for
+// the common -1 task ids used by vanilla placed props; named tasks retain
+// their task id for mission-expression publication and diagnostics.
+struct AuthoredMissionExplodeObject {
+    int object_index = -1;
+    std::string task_id;
+    glm::vec3 position = glm::vec3(0.0f);
+    std::string model_name;
+    std::string destroyed_model_name;
+    float damage_scale = 1.0f;
+    float explosion_radius_meters = 0.0f;
+    float explosion_falloff_radius_meters = 0.0f;
+    float explosion_damage_scale = 1.0f;
+    float explosion_delay_seconds = 0.0f;
+    std::string explosion_expression;
+    std::string explosion_sound;
+};
+
 // Authored StatusMessage definition. display_text is resolved from the
 // localized resource by the Windows application before entering the runtime.
 struct AuthoredMissionStatusMessage {

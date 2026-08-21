@@ -38,6 +38,15 @@ constexpr size_t kConditionalSoundPositionArgumentIndex = 5;
 constexpr size_t kConditionalSoundSimpleArgumentIndex = 8;
 constexpr size_t kConditionalSoundOneShotArgumentIndex = 9;
 constexpr size_t kConditionalSoundRelativeArgumentIndex = 10;
+constexpr size_t kExplodeObjectModelArgumentIndex = 9;
+constexpr size_t kExplodeObjectDestroyedModelArgumentIndex = 10;
+constexpr size_t kExplodeObjectDamageScaleArgumentIndex = 11;
+constexpr size_t kExplodeObjectRadiusArgumentIndex = 12;
+constexpr size_t kExplodeObjectFalloffArgumentIndex = 13;
+constexpr size_t kExplodeObjectDamageFactorArgumentIndex = 14;
+constexpr size_t kExplodeObjectDelayArgumentIndex = 15;
+constexpr size_t kExplodeObjectExpressionArgumentIndex = 18;
+constexpr size_t kExplodeObjectSoundArgumentIndex = 19;
 constexpr size_t kStatusMessageSendArgumentIndex = 9;
 constexpr size_t kStatusMessageTextArgumentIndex = 10;
 constexpr size_t kStatusMessageSoundArgumentIndex = 12;
@@ -132,7 +141,9 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
     AuthoredMissionStateDefinitions definitions;
 
     for (const MissionStateTaskSource& task_source : task_sources) {
-        if (task_source.task_id.empty() || task_source.task_id == "-1") {
+        if (task_source.task_id.empty() ||
+            (task_source.task_id == "-1" &&
+             task_source.task_type != "ExplodeObject")) {
             continue;
         }
 
@@ -301,6 +312,67 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 continue;
             }
             definitions.conditional_sounds.push_back(std::move(conditional_sound));
+            continue;
+        }
+
+        if (task_source.task_type == "ExplodeObject") {
+            if (task_source.argument_tokens.size() <=
+                    kExplodeObjectSoundArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionExplodeObject explode_object;
+            explode_object.object_index = task_source.object_index;
+            explode_object.task_id = task_source.task_id;
+            explode_object.model_name = TokenAt(
+                task_source.argument_tokens,
+                kExplodeObjectModelArgumentIndex);
+            explode_object.destroyed_model_name = TokenAt(
+                task_source.argument_tokens,
+                kExplodeObjectDestroyedModelArgumentIndex);
+            explode_object.explosion_expression = TokenAt(
+                task_source.argument_tokens,
+                kExplodeObjectExpressionArgumentIndex);
+            explode_object.explosion_sound = TokenAt(
+                task_source.argument_tokens,
+                kExplodeObjectSoundArgumentIndex);
+            if (!ReadVector3(
+                    task_source.argument_tokens,
+                    kPositionArgumentIndex,
+                    explode_object.position) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kExplodeObjectDamageScaleArgumentIndex],
+                    explode_object.damage_scale) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kExplodeObjectRadiusArgumentIndex],
+                    explode_object.explosion_radius_meters) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kExplodeObjectFalloffArgumentIndex],
+                    explode_object.explosion_falloff_radius_meters) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kExplodeObjectDamageFactorArgumentIndex],
+                    explode_object.explosion_damage_scale) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kExplodeObjectDelayArgumentIndex],
+                    explode_object.explosion_delay_seconds)) {
+                continue;
+            }
+            explode_object.damage_scale = std::max(
+                0.0f,
+                explode_object.damage_scale);
+            explode_object.explosion_radius_meters = std::max(
+                0.0f,
+                explode_object.explosion_radius_meters);
+            explode_object.explosion_falloff_radius_meters = std::max(
+                0.0f,
+                explode_object.explosion_falloff_radius_meters);
+            explode_object.explosion_damage_scale = std::max(
+                0.0f,
+                explode_object.explosion_damage_scale);
+            explode_object.explosion_delay_seconds = std::max(
+                0.0f,
+                explode_object.explosion_delay_seconds);
+            definitions.explode_objects.push_back(std::move(explode_object));
             continue;
         }
 
