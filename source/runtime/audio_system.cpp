@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -16,6 +17,9 @@ namespace igi {
 std::string AudioSystem::game_root_;
 std::filesystem::path AudioSystem::audio_cache_directory_;
 int AudioSystem::active_level_number_ = 1;
+std::unordered_map<std::string, std::string>
+    AudioSystem::conditional_sound_aliases_;
+uint64_t AudioSystem::next_conditional_sound_alias_ = 1;
 
 AudioAssetResolver& GetAudioAssetResolver() {
     static AudioAssetResolver resolver;
@@ -23,6 +27,7 @@ AudioAssetResolver& GetAudioAssetResolver() {
 }
 
 void AudioSystem::Initialize(const std::string& game_root) {
+    StopAllConditionalSounds();
     game_root_ = game_root;
     active_level_number_ = 1;
     std::error_code error_code;
@@ -84,6 +89,71 @@ void AudioSystem::PlayWavFile(const std::string& path) {
 #else
     (void)path;
 #endif
+}
+
+void AudioSystem::PlayConditionalSound(
+    const std::string& channel_id,
+    const std::string& authored_sound,
+    SoundEffect fallback) {
+    StopConditionalSound(channel_id);
+
+    if (authored_sound.empty()) {
+        Play(fallback);
+        return;
+    }
+
+    const std::filesystem::path resolved_path = ResolveSoundPath(authored_sound);
+    if (resolved_path.empty()) {
+        Play(fallback);
+        return;
+    }
+
+#if defined(_WIN32)
+    const std::string alias = "igi_conditional_" +
+        std::to_string(next_conditional_sound_alias_++);
+    const std::string open_command = "open \"" + resolved_path.string() +
+        "\" type waveaudio alias " + alias;
+    if (mciSendStringA(open_command.c_str(), nullptr, 0, nullptr) == 0) {
+        const std::string play_command = "play " + alias + " repeat";
+        if (mciSendStringA(play_command.c_str(), nullptr, 0, nullptr) == 0) {
+            conditional_sound_aliases_[channel_id] = alias;
+            return;
+        }
+        mciSendStringA(("close " + alias).c_str(), nullptr, 0, nullptr);
+    }
+#endif
+
+    // Asset conversion or the native looping device can be unavailable in an
+    // editor installation. Preserve an audible one-shot fallback instead of
+    // silently dropping the authored edge.
+    Play(fallback);
+}
+
+void AudioSystem::StopConditionalSound(const std::string& channel_id) {
+    const auto alias_iterator = conditional_sound_aliases_.find(channel_id);
+    if (alias_iterator == conditional_sound_aliases_.end()) {
+        return;
+    }
+
+#if defined(_WIN32)
+    const std::string& alias = alias_iterator->second;
+    mciSendStringA(("stop " + alias).c_str(), nullptr, 0, nullptr);
+    mciSendStringA(("close " + alias).c_str(), nullptr, 0, nullptr);
+#endif
+    conditional_sound_aliases_.erase(alias_iterator);
+}
+
+void AudioSystem::StopAllConditionalSounds() {
+    for (const auto& [channel_id, alias] : conditional_sound_aliases_) {
+#if defined(_WIN32)
+        mciSendStringA(("stop " + alias).c_str(), nullptr, 0, nullptr);
+        mciSendStringA(("close " + alias).c_str(), nullptr, 0, nullptr);
+#else
+        (void)alias;
+#endif
+        (void)channel_id;
+    }
+    conditional_sound_aliases_.clear();
 }
 
 void AudioSystem::PlayWeaponFire(

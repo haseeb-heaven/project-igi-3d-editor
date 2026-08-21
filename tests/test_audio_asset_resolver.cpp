@@ -3,6 +3,7 @@
 #include "../source/renderer/res_writer.h"
 #include "../source/renderer/res_compiler.h"
 #include "../source/runtime/audio_asset_resolver.h"
+#include "../source/runtime/audio_system.h"
 #include "../source/weapon_system.h"
 
 #include <cstdint>
@@ -127,6 +128,15 @@ TEST_F(AudioAssetResolverTest, ReturnsEmptyPathWhenSoundIsUnavailable) {
         test_root_directory_ / "cache");
 
     EXPECT_TRUE(resolver.ResolveWavPath("missing_weapon_sound").empty());
+}
+
+TEST(AudioSystemTest, ConditionalSoundChannelCanBeStoppedWithoutNativeAudio) {
+    igi::AudioSystem::Initialize({});
+    igi::AudioSystem::PlayConditionalSound(
+        "conditional-test",
+        "missing_conditional_sound",
+        igi::SoundEffect::ObjectiveComplete);
+    igi::AudioSystem::StopConditionalSound("conditional-test");
 }
 
 TEST(VanillaWeaponSoundCatalogTest, UsesSoundNamesPresentInVanillaWeaponQvms) {

@@ -569,6 +569,10 @@ void RuntimeWorld::Reset() {
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
+    for (const AuthoredConditionalSoundRuntime& runtime_sound :
+         mission_conditional_sounds_) {
+        AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+    }
     mission_conditional_sounds_.clear();
     mission_explode_objects_.clear();
     authored_explode_object_snapshots_.clear();
@@ -1113,6 +1117,10 @@ void RuntimeWorld::SetAuthoredMissionState(
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
+    for (const AuthoredConditionalSoundRuntime& runtime_sound :
+         mission_conditional_sounds_) {
+        AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+    }
     mission_conditional_sounds_.clear();
     mission_conditional_sounds_.reserve(conditional_sounds.size());
     for (AuthoredMissionConditionalSound& definition : conditional_sounds) {
@@ -1659,9 +1667,16 @@ void RuntimeWorld::UpdateAuthoredConditionalSounds() {
         if (is_running && !runtime_sound.is_running &&
             (!runtime_sound.definition.one_shot || !runtime_sound.has_played)) {
             runtime_sound.has_played = true;
-            AudioSystem::PlayWeaponFire(
-                runtime_sound.definition.sound_name,
-                SoundEffect::ObjectiveComplete);
+            if (runtime_sound.definition.simple) {
+                AudioSystem::PlayWeaponFire(
+                    runtime_sound.definition.sound_name,
+                    SoundEffect::ObjectiveComplete);
+            } else {
+                AudioSystem::PlayConditionalSound(
+                    runtime_sound.definition.task_id,
+                    runtime_sound.definition.sound_name,
+                    SoundEffect::ObjectiveComplete);
+            }
             if (mission_sound_event_handler_) {
                 mission_sound_event_handler_({
                     runtime_sound.definition.task_id,
@@ -1674,16 +1689,18 @@ void RuntimeWorld::UpdateAuthoredConditionalSounds() {
             }
         } else if (!is_running && runtime_sound.is_running &&
                    !runtime_sound.definition.simple &&
-                   runtime_sound.has_played &&
-                   mission_sound_event_handler_) {
-            mission_sound_event_handler_({
-                runtime_sound.definition.task_id,
-                runtime_sound.definition.sound_name,
-                runtime_sound.definition.position,
-                false,
-                runtime_sound.definition.simple,
-                runtime_sound.definition.relative_to_microphone,
-            });
+                   runtime_sound.has_played) {
+            AudioSystem::StopConditionalSound(runtime_sound.definition.task_id);
+            if (mission_sound_event_handler_) {
+                mission_sound_event_handler_({
+                    runtime_sound.definition.task_id,
+                    runtime_sound.definition.sound_name,
+                    runtime_sound.definition.position,
+                    false,
+                    runtime_sound.definition.simple,
+                    runtime_sound.definition.relative_to_microphone,
+                });
+            }
         }
         runtime_sound.is_running = is_running;
     }
