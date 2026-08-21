@@ -127,8 +127,10 @@
       terrain editing, and level switching stay gated during an active run
       until immutable terrain/asset snapshots are complete.
 - [ ] Bind/verify selected-vanilla-fixture traversal (animation events and
-      player input), authored mission patrol routes, and
-      non-demo extraction conditions from OpenIGI/retail evidence.
+      player input), authored mission patrol routes, and non-demo extraction
+      conditions from OpenIGI/retail evidence. Authored LevelFlow now disables
+      the synthetic extraction fallback; the fallback remains only for levels
+      without a LevelFlow task.
 - [ ] Final Windows verification and evidence/limitations report.
 
 ## Current evidence boundary
@@ -164,7 +166,7 @@
   repaints its authoring scene through a render-only target during active
   gameplay; a fully independent GL `RuntimeRenderer` remains open.
 - `inferred` or `placeholder`: some root-motion speeds, fallback guard patrol,
-  fall-impact camera/hearing presentation, demo extraction placement, and the
-  normalized QVM seam are not proof of full retail IGI1 behavior. Actual
+  fall-impact camera/hearing presentation, fallback extraction placement, and
+  the normalized QVM seam are not proof of full retail IGI1 behavior. Actual
   Windows execution against the supplied vanilla assets remains a required
   verification step.

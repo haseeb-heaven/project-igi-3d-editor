@@ -967,6 +967,11 @@ void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
     extraction_zone_radius_ = std::max(0.0f, radius);
 }
 
+void RuntimeWorld::ClearExtractionZone() {
+    extraction_zone_center_ = glm::vec3(0.0f);
+    extraction_zone_radius_ = 0.0f;
+}
+
 void RuntimeWorld::SetMissionStateBoolean(
     const std::string& variable_name,
     bool value) {

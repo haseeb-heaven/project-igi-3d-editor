@@ -123,6 +123,28 @@ TEST(VanillaFixtureParityTest, LevelOneObjectsExposeAuthoredGameplayPrimitives) 
     EXPECT_NE(decompiled.find("LevelFlow"), std::string::npos);
 }
 
+TEST(VanillaFixtureParityTest, LevelOnePreservesAuthoredMissionResultExpressions) {
+    const std::filesystem::path objects_path = VanillaFile("objects.qvm");
+    if (VanillaRoot().empty()) {
+        GTEST_SKIP() << "Set IGI_VANILLA_ROOT to the vanilla Project IGI install "
+                        "to run this fixture parity test";
+    }
+    ASSERT_FALSE(objects_path.empty()) << "Vanilla objects.qvm is missing below "
+                                          "IGI_VANILLA_ROOT";
+
+    const QVMFile objects = QVM_Parse(objects_path.string());
+    ASSERT_TRUE(objects.valid) << objects.error;
+
+    // Level 1 completes through the authored cutscene and fails through the
+    // authored status-message expression; it does not use an extraction zone.
+    EXPECT_TRUE(ContainsText(objects, "CutScene_1204.isFinished"));
+    EXPECT_TRUE(ContainsText(objects, "StatusMessage_1391.isSendt"));
+    EXPECT_TRUE(ContainsText(
+        objects,
+        "HumanPlayer_0.isDead ||\nCar_1099.isExploded ||\nHumanSoldier_4023.isDead"));
+    EXPECT_TRUE(ContainsText(objects, "MISSION_FAILED"));
+}
+
 TEST(VanillaFixtureParityTest, LevelOneGraphProvidesNavigableAuthoredData) {
     const std::filesystem::path graph_path = VanillaFile("graphs/graph1.dat");
     if (VanillaRoot().empty()) {

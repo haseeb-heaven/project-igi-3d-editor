@@ -648,6 +648,9 @@ private:
   // session-owned LevelObjects copy.
   void SetupLevelAiGuards();
   void InitializeGameplayMissionObjectives();
+  void ConfigureGameplayExtractionFallback(
+      const glm::vec3& spawn_position,
+      float spawn_yaw);
   void SetupRuntimeMissionState();
   void SetupRuntimeInteractionState();
   void SetupRuntimeDoors();

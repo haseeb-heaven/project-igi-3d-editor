@@ -136,6 +136,7 @@ public:
     void SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle);
     void SetLadderPlacements(std::vector<LadderPlacement> ladder_placements);
     void SetExtractionZone(const glm::vec3& center, float radius);
+    void ClearExtractionZone();
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
     void SetMissionStatePulse(const std::string& variable_name);

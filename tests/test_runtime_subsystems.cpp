@@ -2524,6 +2524,20 @@ TEST(RuntimeWorldTest, ActivateCompletesTheCurrentMissionObjective) {
     EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
 }
 
+TEST(RuntimeWorldTest, ClearingExtractionZoneDisablesFallbackCompletion) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetExtractionZone(glm::vec3(100000.0f, 0.0f, 0.0f), 100.0f);
+    world.ClearExtractionZone();
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    world.GetLevelFlow().SetObjectiveState(1, ObjectiveState::Completed);
+    world.GetPlayer().SetPosition(glm::vec3(100000.0f, 0.0f, 0.0f));
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::InProgress);
+}
+
 TEST(RuntimeWorldTest, InteractionProviderSeparatesDoorUseFromObjectiveCompletion) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

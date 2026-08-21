@@ -1591,18 +1591,7 @@ void App::ToggleGamePlayMode() {
 
 		gameplay_host_.GetWorld().GetPlayer().SetPosition(spawn_pos);
 		gameplay_host_.GetWorld().GetPlayer().SetOrientation(spawn_yaw, spawn_pitch);
-		const float spawn_yaw_radians = glm::radians(spawn_yaw);
-		const glm::vec3 extraction_direction(
-			-sinf(spawn_yaw_radians), cosf(spawn_yaw_radians), 0.0f);
-		glm::vec3 extraction_center = spawn_pos +
-			extraction_direction * (40.0f * igi::PlayerController::WORLD_METER);
-		float extraction_ground_height = extraction_center.z;
-		if (GetLevelZ(extraction_center.x, extraction_center.y, extraction_ground_height)) {
-			extraction_center.z = extraction_ground_height;
-		}
-		gameplay_host_.GetWorld().SetExtractionZone(
-			extraction_center,
-			8.0f * igi::PlayerController::WORLD_METER);
+		ConfigureGameplayExtractionFallback(spawn_pos, spawn_yaw);
 		gameplay_viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
 		gameplay_viewer_.yaw_ = spawn_yaw;
 		gameplay_viewer_.pitch_ = spawn_pitch;
@@ -1703,18 +1692,9 @@ void App::ApplyAndRestartGameplay() {
 	gameplay_host_.GetWorld().GetPlayer().SetPosition(gameplay_spawn_position_);
 	gameplay_host_.GetWorld().GetPlayer().SetOrientation(
 		gameplay_spawn_yaw_, gameplay_spawn_pitch_);
-	const float spawn_yaw_radians = glm::radians(gameplay_spawn_yaw_);
-	const glm::vec3 extraction_direction(
-		-sinf(spawn_yaw_radians), cosf(spawn_yaw_radians), 0.0f);
-	glm::vec3 extraction_center = gameplay_spawn_position_ +
-		extraction_direction * (40.0f * igi::PlayerController::WORLD_METER);
-	float extraction_ground_height = extraction_center.z;
-	if (GetLevelZ(extraction_center.x, extraction_center.y, extraction_ground_height)) {
-		extraction_center.z = extraction_ground_height;
-	}
-	gameplay_host_.GetWorld().SetExtractionZone(
-		extraction_center,
-		8.0f * igi::PlayerController::WORLD_METER);
+	ConfigureGameplayExtractionFallback(
+		gameplay_spawn_position_,
+		gameplay_spawn_yaw_);
 	gameplay_viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
 	gameplay_viewer_.yaw_ = gameplay_spawn_yaw_;
 	gameplay_viewer_.pitch_ = gameplay_spawn_pitch_;
@@ -1724,6 +1704,31 @@ void App::ApplyAndRestartGameplay() {
 	gameplay_host_.SetPaused(false);
 	FocusGameplayWindow();
 	status_message_ = "Gameplay applied and restarted from the current editor snapshot";
+}
+
+void App::ConfigureGameplayExtractionFallback(
+	const glm::vec3& spawn_position,
+	float spawn_yaw) {
+	igi::RuntimeWorld& runtime_world = gameplay_host_.GetWorld();
+	if (runtime_world.GetLevelFlow().HasAuthoredMissionFlow()) {
+		// Vanilla LevelFlow owns mission completion/failure. The synthetic zone
+		// exists only for incomplete/editor-authored levels without that task.
+		runtime_world.ClearExtractionZone();
+		return;
+	}
+
+	const float spawn_yaw_radians = glm::radians(spawn_yaw);
+	const glm::vec3 extraction_direction(
+		-sinf(spawn_yaw_radians), cosf(spawn_yaw_radians), 0.0f);
+	glm::vec3 extraction_center = spawn_position +
+		extraction_direction * (40.0f * igi::PlayerController::WORLD_METER);
+	float extraction_ground_height = extraction_center.z;
+	if (GetLevelZ(extraction_center.x, extraction_center.y, extraction_ground_height)) {
+		extraction_center.z = extraction_ground_height;
+	}
+	runtime_world.SetExtractionZone(
+		extraction_center,
+		8.0f * igi::PlayerController::WORLD_METER);
 }
 
 void App::SetupRuntimeMissionState() {
