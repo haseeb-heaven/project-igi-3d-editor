@@ -2426,7 +2426,11 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
 
     // 3. Tick AI perception & state machine
-    ai_.Update(dt, player_.GetPosition(), player_.IsAlive());
+    ai_.Update(
+        dt,
+        player_.GetPosition(),
+        player_.GetEyePosition(),
+        player_.IsAlive());
     DispatchGuardScripts();
     ApplyGuardCombatDamage(tick_number);
     projectiles_.Tick();

@@ -1678,6 +1678,33 @@ TEST(RuntimeAiTest, VisionConeDirectAndPeripheral) {
     EXPECT_EQ(res3, AiVisionResult::Peripheral);
 }
 
+TEST(RuntimeAiTest, VisionUsesPlayerEyeWhileChaseUsesPlayerFeet) {
+    AiSystem ai;
+    AiGuardEntity guard;
+    guard.id = 8;
+    guard.position = glm::vec3(0.0f);
+    guard.yaw = 0.0f;
+    guard.state = AiGuardState::Patrol;
+    ai.RegisterGuard(guard);
+
+    const glm::vec3 player_feet(
+        0.0f,
+        10.0f * PlayerController::WORLD_METER,
+        0.0f);
+    const glm::vec3 player_eye = player_feet + glm::vec3(
+        0.0f,
+        0.0f,
+        PlayerController::STANDING_EYE_HEIGHT);
+    ai.Update(
+        GameClock::TICK_INTERVAL_SECONDS,
+        player_feet,
+        player_eye,
+        true);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_EQ(ai.GetGuards()[0].state, AiGuardState::Combat);
+}
+
 TEST(RuntimeAiTest, PatrolFallbackMovesGuardsWithoutScriptData) {
     AiSystem ai;
     AiGuardEntity guard;

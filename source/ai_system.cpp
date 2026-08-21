@@ -401,7 +401,18 @@ void RunPatrolCommand(AiGuardEntity& g, uint64_t tick, double delta_seconds) {
 }
 } // namespace
 
-void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool player_alive) {
+void AiSystem::Update(
+    double delta_seconds,
+    const glm::vec3& player_pos,
+    bool player_alive) {
+    Update(delta_seconds, player_pos, player_pos, player_alive);
+}
+
+void AiSystem::Update(
+    double delta_seconds,
+    const glm::vec3& player_pos,
+    const glm::vec3& player_eye_position,
+    bool player_alive) {
     // Process acoustic stimuli from event queue
     std::vector<AiStimulusEvent> events;
     event_queue_.Pump(events);
@@ -442,13 +453,16 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
 
         // 2. Process vision
         if (player_alive) {
-            AiVisionResult vis = CheckVision(guard, player_pos, guard.state == AiGuardState::Combat);
+            AiVisionResult vis = CheckVision(
+                guard,
+                player_eye_position,
+                guard.state == AiGuardState::Combat);
             if (vis != AiVisionResult::None && line_of_sight_query_) {
                 const glm::vec3 guard_eye_position = guard.position + glm::vec3(
                     0.0f,
                     0.0f,
                     1.7f * 4096.0f);
-                if (!line_of_sight_query_(guard_eye_position, player_pos)) {
+                if (!line_of_sight_query_(guard_eye_position, player_eye_position)) {
                     vis = AiVisionResult::None;
                 }
             }

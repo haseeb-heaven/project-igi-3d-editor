@@ -141,6 +141,12 @@ public:
 
     // Fixed-step simulation tick
     void Update(double delta_seconds, const glm::vec3& player_pos, bool player_alive);
+    // Vision targets the player eye; movement and combat retain the player feet.
+    void Update(
+        double delta_seconds,
+        const glm::vec3& player_position,
+        const glm::vec3& player_eye_position,
+        bool player_alive);
 
     // Perception
     AiVisionResult CheckVision(const AiGuardEntity& guard, const glm::vec3& target_pos, bool is_alerted) const;
