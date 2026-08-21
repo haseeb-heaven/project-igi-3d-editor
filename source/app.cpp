@@ -1606,7 +1606,8 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 		const bool is_interactable =
 			object.type == "Door" || object.type == "Terminal" ||
 			object.type == "Switch" || object.type == "Generator" ||
-			object.type == "GunPickup" || object.type == "AmmoPickup";
+			object.type == "GunPickup" || object.type == "AmmoPickup" ||
+			object.type == "GenericPickup" || object.type == "Car";
 		if (object.deleted || !is_interactable) {
 			continue;
 		}
@@ -1635,15 +1636,63 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 	}
 
 	auto& target = objects[nearest_index];
+	const auto current_objective_requires_authored_state = [this]() {
+		for (const igi::MissionObjective& objective :
+				 gameplay_host_.GetWorld().GetLevelFlow().GetObjectives()) {
+			if (objective.is_primary && objective.state == igi::ObjectiveState::Pending) {
+				return !objective.completion_expression.empty();
+			}
+		}
+		return false;
+	};
+
 	if (target.type == "Door") {
 		opened_door_indices_.insert(nearest_index);
 		target.rot.z += glm::radians(90.0f);
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"Door_" + target.taskId + ".isOpen",
+			true);
 		status_message_ = "Door opened";
-		return {true, false};
+		return {true, !current_objective_requires_authored_state()};
+	}
+
+	if (target.type == "Terminal") {
+		const std::string terminal_prefix = "Terminal_" + target.taskId;
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			terminal_prefix + ".isHacked",
+			true);
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			terminal_prefix + ".isHackedThisTick",
+			true);
+		status_message_ = "Terminal hacked";
+		return {true, !current_objective_requires_authored_state()};
+	}
+
+	if (target.type == "Switch") {
+		const std::string switch_prefix = "Switch_" + target.taskId;
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			switch_prefix + ".isPressed",
+			true);
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			switch_prefix + ".isLastPressed",
+			true);
+		status_message_ = "Switch activated";
+		return {true, !current_objective_requires_authored_state()};
+	}
+
+	if (target.type == "Generator") {
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"Generator_" + target.taskId + ".isOn",
+			true);
+		status_message_ = "Generator started";
+		return {true, !current_objective_requires_authored_state()};
 	}
 
 	if (target.type == "GunPickup") {
 		if (gameplay_host_.GetWorld().GetWeapons().SelectWeaponByScriptId(target.weaponEnumId)) {
+			gameplay_host_.GetWorld().SetMissionStateBoolean(
+				"GenericPickup_" + target.taskId + ".isPickedUp",
+				true);
 			target.deleted = true;
 			status_message_ = "Weapon acquired: " +
 				gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name;
@@ -1663,9 +1712,32 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 			}
 		}
 		gameplay_host_.GetWorld().GetWeapons().AddReserveAmmo(rounds);
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"GenericPickup_" + target.taskId + ".isPickedUp",
+			true);
 		target.deleted = true;
 		status_message_ = "Ammunition acquired";
 		return {true, false};
+	}
+
+	if (target.type == "GenericPickup") {
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"GenericPickup_" + target.taskId + ".isPickedUp",
+			true);
+		target.deleted = true;
+		status_message_ = "Item acquired";
+		return {true, !current_objective_requires_authored_state()};
+	}
+
+	if (target.type == "Car") {
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"Car_" + target.taskId + ".isUsed",
+			true);
+		status_message_ = "Vehicle entered";
+		// Vanilla M1's EditVariable_105 is advanced by the authored car/area
+		// task path, which is not yet a general task-tree native. Keep the
+		// existing interaction fallback so the vertical slice remains playable.
+		return {true, true};
 	}
 
 	status_message_ = "Objective interaction complete";

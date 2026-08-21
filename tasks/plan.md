@@ -140,6 +140,9 @@ parity claims remain gated on IGI1 evidence.
 - [x] Load authored `DefineComputerObjective` rows from the runtime level
   snapshot and resolve their exact English `objectives.res` text for the HUD;
   preserve links and completion/failure expressions as runtime metadata.
+- [x] Bind the first authored interaction events (doors, terminals, switches,
+  generators, vehicles, and generic pickups) to fixed-step mission-state
+  expressions while retaining the legacy fallback completion path.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; evaluate the preserved expressions and replace the
   synthetic extraction zone after scanning level/Common/Weapons QVMs.

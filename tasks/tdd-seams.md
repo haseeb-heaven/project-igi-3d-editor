@@ -14,6 +14,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `RuntimeWorld` / `RuntimeRenderer` | Fixed-step firearm muzzle cue after a successful player shot, deterministic two-tick decay, and snapshot isolation. |
 | `WeaponViewRecoil` / `RuntimeWorld` | Inferred three-tick visual recoil recovery, firearm classification, and render-snapshot transfer of the weapon kick. |
 | `MissionObjectiveLoader` / `LevelFlow` | Vanilla six-slot objective parsing, resource-key/expression preservation, localized text fallback, and authored definition progression. |
+| `App` interaction bridge / `RuntimeWorld` | Interactable events publish stable authored state keys and fixed-step objective evaluation consumes them without coupling mission expressions to renderer objects. |
 | `LadderPlacement` / `LadderTraversal` | Magic-vertex mount geometry, activation selection, rung boundaries, top transitions, sliding interruption, and deterministic dismount. |
 | `MagicObjectRegistry` | First-definition-wins parsing of `DefineMagicObj` rows and named `TASKTYPE_LADDER` resolution without hard-coded process-local IDs. |
 | `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |

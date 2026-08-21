@@ -2133,6 +2133,32 @@ TEST(RuntimeWorldTest, MissionExpressionStateDrivesAuthoredObjectiveAtFixedTick)
     EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
 }
 
+TEST(RuntimeWorldTest, InteractionEventsCanDriveAuthoredMissionExpressions) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M8_OBJ2",
+        3127,
+        "Door_240.isOpen",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(8, {objective_set});
+    world.SetInteractionQuery(
+        [&world](const glm::vec3&, const glm::vec3&) {
+            world.SetMissionStateBoolean("Door_240.isOpen", true);
+            return RuntimeInteractionResult{true, false};
+        });
+
+    PlayerInputCmd input;
+    input.interact = true;
+    world.UpdateSimulationTick(0, input);
+
+    ASSERT_EQ(world.GetLevelFlow().GetObjectives().size(), 1U);
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

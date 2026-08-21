@@ -30,6 +30,9 @@
 - [x] Parse vanilla `DefineComputerObjective` rows from the copied level task
       snapshot and resolve their English `objectives.res` text for the Play-mode
       HUD; preserve authored map links and state expressions.
+- [x] Emit fixed-step mission-state events for authored door, terminal, switch,
+      generator, vehicle, and generic-pickup interactions; evaluate the
+      preserved completion/failure expressions after each interaction tick.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.
