@@ -646,6 +646,7 @@ private:
   void SetupRuntimeInteractionState();
   void SetupRuntimeDoors();
   void ApplyRuntimeDoorStates();
+  void ApplyRuntimeExplodeObjectStates();
   void SetupRuntimeLadders();
   void CollectAttachedRuntimeLadders(
       const std::string& model_id,

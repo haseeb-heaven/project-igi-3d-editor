@@ -727,6 +727,7 @@ void App::Frame(float delta_seconds) {
 		// window, so a zero render delta must never advance gameplay a second time.
 		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
 		ApplyRuntimeDoorStates();
+		ApplyRuntimeExplodeObjectStates();
 
 		const auto& player = gameplay_host_.GetWorld().GetPlayer();
 		gameplay_viewer_.pos_ = player.GetEyePosition();
@@ -1690,13 +1691,15 @@ void App::SetupRuntimeMissionState() {
 				authored_object.type != "LevelTimer" &&
 				authored_object.type != "StatusMessage" &&
 				authored_object.type != "CutScene" &&
-				authored_object.type != "ConditionalSound")) {
+				authored_object.type != "ConditionalSound" &&
+				authored_object.type != "ExplodeObject")) {
 			continue;
 		}
 
 		igi::MissionStateTaskSource task_source;
 		task_source.task_type = authored_object.type;
 		task_source.task_id = authored_object.taskId;
+		task_source.object_index = object_index;
 		task_source.argument_tokens = authored_object.argTokens;
 		if (authored_object.type == "CutScene") {
 			task_source.authored_camera_shots =
@@ -1727,6 +1730,7 @@ void App::SetupRuntimeMissionState() {
 	const size_t timer_count = definitions.level_timers.size();
 	const size_t cut_scene_count = definitions.cut_scenes.size();
 	const size_t conditional_sound_count = definitions.conditional_sounds.size();
+	const size_t explode_object_count = definitions.explode_objects.size();
 	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
 		std::move(definitions.area_activations),
@@ -1734,7 +1738,8 @@ void App::SetupRuntimeMissionState() {
 		std::move(definitions.level_timers),
 		std::move(definitions.status_messages),
 		std::move(definitions.cut_scenes),
-		std::move(definitions.conditional_sounds));
+		std::move(definitions.conditional_sounds),
+		std::move(definitions.explode_objects));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
@@ -1748,6 +1753,8 @@ void App::SetupRuntimeMissionState() {
 		" CutScene task(s), " +
 		std::to_string(conditional_sound_count) +
 		" ConditionalSound task(s), " +
+		std::to_string(explode_object_count) +
+		" ExplodeObject task(s), " +
 		std::to_string(status_message_count) +
 		" StatusMessage task(s)");
 }
@@ -1890,6 +1897,30 @@ void App::ApplyRuntimeDoorStates() {
 			glm::dvec3(world_slide_offset);
 		object.rot.z = static_cast<double>(snapshot.closed_rotation_radians) +
 			snapshot.angle_radians;
+	}
+}
+
+void App::ApplyRuntimeExplodeObjectStates() {
+	if (!runtime_level_objects_.has_value()) {
+		return;
+	}
+
+	auto& objects = runtime_level_objects_->GetObjects();
+	for (const igi::RuntimeExplodeObjectSnapshot& snapshot :
+		gameplay_host_.GetWorld().GetExplodeObjectSnapshots()) {
+		if (!snapshot.is_exploded ||
+			snapshot.object_index < 0 ||
+			snapshot.object_index >= static_cast<int>(objects.size())) {
+			continue;
+		}
+
+		LevelObject& object = objects[static_cast<size_t>(snapshot.object_index)];
+		if (snapshot.destroyed_model_name.empty()) {
+			object.deleted = true;
+			continue;
+		}
+
+		object.modelId = snapshot.destroyed_model_name;
 	}
 }
 
