@@ -29,7 +29,9 @@ public:
 
 private:
     static std::filesystem::path FindExistingPath(const std::string& relative_path);
+    static std::filesystem::path ResolveSoundPath(const std::string& authored_sound);
     static std::string game_root_;
+    static std::filesystem::path audio_cache_directory_;
     static int active_level_number_;
 };
 

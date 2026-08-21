@@ -10,6 +10,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `PlayerMotion` / `PlayerController` | Verified-reference gravity, ladder-slide damping, air-control basis, root-motion transform order, input-to-motion behavior, stance transitions, and collision-safe position. |
 | `PlayerAnimationDriver` | Vanilla locomotion-state selection, fixed 160 ms clip advancement, native-unit root motion, ladder event 8, and top-transition timing before the world tick. |
 | `WeaponViewSway` / `RuntimeWorld` | Verified-reference 11-tick weapon lowering/raising, active-slot swap at the lowered boundary, and render-snapshot transition state. |
+| `AudioAssetResolver` / `WeaponSystem` | Loose level sound precedence, case-insensitive packed `SOUNDS.RES` extraction/cache, active-level archive precedence, missing-sound behavior, and vanilla-QVM weapon sound names. |
 | `LadderPlacement` / `LadderTraversal` | Magic-vertex mount geometry, activation selection, rung boundaries, top transitions, sliding interruption, and deterministic dismount. |
 | `MagicObjectRegistry` | First-definition-wins parsing of `DefineMagicObj` rows and named `TASKTYPE_LADDER` resolution without hard-coded process-local IDs. |
 | `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |

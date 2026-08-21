@@ -126,6 +126,7 @@ set_source_files_properties(
   source/runtime/config_qvm.cpp
   source/runtime/human_player_config.cpp
   source/runtime/audio_system.cpp
+  source/runtime/audio_asset_resolver.cpp
   source/renderer/object_lightmap.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
@@ -259,6 +260,7 @@ add_executable(igi_tests
     tests/test_debug_command_parser.cpp
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
+    tests/test_audio_asset_resolver.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -327,6 +329,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/runtime_renderer.cpp
     source/runtime/projectile_system.cpp
     source/runtime/audio_system.cpp
+    source/runtime/audio_asset_resolver.cpp
     source/runtime/config_qvm.cpp
     source/runtime/human_player_config.cpp
     source/runtime/magic_object_registry.cpp
@@ -334,6 +337,7 @@ target_sources(igi_tests PRIVATE
 
 set_source_files_properties(
     source/runtime/audio_system.cpp
+    source/runtime/audio_asset_resolver.cpp
     source/runtime/config_qvm.cpp
     source/runtime/human_player_config.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON

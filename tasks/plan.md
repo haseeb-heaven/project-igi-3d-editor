@@ -128,6 +128,10 @@ parity claims remain gated on IGI1 evidence.
 - [x] Port the vanilla first-person weapon-change view sway: lower the rig for
   eleven fixed ticks, change the active slot at the settled boundary, then
   raise the new weapon through the immutable render snapshot.
+- [x] Resolve authored vanilla WAV names from loose mission files and packed
+  `COMMON/SOUNDS/SOUNDS.RES` entries, lazily materialize them in a cache, and
+  keep the packed archive index warm so repeated fire events stay fixed-step
+  friendly; align the weapon catalog with names present in the vanilla QVMs.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,

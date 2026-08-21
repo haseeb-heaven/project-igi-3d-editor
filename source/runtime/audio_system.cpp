@@ -1,4 +1,5 @@
 #include "audio_system.h"
+#include "audio_asset_resolver.h"
 #include <filesystem>
 #include <algorithm>
 #include <vector>
@@ -13,15 +14,41 @@
 namespace igi {
 
 std::string AudioSystem::game_root_;
+std::filesystem::path AudioSystem::audio_cache_directory_;
 int AudioSystem::active_level_number_ = 1;
+
+AudioAssetResolver& GetAudioAssetResolver() {
+    static AudioAssetResolver resolver;
+    return resolver;
+}
 
 void AudioSystem::Initialize(const std::string& game_root) {
     game_root_ = game_root;
     active_level_number_ = 1;
+    std::error_code error_code;
+    audio_cache_directory_ = std::filesystem::temp_directory_path(
+        error_code) / "igi-editor-audio-cache";
+    if (error_code) {
+        audio_cache_directory_.clear();
+    }
+    GetAudioAssetResolver().Configure(game_root_, audio_cache_directory_);
 }
 
 void AudioSystem::SetActiveLevel(int level_number) {
     active_level_number_ = std::max(1, level_number);
+    GetAudioAssetResolver().SetActiveLevel(active_level_number_);
+}
+
+std::filesystem::path AudioSystem::ResolveSoundPath(
+    const std::string& authored_sound) {
+    const std::filesystem::path loose_path = FindExistingPath(authored_sound);
+    if (!loose_path.empty()) {
+        return loose_path;
+    }
+
+    AudioAssetResolver& resolver = GetAudioAssetResolver();
+    resolver.SetActiveLevel(active_level_number_);
+    return resolver.ResolveWavPath(authored_sound);
 }
 
 std::filesystem::path AudioSystem::FindExistingPath(const std::string& relative_path) {
@@ -67,27 +94,10 @@ void AudioSystem::PlayWeaponFire(
         return;
     }
 
-    std::string sound_filename = authored_sound;
-    if (sound_filename.size() < 4 ||
-        sound_filename.substr(sound_filename.size() - 4) != ".wav") {
-        sound_filename += ".wav";
-    }
-
-    const std::string level_sound_directory =
-        "missions/location0/level" + std::to_string(active_level_number_) +
-        "/sounds/";
-    const std::vector<std::string> candidate_paths = {
-        level_sound_directory + sound_filename,
-        "common/sounds/" + sound_filename,
-        "sounds/" + sound_filename,
-        sound_filename,
-    };
-    for (const std::string& candidate_path : candidate_paths) {
-        const std::filesystem::path resolved_path = FindExistingPath(candidate_path);
-        if (!resolved_path.empty()) {
-            PlayWavFile(resolved_path.string());
-            return;
-        }
+    const std::filesystem::path resolved_path = ResolveSoundPath(authored_sound);
+    if (!resolved_path.empty()) {
+        PlayWavFile(resolved_path.string());
+        return;
     }
 
     // Missing authored sound assets are expected in headless/editor setups;
@@ -99,31 +109,41 @@ void AudioSystem::Play(SoundEffect sfx) {
     std::string relative_path;
     switch (sfx) {
         case SoundEffect::Gunshot:
-            relative_path = "missions/location0/level10/sounds/m10o_ak1.wav";
+            relative_path = "m16_loop";
             break;
         case SoundEffect::BulletImpact:
+            relative_path = "bul_concrete_1";
+            break;
         case SoundEffect::Pain:
-            relative_path = "Assets/sounds/bullet-impact.wav";
+            relative_path = "player_hit_1";
             break;
         case SoundEffect::Jump:
+            relative_path = "jump_1";
+            break;
         case SoundEffect::Footstep:
+            relative_path = "walk_ground_1";
+            break;
         case SoundEffect::Reload:
+            relative_path = "m16_reload_1";
+            break;
         case SoundEffect::ObjectiveComplete:
+            relative_path = "message";
+            break;
         case SoundEffect::ProjectileLaunch:
-            relative_path = "missions/location0/level1/sounds/m1_beeps01.wav";
+            relative_path = "grenade_shot_1";
             break;
         case SoundEffect::Explosion:
+            relative_path = "explo_01_s";
+            break;
         case SoundEffect::Flashbang:
-            relative_path = "missions/location0/level1/sounds/m1_beeps01.wav";
+            relative_path = "explo_flash";
             break;
     }
 
-    std::filesystem::path resolved_path = FindExistingPath(relative_path);
+    std::filesystem::path resolved_path = ResolveSoundPath(relative_path);
     if (resolved_path.empty() &&
         (sfx == SoundEffect::BulletImpact || sfx == SoundEffect::Pain)) {
-        // The vanilla install does not expose a shared impact WAV at a stable
-        // path; retain an audible mission-sound fallback instead of silently
-        // dropping the event.
+        // Keep a loose mission fallback for incomplete/editor-only installs.
         resolved_path = FindExistingPath(
             "missions/location0/level1/sounds/m1_beeps01.wav");
     }
