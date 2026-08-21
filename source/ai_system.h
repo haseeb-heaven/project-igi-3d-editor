@@ -137,6 +137,13 @@ public:
     void Clear();
     void RegisterGuard(const AiGuardEntity& guard);
     AiGuardEntity* FindGuard(uint32_t guard_id);
+
+    // Alarm gate: vanilla patrol guards ignore the player until something
+    // raises the mission alarm (sound events, triggered scripts). With no
+    // alarm source ported yet, perception stays dormant so patrols keep
+    // their authored walk instead of panicking at the spawn point.
+    void SetAlarmActive(bool active) { alarm_active_ = active; }
+    bool IsAlarmActive() const { return alarm_active_; }
     void SetMovementCollisionQuery(MovementCollisionQuery movement_collision_query);
     void SetLineOfSightQuery(LineOfSightQuery line_of_sight_query);
 
@@ -162,6 +169,7 @@ public:
 private:
     std::vector<AiGuardEntity> guards_;
     AiEventQueue event_queue_;
+    bool alarm_active_ = false;
     MovementCollisionQuery movement_collision_query_;
     LineOfSightQuery line_of_sight_query_;
     uint64_t tick_ = 0;  // 30 Hz simulation tick counter (monotonic across Update calls)

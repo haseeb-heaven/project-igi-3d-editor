@@ -426,7 +426,8 @@ void AiSystem::Update(
 
         const glm::vec3 previous_position = guard.position;
 
-        // 1. Process hearing
+        // 1. Process hearing (always active: vanilla guards wake on loud
+        // events such as hard ground impacts).
         for (const auto& evt : events) {
             // OpenIGI's per-soldier event queues reject records naming the
             // receiving AI as their source/subject. RuntimeWorld uses one
@@ -453,8 +454,8 @@ void AiSystem::Update(
             }
         }
 
-        // 2. Process vision
-        if (player_alive) {
+        // 2. Process vision (alarm-gated; see hearing above).
+        if (player_alive && alarm_active_) {
             AiVisionResult vis = CheckVision(
                 guard,
                 player_eye_position,
