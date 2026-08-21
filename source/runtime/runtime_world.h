@@ -63,6 +63,15 @@ struct RuntimeExplodeObjectSnapshot {
     bool is_exploded = false;
 };
 
+struct RuntimeExplosionRenderState {
+    static constexpr uint32_t DISPLAY_DURATION_TICKS = 6;
+
+    glm::vec3 position = glm::vec3(0.0f);
+    float radius_units = 0.0f;
+    uint32_t remaining_ticks = 0;
+    bool is_flashbang = false;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -100,6 +109,10 @@ public:
     const std::vector<RuntimeExplodeObjectSnapshot>&
     GetExplodeObjectSnapshots() const {
         return authored_explode_object_snapshots_;
+    }
+    const std::vector<RuntimeExplosionRenderState>&
+    GetExplosionRenderStates() const {
+        return explosion_render_states_;
     }
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
@@ -195,6 +208,11 @@ private:
         float base_damage,
         float damage_factor,
         uint32_t owner_entity_id);
+    void AdvanceExplosionRenderStates();
+    void QueueExplosionRenderState(
+        const glm::vec3& explosion_position,
+        float explosion_radius_units,
+        bool is_flashbang);
     void LaunchPlayerProjectile(
         const glm::vec3& origin,
         const glm::vec3& direction,
@@ -298,6 +316,7 @@ private:
     std::vector<AuthoredExplodeObjectRuntime> mission_explode_objects_;
     std::vector<RuntimeExplodeObjectSnapshot>
         authored_explode_object_snapshots_;
+    std::vector<RuntimeExplosionRenderState> explosion_render_states_;
     struct AuthoredDoorRuntime {
         RuntimeDoorDefinition definition;
         RuntimeDoorState state;

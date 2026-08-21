@@ -450,6 +450,10 @@ void RuntimeWorld::ApplyProjectileDetonations() {
     constexpr float flash_maximum_duration_seconds = 1.5f;
 
     for (const ProjectileDetonation& detonation : projectiles_.GetDetonations()) {
+        QueueExplosionRenderState(
+            detonation.position,
+            detonation.explosion_radius_units,
+            detonation.type == ProjectileType::Flashbang);
         if (detonation.type == ProjectileType::Flashbang) {
             AudioSystem::Play(SoundEffect::Flashbang);
             if (player_.IsAlive()) {
@@ -494,6 +498,33 @@ void RuntimeWorld::ApplyProjectileDetonations() {
     // Projectile resolution can trigger authored props after the mission
     // update has already published its regular snapshot.
     RefreshAuthoredExplodeObjectSnapshots();
+}
+
+void RuntimeWorld::AdvanceExplosionRenderStates() {
+    for (auto iterator = explosion_render_states_.begin();
+         iterator != explosion_render_states_.end();) {
+        if (iterator->remaining_ticks <= 1) {
+            iterator = explosion_render_states_.erase(iterator);
+        } else {
+            --iterator->remaining_ticks;
+            ++iterator;
+        }
+    }
+}
+
+void RuntimeWorld::QueueExplosionRenderState(
+    const glm::vec3& explosion_position,
+    float explosion_radius_units,
+    bool is_flashbang) {
+    RuntimeExplosionRenderState render_state;
+    render_state.position = explosion_position;
+    render_state.radius_units = std::isfinite(explosion_radius_units)
+        ? std::max(0.0f, explosion_radius_units)
+        : 0.0f;
+    render_state.remaining_ticks =
+        RuntimeExplosionRenderState::DISPLAY_DURATION_TICKS;
+    render_state.is_flashbang = is_flashbang;
+    explosion_render_states_.push_back(render_state);
 }
 
 void RuntimeWorld::ApplyExplosionDamage(
@@ -634,6 +665,7 @@ void RuntimeWorld::Reset() {
     mission_conditional_sounds_.clear();
     mission_explode_objects_.clear();
     authored_explode_object_snapshots_.clear();
+    explosion_render_states_.clear();
     mission_status_messages_.clear();
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
@@ -1194,6 +1226,7 @@ void RuntimeWorld::SetAuthoredMissionState(
         mission_explode_objects_.push_back(std::move(runtime_object));
     }
     authored_explode_object_snapshots_.clear();
+    explosion_render_states_.clear();
     mission_cut_scene_ticks_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_running_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_finished_.reserve(mission_cut_scenes_.size());
@@ -1784,6 +1817,11 @@ void RuntimeWorld::TriggerAuthoredExplodeObject(
             runtime_object.definition.explosion_sound,
             SoundEffect::Explosion);
     }
+    QueueExplosionRenderState(
+        runtime_object.definition.position,
+        runtime_object.definition.explosion_radius_meters *
+            PlayerController::WORLD_METER,
+        false);
 
     // Authored object damage uses the player health scale as the C++ runtime's
     // baseline. The two authored multipliers remain independent so scripted
@@ -1865,6 +1903,7 @@ void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
 }
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
+    AdvanceExplosionRenderStates();
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
 
     muzzle_flash_strength_ = std::max(

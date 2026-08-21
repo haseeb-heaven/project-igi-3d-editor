@@ -60,6 +60,7 @@ void RuntimeRenderer::Capture(
         world.GetDisplayedMissionStatusMessages();
     next_snapshot.flash_effect_strength = world.GetFlashEffectStrength();
     next_snapshot.muzzle_flash_strength = world.GetMuzzleFlashStrength();
+    next_snapshot.explosions = world.GetExplosionRenderStates();
 
     const auto& live_projectiles = world.GetProjectiles().GetProjectiles();
     next_snapshot.projectiles.reserve(live_projectiles.size());

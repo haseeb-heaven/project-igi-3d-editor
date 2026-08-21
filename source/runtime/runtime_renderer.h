@@ -6,12 +6,10 @@
 
 #include <glm/glm.hpp>
 
-#include "../mission_state.h"
+#include "runtime_world.h"
 #include "projectile_types.h"
 
 namespace igi {
-
-class RuntimeWorld;
 
 struct RuntimeRenderCamera {
     glm::vec3 position = glm::vec3(0.0f);
@@ -60,6 +58,7 @@ struct RuntimeRenderSnapshot {
     float flash_effect_strength = 0.0f;
     float muzzle_flash_strength = 0.0f;
     std::vector<RuntimeProjectileRenderState> projectiles;
+    std::vector<RuntimeExplosionRenderState> explosions;
 };
 
 class RuntimeRenderer {

@@ -528,6 +528,7 @@ private:
   void RestoreEditorViewport();
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
+  void DrawGameplayExplosions();
   void UpdateGameplayFieldOfView();
   void ApplyRuntimeCutSceneCamera();
   void CaptureGameplayRenderSnapshot();

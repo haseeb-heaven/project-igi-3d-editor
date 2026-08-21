@@ -324,6 +324,37 @@ TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
     EXPECT_FLOAT_EQ(world.GetMuzzleFlashStrength(), 0.0f);
 }
 
+TEST(RuntimeRenderTest, CapturesTransientExplosionPresentationState) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(300.0f, 400.0f, 500.0f);
+    launch.type = ProjectileType::FragGrenade;
+    launch.fuse_ticks = 1;
+    launch.damage = 100.0f;
+    launch.explosion_radius_units = 5.0f * PlayerController::WORLD_METER;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+    ASSERT_EQ(renderer.GetSnapshot().explosions.size(), 1U);
+    EXPECT_EQ(
+        renderer.GetSnapshot().explosions[0].position,
+        glm::vec3(300.0f, 400.0f, 500.0f));
+    EXPECT_EQ(
+        renderer.GetSnapshot().explosions[0].remaining_ticks,
+        RuntimeExplosionRenderState::DISPLAY_DURATION_TICKS);
+
+    for (int tick = 1; tick <= 6; ++tick) {
+        world.UpdateSimulationTick(static_cast<uint64_t>(tick), PlayerInputCmd());
+    }
+    renderer.Capture(world, RuntimeRenderCamera());
+    EXPECT_TRUE(renderer.GetSnapshot().explosions.empty());
+}
+
 TEST(RuntimeRenderTest, CapturesAuthoredMissionStatusAndTimerPresentation) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

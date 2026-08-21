@@ -955,6 +955,7 @@ void App::Frame(float delta_seconds) {
 
 	renderer_.Draw(draw_params_, task_tree_view);
 	DrawGameplayProjectiles();
+	DrawGameplayExplosions();
 	DrawGameplayPlayerWeapon();
 
     // Find the "right hand" bone index in modelId's parsed bone list (REIH+MANB
@@ -1232,6 +1233,34 @@ void App::DrawGameplayProjectiles() {
 				? 0.65f
 				: 0.35f)));
 		renderer_.DrawAttachedMesh(model_id, false, projectile_model);
+	}
+}
+
+void App::DrawGameplayExplosions() {
+	if (!IsGameplayRenderTarget()) return;
+
+	const igi::RuntimeRenderSnapshot& render_snapshot =
+		gameplay_host_.GetRenderSnapshot();
+	for (const igi::RuntimeExplosionRenderState& explosion :
+		render_snapshot.explosions) {
+		if (explosion.is_flashbang) continue;
+
+		const float age_fraction = 1.0f - static_cast<float>(
+			explosion.remaining_ticks) /
+			static_cast<float>(
+				igi::RuntimeExplosionRenderState::DISPLAY_DURATION_TICKS);
+		const float radius_meters = std::max(
+			0.75f,
+			explosion.radius_units /
+			igi::PlayerController::WORLD_METER * 0.35f);
+		const float expansion = 0.85f + age_fraction * 0.35f;
+		glm::mat4 explosion_model = glm::translate(
+			glm::mat4(1.0f),
+			explosion.position);
+		explosion_model = glm::scale(
+			explosion_model,
+			glm::vec3(40.96f * radius_meters * expansion));
+		renderer_.DrawAttachedMesh("1009_01_1", false, explosion_model);
 	}
 }
 
