@@ -751,9 +751,16 @@ void App::Frame(float delta_seconds) {
 
 	if (render_gameplay) {
 		int64_t now_ms = Sys_Milliseconds();
+		const bool profile_frames = []() {
+			static const bool enabled = getenv("IGI_PROFILE") != nullptr;
+			return enabled;
+		}();
+		const int64_t profile_frame_start = profile_frames ? Sys_Milliseconds() : 0;
+
 		// OnIdle owns the simulation update. Display callbacks may run once per
 		// window, so a zero render delta must never advance gameplay a second time.
 		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
+		const int64_t profile_after_sim = profile_frames ? Sys_Milliseconds() : 0;
 		ApplyRuntimeConditionalContainerStates();
 		ApplyRuntimeDoorStates();
 		ApplyRuntimeExplodeObjectStates();
@@ -793,6 +800,22 @@ void App::Frame(float delta_seconds) {
 		}
 		ApplyRuntimeGuardGeneratorStates();
 		ApplyRuntimeAiAnimationRequests();
+		if (profile_frames) {
+			static int64_t acc_total = 0, acc_sim = 0, acc_sync = 0;
+			static int acc_frames = 0;
+			const int64_t frame_end = Sys_Milliseconds();
+			acc_sim += profile_after_sim - profile_frame_start;
+			acc_sync += frame_end - profile_after_sim;
+			acc_total += frame_end - profile_frame_start;
+			if (++acc_frames >= 60) {
+				Logger::Get().Log(LogLevel::INFO,
+					"[Profile] 60 frames: sim=" + std::to_string(acc_sim) +
+					"ms sync=" + std::to_string(acc_sync) +
+					"ms total=" + std::to_string(acc_total) + "ms");
+				acc_total = acc_sim = acc_sync = 0;
+				acc_frames = 0;
+			}
+		}
 	} else if (!in_game_mode_ || IsEditorInputActive()) {
 		ProcessInput(delta_seconds);
 	}
@@ -1707,7 +1730,7 @@ void App::ToggleGamePlayMode() {
 		show_hud_ = false;
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
-		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, Right Ctrl crouch, C map, E activate, R reload, F5 apply/restart, F6 editor, F7 gameplay, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, Right Ctrl crouch, C map, E activate, R reload, F8 editor/gameplay toggle, F5 apply/restart, F6 editor, F7 gameplay, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		if (!gameplay_host_.CloseGameplay(snap)) {
@@ -2747,6 +2770,17 @@ void App::SetupLevelAiGuards() {
 					try {
 						if (std::stoi(child.taskId) == pathId) { ppIndex = ci; break; }
 					} catch (...) {}
+				}
+				if (ppIndex < 0) {
+					// Retail data does not always nest the PatrolPath under the
+					// soldier; fall back to a global id search.
+					for (int ci = 0; ci < (int)objects.size(); ++ci) {
+						const auto& child = objects[ci];
+						if (child.deleted || child.type != "PatrolPath") continue;
+						try {
+							if (std::stoi(child.taskId) == pathId) { ppIndex = ci; break; }
+						} catch (...) {}
+					}
 				}
 				if (ppIndex >= 0) {
 					for (int pci : objects[ppIndex].childrenIndices) {

@@ -798,6 +798,11 @@ int main(int argc, char **argv) {
     g_app.SetGameLevel(level_no);
   }
 
+  // -play: enter Game Play once the level is loaded (profiling / quick test).
+  if (Arg_OptionIdx(argc, argv, "-play") > -1) {
+    g_app.SetEditMode(false);
+  }
+
   // setup glut callbacks
   glutReshapeFunc(OnReshape);
   glutMouseFunc(OnMouse);

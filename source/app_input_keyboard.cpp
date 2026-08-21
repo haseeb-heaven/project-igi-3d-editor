@@ -6,6 +6,12 @@
 #include "app_internal.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
+	// F8 toggles Editor <-> Game Play from anywhere; it must run before every
+	// mode-specific branch so it works in both directions.
+	if (key == GLUT_KEY_F8) {
+		ToggleGamePlayMode();
+		return;
+	}
 	if (in_game_mode_ && key == GLUT_KEY_F6) {
 		FocusEditorWindow();
 		return;
