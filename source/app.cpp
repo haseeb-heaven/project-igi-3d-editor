@@ -556,6 +556,12 @@ void App::OnIdle() {
 		return;
 	}
 
+	const bool profile_frame = []() {
+		static const bool enabled = getenv("IGI_PROFILE") != nullptr;
+		return enabled;
+	}();
+	const int64_t frame_start = profile_frame ? Sys_Milliseconds() : 0;
+
 	if (in_game_mode_ && IsGameplayInputFocused()) {
 		gameplay_host_.GetInputRouter().SetMapComputerOpen(
 			gameplay_host_.GetWorld().IsMapComputerOpen());
@@ -583,6 +589,25 @@ void App::OnIdle() {
 		rendering_editor_window_ = false;
 	} else {
 		Frame(delta_time * 0.001f); // convert to seconds
+	}
+
+	if (profile_frame) {
+		static int64_t acc_ms = 0;
+		static int acc_frames = 0;
+		static int64_t acc_wall = 0;
+		static int64_t last_report = cur_time;
+		acc_ms += Sys_Milliseconds() - frame_start;
+		++acc_frames;
+		if (cur_time - last_report >= 1000) {
+			acc_wall += cur_time - last_report;
+			Logger::Get().Log(LogLevel::INFO,
+				"[FrameProfile] " + std::to_string(acc_frames) + " frames in " +
+				std::to_string(acc_wall) + "ms wall; busy=" +
+				std::to_string(acc_ms) + "ms (" +
+				std::to_string(acc_frames ? acc_ms / acc_frames : 0) + "ms/frame)");
+			acc_ms = acc_frames = acc_wall = 0;
+			last_report = cur_time;
+		}
 	}
 
 	prior_frame_time_ = cur_time;
