@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "player_collision.h"
+#include "player_fall_impact.h"
 
 namespace igi {
 
@@ -42,12 +43,6 @@ public:
     static constexpr float STANDING_EYE_HEIGHT = 7372.8f;
     static constexpr float CROUCHING_EYE_HEIGHT = 5324.8f;
     static constexpr float AIR_CONTROL_SPEED = 18.96296f;
-
-    // Inferred until the vanilla fall-damage routine is recovered from the
-    // retail QVM/native path. A normal jump must remain harmless, while a
-    // substantial drop must feed the same health boundary as other damage.
-    static constexpr float SAFE_LANDING_SPEED_UNITS_PER_TICK = JUMP_SPEED + GRAVITY;
-    static constexpr float FALL_DAMAGE_PER_EXCESS_SPEED_UNIT = 0.05f;
 
     // The current editor branch has no animation root-motion stream yet. These
     // are fixed-step presentation placeholders, kept in units per tick so the
@@ -98,6 +93,7 @@ public:
     float GetArmor() const { return armor_; }
     float GetMaximumArmor() const { return maximum_armor_; }
     bool IsAlive() const { return health_ > 0.0f; }
+    const PlayerFallImpact& GetLastLandingImpact() const { return last_landing_impact_; }
 
     const glm::vec3& GetPosition() const { return position_; }
     const glm::vec3& GetVelocity() const { return velocity_; }
@@ -119,6 +115,8 @@ private:
     void IntegrateAirMovement(const PlayerInputCmd& input_command, const glm::vec3& movement_direction, bool took_off);
     void UpdateEyeHeight(bool crouching);
     void ApplyLandingImpactDamage(float maximum_downward_velocity);
+    void ApplyDirectHealthDamage(float damage_amount);
+    void ApplyHealthDamage(float damage_amount);
 
     glm::vec3 position_ = glm::vec3(0.0f);
     glm::vec3 velocity_ = glm::vec3(0.0f);
@@ -140,6 +138,7 @@ private:
     float crouching_eye_height_units_ = CROUCHING_EYE_HEIGHT;
     float maximum_downward_velocity_ = 0.0f;
     glm::vec3 slope_slide_velocity_ = glm::vec3(0.0f);
+    PlayerFallImpact last_landing_impact_;
     bool is_grounded_ = true;
     PlayerStanceState stance_ = PlayerStanceState::Standing;
     PlayerCollision collision_;

@@ -78,6 +78,7 @@ void AudioSystem::PlayWeaponFire(
         "/sounds/";
     const std::vector<std::string> candidate_paths = {
         level_sound_directory + sound_filename,
+        "common/sounds/" + sound_filename,
         "sounds/" + sound_filename,
         sound_filename,
     };

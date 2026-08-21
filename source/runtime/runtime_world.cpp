@@ -469,6 +469,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // 1. Tick player physics, obstacle & 3D building collision, and movement
     const bool was_grounded = player_.IsGrounded();
     player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
+    const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
+    if (landing_impact.damage > 0.0f) {
+        AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
+    }
     if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
         AudioSystem::Play(SoundEffect::Jump);
     }

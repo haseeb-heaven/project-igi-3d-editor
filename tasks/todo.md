@@ -18,6 +18,9 @@
       live Play-mode projectile presentation.
 - [x] Authored guard weapon selection, scripted/patrol animation request
       delivery, and fixed-step weapon zoom state.
+- [x] Replace the inferred landing-impact rule with the verified OpenIGI
+      vanilla speed-to-health formula, direct-health damage path, authored fall
+      sound selection, and regression coverage.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.
@@ -33,20 +36,21 @@
       remains active.
 - [ ] Add explicit apply/restart semantics for editor changes made while a
       gameplay session exists; never silently mutate authoring data.
-- [ ] Port/verify remaining selected-vanilla-fixture traversal (replace the
-      inferred fall-damage threshold, ladder/root-motion where exercised),
-      authored mission patrol routes, and non-demo extraction conditions from
-      OpenIGI/retail evidence.
+- [ ] Port/verify remaining selected-vanilla-fixture traversal (ladder and
+      root-motion where exercised), authored mission patrol routes, and
+      non-demo extraction conditions from OpenIGI/retail evidence.
 - [ ] Final Windows verification and evidence/limitations report.
 
 ## Current evidence boundary
 
 - `verified-reference`: fixed-step scheduling and player collision constants
-  traced to OpenIGI source; the branch preserves the evidence labels in code.
+  plus the landing-impact speed, damage, sound-boundary, and direct-health
+  rules traced to OpenIGI source; the branch preserves the evidence labels in
+  code.
 - `implemented-slice`: player movement/jump/crouch/health, weapon states,
   world-occluded hits, guard patrol/perception/combat, authored weapon
-  selection, projectile simulation, flash exposure, zoom, audio hooks, HUD,
-  and objective/extraction flow.
+  selection, projectile simulation, flash exposure, zoom, landing audio,
+  health/armor HUD, and objective/extraction flow.
 - `architecture-gap`: a controlled gameplay window now owns gameplay focus,
   input callbacks, relative mouse recentering, viewport, and close recovery,
   and `GameplayHost` owns an OpenGL-free presentation snapshot. The actual
@@ -54,6 +58,7 @@
   repaints its authoring scene through a render-only target during active
   gameplay; a fully independent GL `RuntimeRenderer` remains open.
 - `inferred` or `placeholder`: some root-motion speeds, fallback guard patrol,
-  fall-damage threshold, demo extraction placement, and the normalized QVM seam
-  are not proof of full retail IGI1 behavior. Actual Windows execution against
-  the supplied vanilla assets remains a required verification step.
+  fall-impact camera/hearing presentation, demo extraction placement, and the
+  normalized QVM seam are not proof of full retail IGI1 behavior. Actual
+  Windows execution against the supplied vanilla assets remains a required
+  verification step.

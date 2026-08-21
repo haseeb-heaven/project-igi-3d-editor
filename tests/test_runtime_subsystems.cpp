@@ -11,6 +11,7 @@
 #include "../source/level/qvm_native_registry.h"
 #include "../source/level/task_tree.h"
 #include "../source/player_controller.h"
+#include "../source/player_fall_impact.h"
 #include "../source/player_collision.h"
 #include "../source/weapon_system.h"
 #include "../source/ai_system.h"
@@ -596,6 +597,56 @@ TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     collision.ResolveObstacles(test_pos, obstacles, 1638.4f);
     // Should resolve without NaN/Inf
     EXPECT_FALSE(std::isnan(test_pos.x) || std::isnan(test_pos.y));
+}
+
+TEST(RuntimePlayerTest, VanillaFallImpactMatchesReferenceBoundaries) {
+    constexpr float maximum_health = 100.0f;
+    const auto safe_impact = CalculateVanillaFallImpact(
+        -14.0f * PlayerController::WORLD_METER / 30.0f,
+        maximum_health);
+    const auto medium_impact = CalculateVanillaFallImpact(
+        -15.0f * PlayerController::WORLD_METER / 30.0f,
+        maximum_health);
+    const auto heavy_impact = CalculateVanillaFallImpact(
+        -16.0f * PlayerController::WORLD_METER / 30.0f,
+        maximum_health);
+    const auto lethal_impact = CalculateVanillaFallImpact(
+        -27.0f * PlayerController::WORLD_METER / 30.0f,
+        maximum_health);
+
+    EXPECT_NEAR(safe_impact.speed_meters_per_second, 14.0f, 0.0001f);
+    EXPECT_FLOAT_EQ(safe_impact.damage, 0.0f);
+    EXPECT_TRUE(safe_impact.sound_name.empty());
+    EXPECT_FLOAT_EQ(safe_impact.hearing_radius_units, 20480.0f);
+
+    EXPECT_NEAR(medium_impact.damage, maximum_health / 13.0f, 0.0001f);
+    EXPECT_EQ(medium_impact.sound_name, "player_fall_1");
+    EXPECT_FLOAT_EQ(medium_impact.hearing_radius_units, 40960.0f);
+
+    EXPECT_NEAR(heavy_impact.damage, maximum_health * 2.0f / 13.0f, 0.0001f);
+    EXPECT_EQ(heavy_impact.sound_name, "player_fall_2");
+
+    EXPECT_NEAR(lethal_impact.damage, maximum_health, 0.0001f);
+    EXPECT_EQ(lethal_impact.sound_name, "player_fall_3");
+    EXPECT_FLOAT_EQ(lethal_impact.view_kick_units, -1024.0f);
+}
+
+TEST(RuntimePlayerTest, LandingDamageBypassesArmor) {
+    PlayerController player;
+    player.Reset(glm::vec3(0.0f, 0.0f, 12.0f * PlayerController::WORLD_METER));
+
+    PlayerInputCmd input_command;
+    for (int tick = 0; tick < 120 && !player.IsGrounded(); ++tick) {
+        player.Tick(input_command, FlatTerrain);
+    }
+
+    ASSERT_TRUE(player.IsGrounded());
+    ASSERT_GT(player.GetLastLandingImpact().damage, 0.0f);
+    EXPECT_FLOAT_EQ(player.GetArmor(), player.GetMaximumArmor());
+    EXPECT_NEAR(
+        player.GetHealth(),
+        player.GetMaximumHealth() - player.GetLastLandingImpact().damage,
+        0.0001f);
 }
 
 TEST(RuntimePlayerTest, LandingFromAHighFallAppliesDamage) {

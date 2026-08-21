@@ -40,6 +40,7 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
     stance_ = PlayerStanceState::Standing;
     maximum_downward_velocity_ = 0.0f;
     slope_slide_velocity_ = glm::vec3(0.0f);
+    last_landing_impact_ = {};
 }
 
 void PlayerController::ApplyTuning(float maximum_health, float maximum_armor) {
@@ -66,6 +67,7 @@ void PlayerController::ApplyTuning(const Tuning& tuning) {
     current_eye_height_ = standing_eye_height_units_;
     stance_ = PlayerStanceState::Standing;
     maximum_downward_velocity_ = 0.0f;
+    last_landing_impact_ = {};
 }
 
 void PlayerController::SetCollisionQuery(SolidGeometryQuery solid_geometry_query) {
@@ -91,7 +93,21 @@ void PlayerController::ApplyDamage(float damage_amount) {
         health_damage -= absorbed_damage;
     }
 
-    health_ = std::max(0.0f, health_ - health_damage);
+    ApplyHealthDamage(health_damage);
+}
+
+void PlayerController::ApplyDirectHealthDamage(float damage_amount) {
+    if (damage_amount <= 0.0f || !IsAlive()) {
+        return;
+    }
+
+    // verified-reference: OpenIGI HumanHealth.ApplyDirect bypasses the armor
+    // accumulator used by incoming shots and applies only to health.
+    ApplyHealthDamage(damage_amount);
+}
+
+void PlayerController::ApplyHealthDamage(float damage_amount) {
+    health_ = std::max(0.0f, health_ - damage_amount);
     if (health_ <= 0.0f) {
         stance_ = PlayerStanceState::Dead;
         velocity_ = glm::vec3(0.0f);
@@ -170,13 +186,13 @@ void PlayerController::UpdateEyeHeight(bool crouching) {
 }
 
 void PlayerController::ApplyLandingImpactDamage(float maximum_downward_velocity) {
-    const float impact_speed = std::max(0.0f, -maximum_downward_velocity);
-    const float excess_speed = impact_speed - SAFE_LANDING_SPEED_UNITS_PER_TICK;
-    if (excess_speed <= 0.0f) {
-        return;
-    }
-
-    ApplyDamage(excess_speed * FALL_DAMAGE_PER_EXCESS_SPEED_UNIT);
+    // maximum_downward_velocity already includes the final gravity write in
+    // this fixed step, matching the reference's landingVelocityZ - GravityPerTick
+    // input to HumanFallDamage.Calculate.
+    last_landing_impact_ = CalculateVanillaFallImpact(
+        maximum_downward_velocity,
+        maximum_health_);
+    ApplyDirectHealthDamage(last_landing_impact_.damage);
 }
 
 void PlayerController::Tick(
@@ -184,6 +200,7 @@ void PlayerController::Tick(
     PlayerCollision::TerrainHeightQuery terrain_height_query,
     const std::vector<ObstacleCollider>& obstacles,
     bool (*legacy_collision_query)(float x, float y, float z)) {
+    last_landing_impact_ = {};
     if (!IsAlive()) {
         return;
     }
