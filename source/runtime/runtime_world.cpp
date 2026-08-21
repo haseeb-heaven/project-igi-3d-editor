@@ -562,6 +562,17 @@ bool RuntimeWorld::TickLadderTraversal(const PlayerInputCmd& input_command) {
             }
 
             if (ladder_traversal_.GetPhase() != LadderTraversalPhase::Climbing) {
+                // The animation driver evaluates input before this state
+                // transition, so consume the first top-exit root-motion
+                // interval in the same fixed tick that reaches the boundary.
+                if (ladder_traversal_.GetPhase() ==
+                        LadderTraversalPhase::GettingOffTop &&
+                    has_root_motion) {
+                    apply_root_motion();
+                    if (input_command.ladder_top_transition_complete) {
+                        ladder_traversal_.CompleteTopTransition();
+                    }
+                }
                 break;
             }
 
@@ -576,8 +587,8 @@ bool RuntimeWorld::TickLadderTraversal(const PlayerInputCmd& input_command) {
                     // before a visible translation sample reaches the seam.
                     ladder_traversal_.CompleteStep();
                 } else {
-                    // inferred fallback: keep Play mode usable until the
-                    // vanilla climb animation/root-motion stream is connected.
+                    // inferred fallback: keep Play mode usable when the
+                    // selected vanilla climb clip is unavailable.
                     complete_inferred_step();
                 }
             }
@@ -592,8 +603,8 @@ bool RuntimeWorld::TickLadderTraversal(const PlayerInputCmd& input_command) {
                 }
             } else {
                 // inferred fallback: the authored top transition is an
-                // animation event; without that stream, preserve the mount
-                // point and complete the state on the next fixed tick.
+                // animation event; without a resolved clip, preserve the
+                // mount point and complete the state on the next fixed tick.
                 if (ladder_traversal_.GetPhase() ==
                     LadderTraversalPhase::GettingOffTop) {
                     ladder_traversal_.Move(

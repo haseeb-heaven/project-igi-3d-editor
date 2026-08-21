@@ -27,14 +27,14 @@ struct PlayerInputCmd {
     int switch_weapon = -1;
 
     // Animation-local translation sampled for this fixed simulation tick.
-    // Keyboard movement remains the fallback until the player animation
-    // runtime supplies a non-zero root-motion delta.
+    // Keyboard movement remains the deterministic fallback when the player
+    // animation runtime cannot resolve an authored clip.
     glm::vec3 root_motion_delta = glm::vec3(0.0f);
     float root_motion_scale = PlayerMotion::DefaultDeltaTranslationScale;
     bool suppress_root_motion_scale = false;
 
     // Animation event edges used by the ladder traversal state machine. The
-    // input router leaves these false; an animation presenter may supply them
+    // input router leaves these false; PlayerAnimationDriver supplies them
     // when authored clips are available.
     bool ladder_step_complete = false;
     bool ladder_top_transition_complete = false;
@@ -59,9 +59,8 @@ public:
     static constexpr float CROUCHING_EYE_HEIGHT = 5324.8f;
     static constexpr float AIR_CONTROL_SPEED = 18.96296f;
 
-    // The current editor branch has no animation root-motion stream yet. These
-    // are fixed-step presentation placeholders, kept in units per tick so the
-    // simulation remains deterministic until vanilla animation data is wired.
+    // These fixed-step speeds are deterministic fallbacks for missing authored
+    // clips; resolved vanilla animation tracks supply root motion directly.
     static constexpr float RUN_SPEED = 8.5f * WORLD_METER / 30.0f;
     static constexpr float WALK_SPEED = 4.5f * WORLD_METER / 30.0f;
     static constexpr float CROUCH_SPEED = 2.5f * WORLD_METER / 30.0f;

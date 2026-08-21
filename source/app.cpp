@@ -200,6 +200,12 @@ bool App::Init(int argc, char** argv) {
 		return g_app.CheckCollision(glm::vec3(x, y, z));
 	};
 	gameplay_host_.Initialize(s_terrain_cb, s_collision_cb);
+	gameplay_host_.SetGameplayInputModifier(
+		[this](uint64_t, igi::PlayerInputCmd& input_command) {
+			player_animation_driver_.AugmentInput(
+				gameplay_host_.GetWorld(),
+				input_command);
+		});
 	gameplay_host_.GetWorld().SetInteractionQuery(
 		[this](const glm::vec3& origin, const glm::vec3& direction) {
 			return HandleGameplayInteraction(origin, direction);
@@ -209,6 +215,8 @@ bool App::Init(int argc, char** argv) {
 }
 
 void App::Shutdown() {
+	gameplay_host_.SetGameplayInputModifier({});
+	player_animation_driver_.ClearAnimationClips();
 	if (in_game_mode_) {
 		igi::EditorSnapshot restored_snapshot;
 		gameplay_host_.CloseGameplay(restored_snapshot);
@@ -1353,6 +1361,7 @@ void App::ToggleGamePlayMode() {
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
 		SetupLevelAiGuards();
 		SetupRuntimeLadders();
+		SetupRuntimePlayerAnimation();
 
 		// Initialize mission objectives for this specific level
 		int current_lvl = level_.GetLevelNo();
@@ -1406,6 +1415,7 @@ void App::ToggleGamePlayMode() {
 		runtime_level_objects_.reset();
 		opened_door_indices_.clear();
 		runtime_animation_request_serials_.clear();
+		player_animation_driver_.ClearAnimationClips();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
 		viewer_.pitch_ = snap.camera_pitch;
@@ -1447,6 +1457,7 @@ void App::ApplyAndRestartGameplay() {
 
 	SetupLevelAiGuards();
 	SetupRuntimeLadders();
+	SetupRuntimePlayerAnimation();
 	int current_level = level_.GetLevelNo();
 	if (current_level <= 0) current_level = 1;
 	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
@@ -1892,6 +1903,63 @@ void App::SetupRuntimeLadders() {
         "[Gameplay] Registered " + std::to_string(
             gameplay_host_.GetWorld().GetLadderPlacements().size()) +
         " authored ladder placements");
+}
+
+void App::SetupRuntimePlayerAnimation() {
+    player_animation_driver_.ClearAnimationClips();
+
+    const LevelObjects& gameplay_level_objects = runtime_level_objects_.has_value()
+        ? runtime_level_objects_.value()
+        : level_.GetLevelObjects();
+    const auto& objects = gameplay_level_objects.GetObjects();
+
+    int player_bone_hierarchy = -1;
+    int player_object_index = -1;
+    for (int object_index = 0;
+         object_index < static_cast<int>(objects.size());
+         ++object_index) {
+        const LevelObject& object = objects[static_cast<size_t>(object_index)];
+        if (!object.deleted && object.type == "HumanPlayer" &&
+            object.boneHierarchy >= 0) {
+            player_bone_hierarchy = object.boneHierarchy;
+            player_object_index = object_index;
+            break;
+        }
+    }
+
+    if (player_bone_hierarchy < 0) {
+        Logger::Get().Log(
+            LogLevel::WARNING,
+            "[Gameplay] No HumanPlayer animation hierarchy found; using physics movement fallback");
+        return;
+    }
+
+    // HumanLocomotionStates.cs plus the three authored ladder animations. The
+    // registry is already imported during level loading, so this setup only
+    // injects immutable clip addresses into the fixed-step driver.
+    constexpr int player_animation_ids[] = {
+        2, 4, 37, 35, 64, 70, 68, 11, 10,
+        57, 74, 72, 75, 77, 76, 81, 80,
+        168, 169, 170,
+    };
+    int resolved_clip_count = 0;
+    for (const int animation_id : player_animation_ids) {
+        const AnimationClip* animation_clip = animRegistry_.GetClipByAnimId(
+            player_bone_hierarchy,
+            animation_id);
+        if (animation_clip == nullptr) {
+            continue;
+        }
+        player_animation_driver_.SetAnimationClip(animation_id, animation_clip);
+        ++resolved_clip_count;
+    }
+
+    Logger::Get().Log(
+        LogLevel::INFO,
+        "[Gameplay] Player animation driver resolved " +
+        std::to_string(resolved_clip_count) + "/19 clips for object " +
+        std::to_string(player_object_index) +
+        (resolved_clip_count == 0 ? "; physics movement fallback remains active" : ""));
 }
 
 void App::SetEditBrush(int brush) {

@@ -15,6 +15,7 @@
 #include "../source/player_collision.h"
 #include "../source/player_motion.h"
 #include "../source/player_ladder.h"
+#include "../source/player_animation_driver.h"
 #include "../source/weapon_system.h"
 #include "../source/ai_system.h"
 #include "../source/animation_motion.h"
@@ -76,6 +77,31 @@ AnimationClip BuildAnimationMotionFixture() {
         AnimEvent{0, 8, 160, -1, glm::vec3(0.0f)},
         AnimEvent{1, 9, 0, -1, glm::vec3(0.0f)},
         AnimEvent{2, 10, 320, -1, glm::vec3(0.0f)},
+    };
+    return animation_clip;
+}
+
+AnimationClip BuildLadderAnimationFixture() {
+    AnimationClip animation_clip;
+    animation_clip.length_ms = 320;
+    animation_clip.translationKeys = {
+        AnimTranslationKey{0, 0, glm::vec3(0.0f)},
+        AnimTranslationKey{0, 160, glm::vec3(0.0f, 0.0f, 600.0f / 40.96f)},
+        AnimTranslationKey{0, 320, glm::vec3(0.0f, 0.0f, 1200.0f / 40.96f)},
+    };
+    animation_clip.events = {
+        AnimEvent{0, 8, 160, -1, glm::vec3(0.0f)},
+    };
+    return animation_clip;
+}
+
+AnimationClip BuildTopTransitionAnimationFixture() {
+    AnimationClip animation_clip;
+    animation_clip.length_ms = 320;
+    animation_clip.translationKeys = {
+        AnimTranslationKey{0, 0, glm::vec3(0.0f)},
+        AnimTranslationKey{0, 160, glm::vec3(0.0f, 0.0f, 1000.0f / 40.96f)},
+        AnimTranslationKey{0, 320, glm::vec3(0.0f, 0.0f, 2000.0f / 40.96f)},
     };
     return animation_clip;
 }
@@ -673,6 +699,102 @@ TEST(AnimationMotionTest, SupportsReverseLadderPlaybackAndReverseSeams) {
         wrapped_reverse_step.crossed_event_ids.end());
     EXPECT_NE(std::find(wrapped_reverse_step.crossed_event_ids.begin(), wrapped_reverse_step.crossed_event_ids.end(), 8),
         wrapped_reverse_step.crossed_event_ids.end());
+}
+
+TEST(PlayerAnimationDriverTest, SelectsVanillaForwardClipAndSuppliesRootMotion) {
+    RuntimeWorld runtime_world;
+    runtime_world.Initialize(FlatTerrain);
+    runtime_world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    AnimationClip forward_animation = BuildAnimationMotionFixture();
+    PlayerAnimationDriver animation_driver;
+    animation_driver.SetAnimationClip(4, &forward_animation);
+
+    PlayerInputCmd input_command;
+    input_command.forward = 1.0f;
+    animation_driver.AugmentInput(runtime_world, input_command);
+
+    EXPECT_EQ(animation_driver.GetActiveAnimationId(), 4);
+    EXPECT_NEAR(input_command.root_motion_delta.x, 40.96f, 0.0001f);
+    EXPECT_NEAR(input_command.root_motion_delta.y, 81.92f, 0.0001f);
+    EXPECT_FALSE(input_command.suppress_root_motion_scale);
+}
+
+TEST(PlayerAnimationDriverTest, SuppliesLadderRootMotionAndBoundaryEventToRuntimeWorld) {
+    RuntimeWorld runtime_world;
+    runtime_world.Initialize(FlatTerrain);
+    runtime_world.SetLadderPlacements({LadderPlacement(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 20000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f))});
+    runtime_world.GetPlayer().Reset(glm::vec3(0.0f, -2000.0f, 1000.0f), 0.0f);
+
+    PlayerInputCmd mount_command;
+    mount_command.interact = true;
+    runtime_world.UpdateSimulationTick(0, mount_command);
+    ASSERT_TRUE(runtime_world.IsPlayerOnLadder());
+
+    AnimationClip ladder_animation = BuildLadderAnimationFixture();
+    PlayerAnimationDriver animation_driver;
+    animation_driver.SetAnimationClip(168, &ladder_animation);
+
+    PlayerInputCmd climb_command;
+    climb_command.forward = 1.0f;
+    animation_driver.AugmentInput(runtime_world, climb_command);
+
+    EXPECT_EQ(animation_driver.GetActiveAnimationId(), 168);
+    EXPECT_NEAR(climb_command.root_motion_delta.z, 600.0f, 0.0001f);
+    EXPECT_TRUE(climb_command.suppress_root_motion_scale);
+    EXPECT_TRUE(climb_command.ladder_step_complete);
+
+    runtime_world.UpdateSimulationTick(1, climb_command);
+    EXPECT_EQ(runtime_world.GetLadderTraversal().GetStep(), 1);
+    EXPECT_NEAR(
+        runtime_world.GetPlayer().GetPosition().z,
+        runtime_world.GetLadderPlacements()[0].GetBottomMount().z + 600.0f,
+        0.0001f);
+}
+
+TEST(PlayerAnimationDriverTest, PreservesFirstTopExitMotionAtLadderBoundary) {
+    RuntimeWorld runtime_world;
+    runtime_world.Initialize(FlatTerrain);
+    runtime_world.SetLadderPlacements({LadderPlacement(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 20000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 3000.0f),
+        glm::mat3(1.0f))});
+    runtime_world.GetPlayer().Reset(glm::vec3(0.0f, -2000.0f, 1000.0f), 0.0f);
+
+    PlayerInputCmd mount_command;
+    mount_command.interact = true;
+    runtime_world.UpdateSimulationTick(0, mount_command);
+    ASSERT_TRUE(runtime_world.IsPlayerOnLadder());
+    ASSERT_EQ(runtime_world.GetLadderTraversal().GetTopStep(), 0);
+
+    AnimationClip top_transition_animation = BuildTopTransitionAnimationFixture();
+    PlayerAnimationDriver animation_driver;
+    animation_driver.SetAnimationClip(170, &top_transition_animation);
+
+    PlayerInputCmd top_exit_command;
+    top_exit_command.forward = 1.0f;
+    animation_driver.AugmentInput(runtime_world, top_exit_command);
+    ASSERT_EQ(animation_driver.GetActiveAnimationId(), 170);
+    ASSERT_NEAR(top_exit_command.root_motion_delta.z, 1000.0f, 0.0001f);
+
+    const float position_before_transition =
+        runtime_world.GetPlayer().GetPosition().z;
+    runtime_world.UpdateSimulationTick(1, top_exit_command);
+
+    EXPECT_EQ(
+        runtime_world.GetLadderTraversal().GetPhase(),
+        LadderTraversalPhase::GettingOffTop);
+    EXPECT_NEAR(
+        runtime_world.GetPlayer().GetPosition().z,
+        position_before_transition + 1000.0f,
+        0.0001f);
 }
 
 // 4. Player Locomotion, Physics & Obstacle Collision Integration Tests

@@ -12,6 +12,7 @@
 #include "animation.h"
 #include "debug_command_manager.h"
 #include "player_ladder.h"
+#include "player_animation_driver.h"
 #include "runtime/gameplay_host.h"
 #include "runtime/render_target.h"
 #include <atomic>
@@ -255,6 +256,7 @@ private:
 
 	// Animation system
 	AnimationRegistry animRegistry_;
+	igi::PlayerAnimationDriver player_animation_driver_;
 	std::unordered_map<int, AnimPlayback> animPlaybacks_; // object index -> playback state
 	std::unordered_map<int, std::vector<int>> animIdsCache_; // object index -> discovered AIAction_PlayAnimation ids
 	std::unordered_map<uint32_t, uint64_t> runtime_animation_request_serials_;
@@ -273,6 +275,7 @@ private:
 	void ToggleMusic();    // Escape-menu Music checkbox: stop if playing, else (re)start current level's music
 	void ToggleLightmaps(); // Escape-menu Lightmaps checkbox: enable/disable applying calculated lightmaps during render
 	void UpdateAnimations(float dtSec);
+	void SetupRuntimePlayerAnimation();
 	void ApplyRuntimeAiAnimationRequests();
 	std::string BuildAnimStatusString();
 	int FindHumanAiTaskId(int objIndex) const;

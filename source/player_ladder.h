@@ -103,6 +103,7 @@ public:
     }
     int GetDirection() const { return direction_; }
     int GetStep() const { return step_; }
+    int GetTopStep() const { return top_step_; }
     float GetFacingYawDegrees() const { return facing_yaw_degrees_; }
     const glm::vec3& GetPosition() const { return position_; }
 

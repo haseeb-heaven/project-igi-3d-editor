@@ -8,6 +8,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `GameClock` | Absolute 30 Hz deadlines, bounded catch-up, pause/exclusion, render boundaries, and reset behavior. |
 | `PlayerCollision` | Ground/roof probes, wall blocking and sliding, stance clearance, and finite obstacle resolution. |
 | `PlayerMotion` / `PlayerController` | Verified-reference gravity, ladder-slide damping, air-control basis, root-motion transform order, input-to-motion behavior, stance transitions, and collision-safe position. |
+| `PlayerAnimationDriver` | Vanilla locomotion-state selection, fixed 160 ms clip advancement, native-unit root motion, ladder event 8, and top-transition timing before the world tick. |
 | `LadderPlacement` / `LadderTraversal` | Magic-vertex mount geometry, activation selection, rung boundaries, top transitions, sliding interruption, and deterministic dismount. |
 | `MagicObjectRegistry` | First-definition-wins parsing of `DefineMagicObj` rows and named `TASKTYPE_LADDER` resolution without hard-coded process-local IDs. |
 | `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |

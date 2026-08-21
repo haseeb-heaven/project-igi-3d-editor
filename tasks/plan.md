@@ -121,9 +121,10 @@ parity claims remain gated on IGI1 evidence.
   session-owned world.
 - [x] Bind ladder traversal to player input with a deterministic fixed-step
   fallback so the selected fixture can mount, climb, slide, and dismount.
-- [ ] Feed the selected fixture's authored ladder animation root-motion and
-  completion events into the runtime command stream; the current event seam is
-  ready, but no animation presenter is connected yet.
+- [x] Feed the selected fixture's authored player locomotion and ladder
+  animation root-motion/completion events into the fixed-step command stream;
+  the slide animation clock remains presentation-only while the verified
+  ladder-slide physics path owns collision-safe descent.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
