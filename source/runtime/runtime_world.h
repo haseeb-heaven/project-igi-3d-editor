@@ -188,6 +188,13 @@ private:
         const glm::vec3& center,
         float radius_units) const;
     void ApplyProjectileDetonations();
+    void ApplyExplosionDamage(
+        const glm::vec3& explosion_position,
+        float explosion_radius_units,
+        float explosion_falloff_units,
+        float base_damage,
+        float damage_factor,
+        uint32_t owner_entity_id);
     void LaunchPlayerProjectile(
         const glm::vec3& origin,
         const glm::vec3& direction,

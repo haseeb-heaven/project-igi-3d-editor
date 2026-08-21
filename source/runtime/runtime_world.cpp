@@ -387,28 +387,9 @@ void RuntimeWorld::LaunchPlayerProjectile(
 }
 
 void RuntimeWorld::ApplyProjectileDetonations() {
-    constexpr float target_collision_radius = 0.6f * PlayerController::WORLD_METER;
-    constexpr float body_radius_scale = 0.33333334f;
     constexpr float flash_maximum_distance = 15.0f * PlayerController::WORLD_METER;
     constexpr float flash_minimum_duration_seconds = 0.75f;
     constexpr float flash_maximum_duration_seconds = 1.5f;
-
-    const auto calculate_damage = [](const ProjectileDetonation& detonation,
-                                     float target_distance) {
-        const float effective_distance = target_distance -
-            target_collision_radius * body_radius_scale -
-            detonation.explosion_radius_units;
-        if (effective_distance < 0.0f) {
-            return detonation.damage * detonation.damage_factor;
-        }
-        if (effective_distance >= detonation.explosion_falloff_units ||
-            detonation.explosion_falloff_units <= 0.0f) {
-            return 0.0f;
-        }
-        const float dose = (detonation.explosion_falloff_units -
-            effective_distance) / detonation.explosion_falloff_units;
-        return detonation.damage * detonation.damage_factor * dose;
-    };
 
     for (const ProjectileDetonation& detonation : projectiles_.GetDetonations()) {
         if (detonation.type == ProjectileType::Flashbang) {
@@ -443,41 +424,84 @@ void RuntimeWorld::ApplyProjectileDetonations() {
         }
 
         AudioSystem::Play(SoundEffect::Explosion);
-        if (player_.IsAlive()) {
-            const float player_distance = glm::distance(
-                detonation.position,
-                player_.GetPosition());
-            if (player_distance <= detonation.explosion_radius_units +
-                    detonation.explosion_falloff_units &&
-                !IsWorldLineBlocked(
-                    detonation.position,
-                    player_.GetEyePosition())) {
-                player_.ApplyDamage(calculate_damage(detonation, player_distance));
-            }
-        }
+        ApplyExplosionDamage(
+            detonation.position,
+            detonation.explosion_radius_units,
+            detonation.explosion_falloff_units,
+            detonation.damage,
+            detonation.damage_factor,
+            detonation.owner_entity_id);
+    }
+}
 
-        for (const AiGuardEntity& guard : ai_.GetGuards()) {
-            if (guard.state == AiGuardState::Dead ||
-                guard.id == detonation.owner_entity_id) {
-                continue;
-            }
-            const float guard_distance = glm::distance(
-                detonation.position,
-                guard.position);
-            if (guard_distance > detonation.explosion_radius_units +
-                    detonation.explosion_falloff_units ||
-                IsWorldLineBlocked(
-                    detonation.position,
-                    guard.position + glm::vec3(
-                        0.0f,
-                        0.0f,
-                        1.0f * PlayerController::WORLD_METER))) {
-                continue;
-            }
-            ai_.ApplyDamage(
-                guard.id,
-                calculate_damage(detonation, guard_distance));
+void RuntimeWorld::ApplyExplosionDamage(
+    const glm::vec3& explosion_position,
+    float explosion_radius_units,
+    float explosion_falloff_units,
+    float base_damage,
+    float damage_factor,
+    uint32_t owner_entity_id) {
+    constexpr float target_collision_radius = 0.6f * PlayerController::WORLD_METER;
+    constexpr float body_radius_scale = 0.33333334f;
+
+    const float safe_radius = std::isfinite(explosion_radius_units)
+        ? std::max(0.0f, explosion_radius_units)
+        : 0.0f;
+    const float safe_falloff = std::isfinite(explosion_falloff_units)
+        ? std::max(0.0f, explosion_falloff_units)
+        : 0.0f;
+    const float safe_damage = std::isfinite(base_damage)
+        ? std::max(0.0f, base_damage)
+        : 0.0f;
+    const float safe_damage_factor = std::isfinite(damage_factor)
+        ? std::max(0.0f, damage_factor)
+        : 0.0f;
+    const float maximum_damage_distance = safe_radius + safe_falloff;
+
+    const auto calculate_damage = [safe_radius, safe_falloff, safe_damage,
+                                   safe_damage_factor](float target_distance) {
+        const float effective_distance = target_distance -
+            target_collision_radius * body_radius_scale - safe_radius;
+        if (effective_distance < 0.0f) {
+            return safe_damage * safe_damage_factor;
         }
+        if (effective_distance >= safe_falloff || safe_falloff <= 0.0f) {
+            return 0.0f;
+        }
+        const float dose = (safe_falloff - effective_distance) / safe_falloff;
+        return safe_damage * safe_damage_factor * dose;
+    };
+
+    if (player_.IsAlive()) {
+        const float player_distance = glm::distance(
+            explosion_position,
+            player_.GetPosition());
+        if (player_distance <= maximum_damage_distance &&
+            !IsWorldLineBlocked(
+                explosion_position,
+                player_.GetEyePosition())) {
+            player_.ApplyDamage(calculate_damage(player_distance));
+        }
+    }
+
+    for (const AiGuardEntity& guard : ai_.GetGuards()) {
+        if (guard.state == AiGuardState::Dead ||
+            guard.id == owner_entity_id) {
+            continue;
+        }
+        const float guard_distance = glm::distance(
+            explosion_position,
+            guard.position);
+        if (guard_distance > maximum_damage_distance ||
+            IsWorldLineBlocked(
+                explosion_position,
+                guard.position + glm::vec3(
+                    0.0f,
+                    0.0f,
+                    1.0f * PlayerController::WORLD_METER))) {
+            continue;
+        }
+        ai_.ApplyDamage(guard.id, calculate_damage(guard_distance));
     }
 }
 
@@ -1657,6 +1681,21 @@ void RuntimeWorld::TriggerAuthoredExplodeObject(
             runtime_object.definition.explosion_sound,
             SoundEffect::Explosion);
     }
+
+    // Authored object damage uses the player health scale as the C++ runtime's
+    // baseline. The two authored multipliers remain independent so scripted
+    // visual explosions can set Explosion damage scale to zero.
+    const float authored_damage_factor = runtime_object.definition.damage_scale *
+        runtime_object.definition.explosion_damage_scale;
+    ApplyExplosionDamage(
+        runtime_object.definition.position,
+        runtime_object.definition.explosion_radius_meters *
+            PlayerController::WORLD_METER,
+        runtime_object.definition.explosion_falloff_radius_meters *
+            PlayerController::WORLD_METER,
+        player_.GetMaximumHealth(),
+        authored_damage_factor,
+        0);
 }
 
 void RuntimeWorld::UpdateAuthoredExplodeObjects() {

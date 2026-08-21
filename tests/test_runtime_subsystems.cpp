@@ -2642,6 +2642,37 @@ TEST(RuntimeWorldTest, PlayerWeaponDestroysNearestAuthoredExplodeObject) {
     EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
 }
 
+TEST(RuntimeWorldTest, AuthoredExplodeObjectAppliesBlastDamageToNearbyActors) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().SetPosition(glm::vec3(0.0f));
+
+    AiGuardEntity guard;
+    guard.id = 92;
+    guard.position = glm::vec3(0.0f, PlayerController::WORLD_METER, 0.0f);
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    AuthoredMissionExplodeObject explode_object;
+    explode_object.object_index = 93;
+    explode_object.task_id = "-1";
+    explode_object.position = glm::vec3(0.0f);
+    explode_object.damage_scale = 1.0f;
+    explode_object.explosion_radius_meters = 5.0f;
+    explode_object.explosion_damage_scale = 1.0f;
+    explode_object.explosion_expression = "TriggerExplosion";
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {explode_object});
+
+    const float initial_player_health = world.GetPlayer().GetHealth();
+    world.SetMissionStateBoolean("TriggerExplosion", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_LT(world.GetPlayer().GetHealth(), initial_player_health);
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].state, AiGuardState::Dead);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;
