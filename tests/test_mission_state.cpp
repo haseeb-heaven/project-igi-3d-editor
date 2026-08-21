@@ -130,3 +130,27 @@ TEST(MissionStateLoaderTest, RejectsNonFiniteCutSceneTiming) {
 
     EXPECT_TRUE(definitions.cut_scenes.empty());
 }
+
+TEST(MissionStateLoaderTest, LoadsConditionalSoundEdgeDefinition) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "ConditionalSound";
+    source.task_id = "3005";
+    source.argument_tokens = {
+        "3005", "ConditionalSound", "land", "CutScene_1201.nTick > 7",
+        "land_ground_2", "10", "20", "30", "FALSE", "TRUE", "TRUE",
+    };
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    ASSERT_EQ(definitions.conditional_sounds.size(), 1U);
+    const igi::AuthoredMissionConditionalSound& sound =
+        definitions.conditional_sounds.front();
+    EXPECT_EQ(sound.task_id, "3005");
+    EXPECT_EQ(sound.condition_expression, "CutScene_1201.nTick > 7");
+    EXPECT_EQ(sound.sound_name, "land_ground_2");
+    EXPECT_EQ(sound.position, glm::vec3(10.0f, 20.0f, 30.0f));
+    EXPECT_FALSE(sound.simple);
+    EXPECT_TRUE(sound.one_shot);
+    EXPECT_TRUE(sound.relative_to_microphone);
+}

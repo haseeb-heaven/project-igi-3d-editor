@@ -66,6 +66,18 @@ struct AuthoredMissionCutScene {
     std::vector<AuthoredMissionCutSceneShot> camera_shots;
 };
 
+// Authored ConditionalSound edge definition. RuntimeWorld evaluates the
+// condition at 30 Hz and emits only the rising edge for one-shot sounds.
+struct AuthoredMissionConditionalSound {
+    std::string task_id;
+    std::string condition_expression;
+    std::string sound_name;
+    glm::vec3 position = glm::vec3(0.0f);
+    bool simple = false;
+    bool one_shot = false;
+    bool relative_to_microphone = false;
+};
+
 // Authored StatusMessage definition. display_text is resolved from the
 // localized resource by the Windows application before entering the runtime.
 struct AuthoredMissionStatusMessage {

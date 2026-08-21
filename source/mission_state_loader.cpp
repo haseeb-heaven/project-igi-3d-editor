@@ -32,6 +32,12 @@ constexpr size_t kCutSceneViewportFadeOutArgumentIndex = 17;
 constexpr size_t kCutSceneTimeOfDayArgumentIndex = 18;
 constexpr size_t kCutSceneStartExpressionArgumentIndex = 19;
 constexpr size_t kCutSceneStopExpressionArgumentIndex = 20;
+constexpr size_t kConditionalSoundConditionArgumentIndex = 3;
+constexpr size_t kConditionalSoundNameArgumentIndex = 4;
+constexpr size_t kConditionalSoundPositionArgumentIndex = 5;
+constexpr size_t kConditionalSoundSimpleArgumentIndex = 8;
+constexpr size_t kConditionalSoundOneShotArgumentIndex = 9;
+constexpr size_t kConditionalSoundRelativeArgumentIndex = 10;
 constexpr size_t kStatusMessageSendArgumentIndex = 9;
 constexpr size_t kStatusMessageTextArgumentIndex = 10;
 constexpr size_t kStatusMessageSoundArgumentIndex = 12;
@@ -260,6 +266,41 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 task_source.authored_duration_seconds);
             cut_scene.camera_shots = task_source.authored_camera_shots;
             definitions.cut_scenes.push_back(std::move(cut_scene));
+            continue;
+        }
+
+        if (task_source.task_type == "ConditionalSound") {
+            if (task_source.argument_tokens.size() <=
+                    kConditionalSoundRelativeArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionConditionalSound conditional_sound;
+            conditional_sound.task_id = task_source.task_id;
+            conditional_sound.condition_expression = TokenAt(
+                task_source.argument_tokens,
+                kConditionalSoundConditionArgumentIndex);
+            conditional_sound.sound_name = TokenAt(
+                task_source.argument_tokens,
+                kConditionalSoundNameArgumentIndex);
+            if (conditional_sound.condition_expression.empty() ||
+                conditional_sound.sound_name.empty() ||
+                !ReadVector3(
+                    task_source.argument_tokens,
+                    kConditionalSoundPositionArgumentIndex,
+                    conditional_sound.position) ||
+                !TryParseBoolean(
+                    task_source.argument_tokens[kConditionalSoundSimpleArgumentIndex],
+                    conditional_sound.simple) ||
+                !TryParseBoolean(
+                    task_source.argument_tokens[kConditionalSoundOneShotArgumentIndex],
+                    conditional_sound.one_shot) ||
+                !TryParseBoolean(
+                    task_source.argument_tokens[kConditionalSoundRelativeArgumentIndex],
+                    conditional_sound.relative_to_microphone)) {
+                continue;
+            }
+            definitions.conditional_sounds.push_back(std::move(conditional_sound));
             continue;
         }
 

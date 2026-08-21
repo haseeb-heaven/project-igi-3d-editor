@@ -22,6 +22,7 @@ struct AuthoredMissionStateDefinitions {
     std::vector<AuthoredMissionEditVariable> edit_variables;
     std::vector<AuthoredMissionLevelTimer> level_timers;
     std::vector<AuthoredMissionCutScene> cut_scenes;
+    std::vector<AuthoredMissionConditionalSound> conditional_sounds;
     std::vector<AuthoredMissionStatusMessage> status_messages;
 };
 
