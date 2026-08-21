@@ -16,6 +16,7 @@
 #include "renderer_rain.h"
 #include "../level/task_schema.h"
 #include "../mission_state.h"
+#include "../runtime/runtime_renderer.h"
 #include "graph_writer.h"
 #include <functional>
 
@@ -485,6 +486,8 @@ public:
 		uint32_t clip_ammo_ = 30;
 		uint32_t clip_capacity_ = 30;
 		uint32_t reserve_ammo_ = 120;
+		bool map_computer_open_ = false;
+		std::vector<igi::RuntimeMapComputerObjective> map_computer_objectives_;
 		std::string objective_text_ = "";
 		int64_t mission_timer_remaining_ticks_ = -1;
 		std::vector<igi::MissionStatusMessageDisplay> mission_status_messages_;

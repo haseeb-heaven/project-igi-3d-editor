@@ -3256,6 +3256,67 @@ void Renderer::Draw(const draw_params_s &params,
         glEnd();
       }
 
+      // The retail map computer takes over the player-facing display. The
+      // simulation has already copied the active objective rows into the
+      // immutable snapshot; this pass only paints the phosphor-style panel.
+      if (task_tree_view.map_computer_open_) {
+        glColor4f(0.005f, 0.025f, 0.012f, 0.96f);
+        glBegin(GL_QUADS);
+        glVertex2i(0, 0);
+        glVertex2i(vw, 0);
+        glVertex2i(vw, vh);
+        glVertex2i(0, vh);
+        glEnd();
+
+        const int panel_left = std::max(24, vw / 10);
+        const int panel_right = std::min(vw - 24, (vw * 9) / 10);
+        const int panel_top = std::max(36, vh / 10);
+        const int panel_bottom = std::min(vh - 36, (vh * 9) / 10);
+        glColor4f(0.0f, 0.75f, 0.18f, 0.80f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(panel_left, panel_top);
+        glVertex2i(panel_right, panel_top);
+        glVertex2i(panel_right, panel_bottom);
+        glVertex2i(panel_left, panel_bottom);
+        glEnd();
+
+        draw_text_sys(panel_left + 18, panel_top + 24,
+                      "MAP COMPUTER", 0.0f, 1.0f, 0.30f);
+        draw_text_sys(panel_left + 18, panel_top + 44,
+                      "OBJECTIVES", 0.0f, 0.75f, 0.22f);
+
+        for (size_t objective_index = 0;
+             objective_index < task_tree_view.map_computer_objectives_.size();
+             ++objective_index) {
+          const igi::RuntimeMapComputerObjective& objective =
+              task_tree_view.map_computer_objectives_[objective_index];
+          const char* state_marker = "[ ]";
+          if (objective.state == igi::ObjectiveState::Completed) {
+            state_marker = "[X]";
+          } else if (objective.state == igi::ObjectiveState::Failed) {
+            state_marker = "[!]";
+          } else if (objective.state == igi::ObjectiveState::Cancelled) {
+            state_marker = "[-]";
+          }
+
+          const int row_y = panel_top + 78 +
+              static_cast<int>(objective_index) * 24;
+          const std::string row_text = std::to_string(objective_index + 1) +
+              " " + state_marker + " " + objective.text;
+          const float red = objective.state == igi::ObjectiveState::Failed
+              ? 1.0f
+              : 0.0f;
+          const float green = objective.state == igi::ObjectiveState::Failed
+              ? 0.25f
+              : 0.95f;
+          draw_text_sys(panel_left + 18, row_y, row_text.c_str(),
+                        red, green, 0.25f);
+        }
+
+        draw_text_sys(panel_left + 18, panel_bottom - 22,
+                      "[MAP COMPUTER] C / M TO CLOSE", 0.0f, 0.60f, 0.18f);
+      }
+
       glDisable(GL_BLEND);
     }
 

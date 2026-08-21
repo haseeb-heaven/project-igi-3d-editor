@@ -784,6 +784,8 @@ void RuntimeWorld::Reset() {
     guard_muzzle_flash_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
+    map_computer_open_ = false;
+    map_computer_input_was_held_ = false;
     flash_effect_strength_ = 0.0f;
     flash_effect_decay_per_second_ = 0.0f;
     flash_effect_remaining_seconds_ = 0.0f;
@@ -2222,7 +2224,6 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
 
     std::vector<ObstacleCollider> obstacles;
-    zoom_active_ = input_cmd.zoom;
     for (const auto& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {
             continue;
@@ -2266,6 +2267,21 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         PlayFootstepIfNeeded(input_cmd, was_grounded);
     }
 
+    // OpenIGI identifies MapComputer as a grounded rising-edge weapon action.
+    // Evaluate the edge after the first terrain tick so a freshly reset player
+    // can open the computer on the first playable frame.
+    const bool map_computer_rising = input_cmd.map_computer &&
+        !map_computer_input_was_held_;
+    map_computer_input_was_held_ = input_cmd.map_computer;
+    if (map_computer_rising) {
+        if (map_computer_open_) {
+            map_computer_open_ = false;
+        } else if (player_.IsGrounded() && player_.IsAlive()) {
+            map_computer_open_ = true;
+        }
+    }
+    zoom_active_ = input_cmd.zoom && !map_computer_open_;
+
     // Vanilla updates AreaActivate and EditVariable before dependent mission
     // expressions are evaluated at the end of this fixed simulation tick.
     UpdateAuthoredMissionState();
@@ -2279,7 +2295,8 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
     // lowers before the active weapon changes and raises after the new model
     // is selected; keep those transition ticks out of the fire/reload path.
-    const bool weapon_controls_ready = UpdateWeaponSelection(input_cmd);
+    const bool weapon_controls_ready = !map_computer_open_ &&
+        UpdateWeaponSelection(input_cmd);
     weapons_.Update(dt, weapon_controls_ready && input_cmd.fire);
     const WeaponDefinition& active_weapon = weapons_.GetActiveWeapon();
     const bool is_projectile_weapon =
@@ -2353,7 +2370,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             }
         }
     }
-    fire_was_held_ = input_cmd.fire;
+    fire_was_held_ = weapon_controls_ready && input_cmd.fire;
 
     if (weapon_controls_ready && input_cmd.reload) {
         weapons_.Reload();

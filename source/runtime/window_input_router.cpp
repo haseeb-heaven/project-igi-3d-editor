@@ -23,6 +23,7 @@ void WindowInputRouter::ResetInputState() {
     backward_key_down_ = false;
     left_strafe_key_down_ = false;
     right_strafe_key_down_ = false;
+    map_computer_key_down_ = false;
 }
 
 void WindowInputRouter::UpdateMovementAxes() {
@@ -54,6 +55,8 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         profile_.GetKeyForAction("Reload", 'R')));
     const unsigned char activate_key = static_cast<unsigned char>(std::toupper(
         profile_.GetKeyForAction("Activate", 'E')));
+    const unsigned char map_computer_key = static_cast<unsigned char>(std::toupper(
+        profile_.GetKeyForAction("MapComputer", 'M')));
 
     if (up_key == forward_key) {
         forward_key_down_ = is_down;
@@ -75,6 +78,9 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         current_cmd_.interact = is_down;
     } else if (up_key == reload_key || up_key == 'R') {
         current_cmd_.reload = is_down;
+    } else if (up_key == map_computer_key) {
+        current_cmd_.map_computer = is_down && !map_computer_key_down_;
+        map_computer_key_down_ = is_down;
     } else if (key >= '1' && key <= '9') {
         if (is_down) current_cmd_.switch_weapon = key - '1';
     }
@@ -111,6 +117,7 @@ PlayerInputCmd WindowInputRouter::ConsumeGameplayInput() {
     current_cmd_.jump = false;
     current_cmd_.reload = false;
     current_cmd_.interact = false;
+    current_cmd_.map_computer = false;
     current_cmd_.switch_weapon = -1;
     return cmd;
 }

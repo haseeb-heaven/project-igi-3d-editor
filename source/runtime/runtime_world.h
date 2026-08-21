@@ -250,6 +250,7 @@ public:
         return guard_muzzle_flash_states_;
     }
     bool IsZoomActive() const { return zoom_active_; }
+    bool IsMapComputerOpen() const { return map_computer_open_; }
     bool IsPlayerOnLadder() const { return ladder_traversal_.IsOnLadder(); }
     const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
 
@@ -478,6 +479,8 @@ private:
     InteractionQuery interaction_query_;
     bool fire_was_held_ = false;
     bool zoom_active_ = false;
+    bool map_computer_open_ = false;
+    bool map_computer_input_was_held_ = false;
     float flash_effect_strength_ = 0.0f;
     float flash_effect_decay_per_second_ = 0.0f;
     float flash_effect_remaining_seconds_ = 0.0f;

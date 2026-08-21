@@ -27,6 +27,17 @@ struct RuntimeProjectileRenderState {
     uint32_t tumble_ticks = 0;
 };
 
+// Immutable map-computer row copied from the active vanilla objective set.
+// Keeping the row in the presentation snapshot prevents the HUD from
+// reading or mutating LevelFlow while a fixed-step update is in progress.
+struct RuntimeMapComputerObjective {
+    std::string text;
+    int32_t link_task_id = -1;
+    ObjectiveState state = ObjectiveState::Pending;
+    bool has_location = false;
+    glm::vec3 location = glm::vec3(0.0f);
+};
+
 // Immutable presentation data for one gameplay render. The simulation world
 // can continue to advance on the fixed-step boundary without exposing its
 // mutable containers directly to a renderer.
@@ -52,6 +63,8 @@ struct RuntimeRenderSnapshot {
     uint32_t clip_ammo = 0;
     uint32_t clip_capacity = 0;
     uint32_t reserve_ammo = 0;
+    bool map_computer_open = false;
+    std::vector<RuntimeMapComputerObjective> map_computer_objectives;
     std::string objective_text;
     int32_t objective_link_task_id = -1;
     bool has_objective_location = false;

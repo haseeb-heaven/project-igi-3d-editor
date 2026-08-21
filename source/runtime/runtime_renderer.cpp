@@ -44,6 +44,33 @@ void RuntimeRenderer::Capture(
     next_snapshot.reserve_ammo = weapons.GetReserveAmmo();
 
     next_snapshot.zoom_active = world.IsZoomActive();
+    next_snapshot.map_computer_open = world.IsMapComputerOpen();
+    if (next_snapshot.map_computer_open) {
+        constexpr size_t kMapComputerObjectiveSlotCount = 6;
+        const std::vector<MissionObjective>& objectives =
+            world.GetLevelFlow().GetObjectives();
+        const size_t objective_count = std::min(
+            objectives.size(),
+            kMapComputerObjectiveSlotCount);
+        next_snapshot.map_computer_objectives.reserve(objective_count);
+        for (size_t objective_index = 0;
+             objective_index < objective_count;
+             ++objective_index) {
+            const MissionObjective& objective = objectives[objective_index];
+            RuntimeMapComputerObjective row;
+            row.text = objective.description;
+            row.link_task_id = objective.link_task_id;
+            row.state = objective.state;
+            row.has_location = objective.has_location;
+            if (objective.has_location) {
+                row.location = glm::vec3(
+                    static_cast<float>(objective.location.x),
+                    static_cast<float>(objective.location.y),
+                    static_cast<float>(objective.location.z));
+            }
+            next_snapshot.map_computer_objectives.push_back(std::move(row));
+        }
+    }
     next_snapshot.objective_text = world.GetLevelFlow().GetObjectiveDisplayText();
     for (const MissionObjective& objective : world.GetLevelFlow().GetObjectives()) {
         if (!objective.is_primary || objective.state != ObjectiveState::Pending) {

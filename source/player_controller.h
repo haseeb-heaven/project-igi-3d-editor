@@ -24,6 +24,8 @@ struct PlayerInputCmd {
     bool zoom = false;
     bool reload = false;
     bool interact = false;
+    // Rising-edge action for the vanilla map-computer weapon state.
+    bool map_computer = false;
     int switch_weapon = -1;
 
     // Animation-local translation sampled for this fixed simulation tick.

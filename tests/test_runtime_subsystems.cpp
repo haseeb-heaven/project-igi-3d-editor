@@ -449,6 +449,47 @@ TEST(RuntimeRenderTest, CapturesAuthoredObjectiveLinkLocation) {
         glm::vec3(100.0f, 200.0f, 300.0f));
 }
 
+TEST(RuntimeRenderTest, CapturesAllMapComputerObjectiveRows) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives = {
+        {"M1_OBJECTIVE_ONE", 1120, "", ""},
+        {"M1_OBJECTIVE_TWO", 1121, "", ""},
+    };
+    world.GetLevelFlow().InitializeMission(
+        1,
+        {objective_set},
+        {},
+        {},
+        [](int32_t link_task_id, MissionObjectiveLocation& location) {
+            if (link_task_id != 1120) {
+                return false;
+            }
+            location = {10.0, 20.0, 30.0};
+            return true;
+        });
+
+    PlayerInputCmd open_command;
+    open_command.map_computer = true;
+    world.UpdateSimulationTick(0, open_command);
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+
+    const RuntimeRenderSnapshot& snapshot = renderer.GetSnapshot();
+    ASSERT_TRUE(snapshot.map_computer_open);
+    ASSERT_EQ(snapshot.map_computer_objectives.size(), 2U);
+    EXPECT_EQ(snapshot.map_computer_objectives[0].text, "M1_OBJECTIVE_ONE");
+    EXPECT_EQ(snapshot.map_computer_objectives[0].link_task_id, 1120);
+    EXPECT_TRUE(snapshot.map_computer_objectives[0].has_location);
+    EXPECT_EQ(snapshot.map_computer_objectives[0].location,
+              glm::vec3(10.0f, 20.0f, 30.0f));
+    EXPECT_EQ(snapshot.map_computer_objectives[1].text, "M1_OBJECTIVE_TWO");
+    EXPECT_EQ(snapshot.map_computer_objectives[1].link_task_id, 1121);
+}
+
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     ProjectileSystem projectiles;
     projectiles.SetCollisionQuery(
@@ -1723,6 +1764,64 @@ TEST(RuntimeInputTest, RightMouseIsAimWithoutImplicitReload) {
     const PlayerInputCmd command = router.ConsumeGameplayInput();
     EXPECT_TRUE(command.zoom);
     EXPECT_FALSE(command.reload);
+}
+
+TEST(RuntimeInputTest, MapComputerActionIsMomentaryAndFocusGated) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.OnKeyboardKey('M', true);
+
+    EXPECT_TRUE(router.ConsumeGameplayInput().map_computer);
+    EXPECT_FALSE(router.ConsumeGameplayInput().map_computer);
+
+    router.SetFocus(WindowFocusTarget::EditorWindow);
+    router.OnKeyboardKey('M', true);
+    EXPECT_FALSE(router.ConsumeGameplayInput().map_computer);
+}
+
+TEST(RuntimeWorldTest, MapComputerTogglesOnGroundRisingEdgesOnly) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    PlayerInputCmd open_command;
+    open_command.map_computer = true;
+    world.UpdateSimulationTick(0, open_command);
+    EXPECT_TRUE(world.IsMapComputerOpen());
+
+    world.UpdateSimulationTick(1, open_command);
+    EXPECT_TRUE(world.IsMapComputerOpen());
+
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    world.UpdateSimulationTick(3, open_command);
+    EXPECT_FALSE(world.IsMapComputerOpen());
+}
+
+TEST(RuntimeWorldTest, MapComputerSuppressesWeaponControlsUntilClosed) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    ASSERT_TRUE(world.GetWeapons().SelectWeapon(4));
+
+    PlayerInputCmd open_command;
+    open_command.map_computer = true;
+    world.UpdateSimulationTick(0, open_command);
+    ASSERT_TRUE(world.IsMapComputerOpen());
+
+    const uint32_t ammo_before_map_fire =
+        world.GetWeapons().GetCurrentClipAmmo();
+    PlayerInputCmd fire_command;
+    fire_command.fire = true;
+    world.UpdateSimulationTick(1, fire_command);
+    EXPECT_EQ(world.GetWeapons().GetCurrentClipAmmo(), ammo_before_map_fire);
+
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    PlayerInputCmd close_and_fire_command;
+    close_and_fire_command.map_computer = true;
+    close_and_fire_command.fire = true;
+    world.UpdateSimulationTick(3, close_and_fire_command);
+    EXPECT_FALSE(world.IsMapComputerOpen());
+    EXPECT_LT(
+        world.GetWeapons().GetCurrentClipAmmo(),
+        ammo_before_map_fire);
 }
 
 TEST(RuntimeInputTest, RelativeMouseLookDeltasAreConsumedOnce) {

@@ -41,6 +41,7 @@ private:
     bool backward_key_down_ = false;
     bool left_strafe_key_down_ = false;
     bool right_strafe_key_down_ = false;
+    bool map_computer_key_down_ = false;
 };
 
 } // namespace igi
