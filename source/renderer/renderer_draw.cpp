@@ -3314,7 +3314,7 @@ void Renderer::Draw(const draw_params_s &params,
         }
 
         draw_text_sys(panel_left + 18, panel_bottom - 22,
-                      "[MAP COMPUTER] C / M TO CLOSE", 0.0f, 0.60f, 0.18f);
+                      "[MAP COMPUTER] C TO CLOSE", 0.0f, 0.60f, 0.18f);
       }
 
       glDisable(GL_BLEND);

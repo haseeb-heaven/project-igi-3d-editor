@@ -50,13 +50,13 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
     const unsigned char jump_key = static_cast<unsigned char>(std::toupper(
         profile_.GetKeyForAction("Jump", ' ')));
     const unsigned char crouch_key = static_cast<unsigned char>(std::toupper(
-        profile_.GetKeyForAction("Crouch", 'C')));
+        profile_.GetKeyForAction("Crouch", 17)));
     const unsigned char reload_key = static_cast<unsigned char>(std::toupper(
         profile_.GetKeyForAction("Reload", 'R')));
     const unsigned char activate_key = static_cast<unsigned char>(std::toupper(
         profile_.GetKeyForAction("Activate", 'E')));
     const unsigned char map_computer_key = static_cast<unsigned char>(std::toupper(
-        profile_.GetKeyForAction("MapComputer", 'M')));
+        profile_.GetKeyForAction("MapComputer", 'C')));
 
     if (up_key == forward_key) {
         forward_key_down_ = is_down;
@@ -72,7 +72,7 @@ void WindowInputRouter::OnKeyboardKey(int key, bool is_down) {
         UpdateMovementAxes();
     } else if (up_key == jump_key || key == ' ') {
         current_cmd_.jump = is_down;
-    } else if (up_key == crouch_key || up_key == 'C') {
+    } else if (up_key == crouch_key) {
         current_cmd_.crouch = is_down;
     } else if (up_key == activate_key || up_key == 'E') {
         current_cmd_.interact = is_down;

@@ -1796,14 +1796,27 @@ TEST(RuntimeInputTest, RightMouseIsAimWithoutImplicitReload) {
 TEST(RuntimeInputTest, MapComputerActionIsMomentaryAndFocusGated) {
     WindowInputRouter router;
     router.SetFocus(WindowFocusTarget::GameplayWindow);
-    router.OnKeyboardKey('M', true);
+    router.OnKeyboardKey('C', true);
 
     EXPECT_TRUE(router.ConsumeGameplayInput().map_computer);
     EXPECT_FALSE(router.ConsumeGameplayInput().map_computer);
 
     router.SetFocus(WindowFocusTarget::EditorWindow);
-    router.OnKeyboardKey('M', true);
+    router.OnKeyboardKey('C', true);
     EXPECT_FALSE(router.ConsumeGameplayInput().map_computer);
+}
+
+TEST(RuntimeInputTest, VanillaDefaultSeparatesRightCtrlCrouchFromMapComputer) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+
+    router.OnKeyboardKey(17, true);
+    EXPECT_TRUE(router.ConsumeGameplayInput().crouch);
+    router.OnKeyboardKey(17, false);
+
+    router.OnKeyboardKey('C', true);
+    EXPECT_TRUE(router.ConsumeGameplayInput().map_computer);
+    EXPECT_FALSE(router.ConsumeGameplayInput().crouch);
 }
 
 TEST(RuntimeWorldTest, MapComputerTogglesOnGroundRisingEdgesOnly) {

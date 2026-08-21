@@ -1619,7 +1619,7 @@ void App::ToggleGamePlayMode() {
 		show_hud_ = false;
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
-		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, F5 apply/restart, F6 editor, F7 gameplay, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, Right Ctrl crouch, C map, E activate, R reload, F5 apply/restart, F6 editor, F7 gameplay, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		if (!gameplay_host_.CloseGameplay(snap)) {

@@ -67,11 +67,13 @@ void ProfileConfig::SetDefaultBindings() {
     key_bindings["MoveLeft"] = 'A';
     key_bindings["MoveRight"] = 'D';
     key_bindings["Jump"] = ' ';
-    key_bindings["Crouch"] = 'C';
+    // OpenIGI's vanilla profile binds crouch to Right Ctrl so C remains the
+    // grounded map-computer action.
+    key_bindings["Crouch"] = 17;
     key_bindings["Reload"] = 'R';
     key_bindings["Activate"] = 'E';
     key_bindings["Binoculars"] = 'B';
-    key_bindings["MapComputer"] = 'M';
+    key_bindings["MapComputer"] = 'C';
     key_bindings["WeaponCategory1"] = '1';
     key_bindings["WeaponCategory2"] = '2';
     key_bindings["WeaponCategory3"] = '3';
