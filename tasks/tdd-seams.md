@@ -25,6 +25,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |
 | `QvmInterpreter` | Malformed-program rejection, bounded execution, native calls, stack safety, and deterministic reset. |
 | `GameplayHost` / `RuntimeWorld` | Isolated session start/tick/restart/close, mission state, and no mutation of editor snapshots. |
+| `RuntimeSpawn` / `App` | Authored HumanPlayer task-id-zero selection, first-player fallback, and explicit editor-camera/level-start fallback boundary. |
 | `RuntimeAssetTarget` | Gameplay simulation keeps consuming the mutable runtime snapshot while the editor window repaints. |
 | `RuntimeWorld` ladder asset boundary | Gameplay setup owns a transformed placement copy; reset clears it so editor/source objects cannot become mutable runtime ladders. |
 | `RuntimeWorld` ladder interaction | Nearest authored mount, deterministic rung input, top transition, slide-to-ground, dismount, and authored root-motion event completion. |
