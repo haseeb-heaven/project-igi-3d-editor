@@ -39,6 +39,7 @@ struct AuthoredMissionObjectiveSet {
 };
 
 using MissionObjectiveTextResolver = std::function<std::string(const std::string&)>;
+using MissionExpressionEvaluator = std::function<bool(const std::string&)>;
 
 enum class MissionStatus {
     InProgress,
@@ -59,7 +60,10 @@ public:
     void SetObjectiveState(uint32_t id, ObjectiveState state);
     bool CompleteFirstPendingPrimaryObjective();
 
-    void Update(bool player_alive, bool in_extraction_zone);
+    void Update(
+        bool player_alive,
+        bool in_extraction_zone,
+        MissionExpressionEvaluator expression_evaluator = {});
 
     MissionStatus GetStatus() const { return status_; }
     const std::vector<MissionObjective>& GetObjectives() const { return objectives_; }
@@ -70,6 +74,8 @@ private:
     void InitializeFallbackObjectives(uint32_t mission_number);
     void LoadAuthoredObjectiveSet(size_t authored_set_index);
     bool AdvanceAuthoredObjectiveSet();
+    void EvaluateAuthoredObjectiveExpressions(
+        const MissionExpressionEvaluator& expression_evaluator);
 
     uint32_t mission_number_ = 1;
     std::vector<MissionObjective> objectives_;

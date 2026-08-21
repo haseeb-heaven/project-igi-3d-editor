@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "../source/level_flow.h"
+#include "../source/mission_expression.h"
 #include "../source/mission_objective_loader.h"
 
 #include <initializer_list>
@@ -89,4 +90,31 @@ TEST(LevelFlowTest, UsesAuthoredTextAndAdvancesAuthoredDefinition) {
     ASSERT_EQ(flow.GetObjectives().size(), 1U);
     EXPECT_EQ(flow.GetObjectiveDisplayText(), "Reach the extraction point.");
     EXPECT_EQ(flow.GetObjectives()[0].text_resource, "M1_OBJ2");
+}
+
+TEST(LevelFlowTest, EvaluatesPreservedCompletionExpressionAtFixedUpdateBoundary) {
+    igi::AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M1_OBJ1",
+        1120,
+        "EditVariable_105.nValue == 1",
+        "HumanPlayer_0.isDead",
+    });
+
+    igi::MissionExpressionState expression_state;
+    expression_state.SetNumber("EditVariable_105.nValue", 1.0);
+
+    igi::LevelFlow flow;
+    flow.InitializeMission(1, {objective_set});
+    flow.Update(
+        true,
+        false,
+        [&expression_state](const std::string& expression) {
+            bool result = false;
+            return expression_state.TryEvaluate(expression, result) && result;
+        });
+
+    ASSERT_EQ(flow.GetObjectives().size(), 1U);
+    EXPECT_EQ(flow.GetObjectives()[0].state, igi::ObjectiveState::Completed);
+    EXPECT_EQ(flow.GetObjectiveDisplayText(), "Reach the extraction zone");
 }

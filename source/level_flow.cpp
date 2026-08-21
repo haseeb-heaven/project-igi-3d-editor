@@ -229,13 +229,55 @@ std::string LevelFlow::GetObjectiveDisplayText() const {
     return "Reach the extraction zone";
 }
 
-void LevelFlow::Update(bool player_alive, bool in_extraction_zone) {
+void LevelFlow::EvaluateAuthoredObjectiveExpressions(
+    const MissionExpressionEvaluator& expression_evaluator) {
+    if (!expression_evaluator || authored_objective_sets_.empty()) {
+        return;
+    }
+
+    bool objective_failed = false;
+    for (MissionObjective& objective : objectives_) {
+        if (objective.state != ObjectiveState::Pending) {
+            continue;
+        }
+
+        if (!objective.failure_expression.empty() &&
+            expression_evaluator(objective.failure_expression)) {
+            objective.state = ObjectiveState::Failed;
+            objective_failed = true;
+            continue;
+        }
+
+        if (!objective.completion_expression.empty() &&
+            expression_evaluator(objective.completion_expression)) {
+            objective.state = ObjectiveState::Completed;
+        }
+    }
+
+    if (objective_failed) {
+        return;
+    }
+
+    for (const MissionObjective& objective : objectives_) {
+        if (objective.is_primary && objective.state == ObjectiveState::Pending) {
+            return;
+        }
+    }
+    AdvanceAuthoredObjectiveSet();
+}
+
+void LevelFlow::Update(
+    bool player_alive,
+    bool in_extraction_zone,
+    MissionExpressionEvaluator expression_evaluator) {
     if (status_ != MissionStatus::InProgress) return;
 
     if (!player_alive) {
         status_ = MissionStatus::Failed;
         return;
     }
+
+    EvaluateAuthoredObjectiveExpressions(expression_evaluator);
 
     // Check primary objectives
     bool all_primaries_complete = true;
