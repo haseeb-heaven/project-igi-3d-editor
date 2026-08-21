@@ -26,6 +26,10 @@ constexpr size_t kCutSceneTimeDeltaArgumentIndex = 11;
 constexpr size_t kCutSceneStartTimeArgumentIndex = 12;
 constexpr size_t kCutSceneInitialRunArgumentIndex = 13;
 constexpr size_t kCutSceneTimeScaleArgumentIndex = 14;
+constexpr size_t kCutSceneViewportHeightArgumentIndex = 15;
+constexpr size_t kCutSceneViewportFadeInArgumentIndex = 16;
+constexpr size_t kCutSceneViewportFadeOutArgumentIndex = 17;
+constexpr size_t kCutSceneTimeOfDayArgumentIndex = 18;
 constexpr size_t kCutSceneStartExpressionArgumentIndex = 19;
 constexpr size_t kCutSceneStopExpressionArgumentIndex = 20;
 constexpr size_t kStatusMessageSendArgumentIndex = 9;
@@ -223,16 +227,38 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                     cut_scene.initial_run) ||
                 !TryParseNumber(
                     task_source.argument_tokens[kCutSceneTimeScaleArgumentIndex],
-                    cut_scene.time_scale)) {
+                    cut_scene.time_scale) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kCutSceneViewportHeightArgumentIndex],
+                    cut_scene.viewport_height_factor) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kCutSceneViewportFadeInArgumentIndex],
+                    cut_scene.viewport_fade_in_seconds) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kCutSceneViewportFadeOutArgumentIndex],
+                    cut_scene.viewport_fade_out_seconds) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kCutSceneTimeOfDayArgumentIndex],
+                    cut_scene.time_of_day)) {
                 continue;
             }
             cut_scene.start_time_seconds = std::max(
                 0.0f,
                 cut_scene.start_time_seconds);
             cut_scene.time_scale = std::max(0.0f, cut_scene.time_scale);
+            cut_scene.viewport_height_factor = std::max(
+                0.0f,
+                cut_scene.viewport_height_factor);
+            cut_scene.viewport_fade_in_seconds = std::max(
+                0.0f,
+                cut_scene.viewport_fade_in_seconds);
+            cut_scene.viewport_fade_out_seconds = std::max(
+                0.0f,
+                cut_scene.viewport_fade_out_seconds);
             cut_scene.duration_seconds = std::max(
                 0.0f,
                 task_source.authored_duration_seconds);
+            cut_scene.camera_shots = task_source.authored_camera_shots;
             definitions.cut_scenes.push_back(std::move(cut_scene));
             continue;
         }

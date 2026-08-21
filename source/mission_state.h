@@ -37,9 +37,17 @@ struct AuthoredMissionLevelTimer {
     bool initial_run = false;
 };
 
-// Authored CutScene timing and expression state. Camera presentation remains
-// outside the gameplay vertical slice, but these fields keep mission gates and
-// scripted door/vehicle tasks advancing on the same fixed 30 Hz clock.
+// One authored EditCamera shot nested below a CutScene task. Positions use the
+// same native world-unit space as LevelObject and RuntimeWorld.
+struct AuthoredMissionCutSceneShot {
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 orientation = glm::vec3(0.0f);
+    float field_of_view_radians = 1.0f;
+    float duration_seconds = 0.0f;
+    bool smooth_to_next = false;
+};
+
+// Authored CutScene timing, expressions, and camera presentation state.
 struct AuthoredMissionCutScene {
     std::string task_id;
     std::string run_expression;
@@ -51,6 +59,11 @@ struct AuthoredMissionCutScene {
     bool initial_run = false;
     float time_scale = 1.0f;
     float duration_seconds = 0.0f;
+    float viewport_height_factor = 1.0f;
+    float viewport_fade_in_seconds = 0.0f;
+    float viewport_fade_out_seconds = 0.0f;
+    float time_of_day = -1.0f;
+    std::vector<AuthoredMissionCutSceneShot> camera_shots;
 };
 
 // Authored StatusMessage definition. display_text is resolved from the

@@ -84,10 +84,17 @@ TEST(MissionStateLoaderTest, LoadsCutSceneExpressionsAndAuthoredDuration) {
     source.task_type = "CutScene";
     source.task_id = "1204";
     source.authored_duration_seconds = 15.0f;
+    source.authored_camera_shots.push_back({
+        glm::vec3(1.0f, 2.0f, 3.0f),
+        glm::vec3(0.1f, 0.2f, 0.3f),
+        1.2f,
+        4.0f,
+        true,
+    });
     source.argument_tokens = {
         "1204", "CutScene", "", "0", "0", "0", "0", "0", "0",
         "!CutScene_1204.isFinished", "", "", "0", "FALSE", "0.7",
-        "0", "0", "0", "", "", "",
+        "0.8", "0.25", "0.5", "0", "", "",
     };
 
     const igi::AuthoredMissionStateDefinitions definitions =
@@ -100,6 +107,12 @@ TEST(MissionStateLoaderTest, LoadsCutSceneExpressionsAndAuthoredDuration) {
     EXPECT_FALSE(cut_scene.initial_run);
     EXPECT_FLOAT_EQ(cut_scene.time_scale, 0.7f);
     EXPECT_FLOAT_EQ(cut_scene.duration_seconds, 15.0f);
+    EXPECT_FLOAT_EQ(cut_scene.viewport_height_factor, 0.8f);
+    ASSERT_EQ(cut_scene.camera_shots.size(), 1U);
+    EXPECT_EQ(
+        cut_scene.camera_shots[0].position,
+        glm::vec3(1.0f, 2.0f, 3.0f));
+    EXPECT_TRUE(cut_scene.camera_shots[0].smooth_to_next);
 }
 
 TEST(MissionStateLoaderTest, RejectsNonFiniteCutSceneTiming) {

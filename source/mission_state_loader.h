@@ -14,6 +14,7 @@ struct MissionStateTaskSource {
     std::string task_id;
     std::vector<std::string> argument_tokens;
     float authored_duration_seconds = 0.0f;
+    std::vector<AuthoredMissionCutSceneShot> authored_camera_shots;
 };
 
 struct AuthoredMissionStateDefinitions {
