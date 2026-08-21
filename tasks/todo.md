@@ -71,9 +71,12 @@
 - [x] Attach the map-camera transition to the Windows gameplay viewer and
       `RuntimeRenderSnapshot.camera`; the first-person weapon is suppressed
       during the tactical transition and the live eye is restored on close.
-- [ ] Add tactical map pan/zoom/marker interaction; the current phosphor HUD
-      remains the safe fallback for map rows until that interaction boundary is
-      verified.
+- [x] Add a renderer-free tactical map projection and draw a top-down grid,
+      player marker, and color-coded authored objective markers from the
+      immutable `RuntimeRenderSnapshot`.
+- [ ] Add tactical map pan/zoom interaction; the current projection uses the
+      authored camera framing and the phosphor HUD remains the safe fallback
+      for map rows.
 - [x] Publish moving guard transforms and animation-request metadata through
       `RuntimeRenderSnapshot`; gameplay scene synchronization consumes that
       immutable copy instead of iterating the mutable AI vector directly.
@@ -151,9 +154,9 @@
   objective-set progression, authored conditional-container visibility,
   authored GuardGenerator pre-authored-child gating,
   health/armor HUD, authored objective link positions, and objective/extraction
-  flow. The map-computer input/state, six-row objective HUD fallback, and
-  animated tactical camera now cross the gameplay render boundary; tactical
-  map pan/zoom/marker interaction remains open.
+  flow. The map-computer input/state, six-row objective HUD fallback, animated
+  tactical camera, and objective marker projection now cross the gameplay
+  render boundary; tactical map pan/zoom interaction remains open.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; the fixed-step player animation driver now feeds

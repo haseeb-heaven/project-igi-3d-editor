@@ -161,8 +161,9 @@ parity claims remain gated on IGI1 evidence.
   runtime, freeze player input while the state is open, and publish the active
   six-row objective set to a phosphor-style gameplay HUD overlay; align the
   default Right Ctrl crouch / C map bindings; the animated tactical camera now
-  owns the gameplay-viewer transition, while tactical pan/zoom/markers remain
-  a later presentation-fidelity slice.
+  owns the gameplay-viewer transition. Add a renderer-free top-down projection
+  so authored objective locations render as a grid/player marker/objective
+  marker layer; tactical pan/zoom remains a later presentation-fidelity slice.
 - [x] Copy fixed-step guard transforms and animation-request metadata into the
   immutable render snapshot before synchronizing the gameplay scene copy.
 - [x] Reset the AI simulation clock when clearing a runtime world so restart
