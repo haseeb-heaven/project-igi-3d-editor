@@ -294,10 +294,17 @@ std::filesystem::path AudioAssetResolver::ExtractPackedSound(
             continue;
         }
 
+        // Cache under the archive entry's canonical file name so differently
+        // cased requests resolve to one stable path on every filesystem.
+        std::string canonical_entry_file_name = NormalizeSoundFileName(
+            matching_entry->first);
+        if (canonical_entry_file_name.empty()) {
+            canonical_entry_file_name = file_name;
+        }
         const std::filesystem::path cache_file_path =
             cache_directory_ / "audio" /
             BuildArchiveCacheDirectoryName(archive_path, archive_index) /
-            file_name;
+            canonical_entry_file_name;
         std::filesystem::create_directories(
             cache_file_path.parent_path(),
             error_code);
