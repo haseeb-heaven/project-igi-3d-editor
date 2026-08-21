@@ -26,6 +26,12 @@ void RuntimeRenderer::Capture(
     const WeaponDefinition& active_weapon = weapons.GetActiveWeapon();
     next_snapshot.active_weapon_name = active_weapon.name;
     next_snapshot.active_weapon_model_id = active_weapon.model_id;
+    next_snapshot.weapon_view_pitch_radians =
+        world.GetWeaponViewSway().GetPitchRadians();
+    next_snapshot.weapon_view_yaw_radians =
+        world.GetWeaponViewSway().GetYawRadians();
+    next_snapshot.weapon_view_transitioning =
+        world.IsWeaponViewTransitioning();
     next_snapshot.clip_ammo = weapons.GetCurrentClipAmmo();
     next_snapshot.clip_capacity = active_weapon.clip_capacity;
     next_snapshot.reserve_ammo = weapons.GetReserveAmmo();

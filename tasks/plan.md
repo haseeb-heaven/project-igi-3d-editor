@@ -125,6 +125,9 @@ parity claims remain gated on IGI1 evidence.
   animation root-motion/completion events into the fixed-step command stream;
   the slide animation clock remains presentation-only while the verified
   ladder-slide physics path owns collision-safe descent.
+- [x] Port the vanilla first-person weapon-change view sway: lower the rig for
+  eleven fixed ticks, change the active slot at the settled boundary, then
+  raise the new weapon through the immutable render snapshot.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,

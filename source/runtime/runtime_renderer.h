@@ -45,6 +45,9 @@ struct RuntimeRenderSnapshot {
     bool zoom_active = false;
     std::string active_weapon_name = "M16A2";
     std::string active_weapon_model_id;
+    float weapon_view_pitch_radians = 0.0f;
+    float weapon_view_yaw_radians = 0.0f;
+    bool weapon_view_transitioning = false;
     uint32_t clip_ammo = 0;
     uint32_t clip_capacity = 0;
     uint32_t reserve_ammo = 0;

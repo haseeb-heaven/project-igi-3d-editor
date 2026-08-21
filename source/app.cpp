@@ -1098,13 +1098,25 @@ void App::DrawGameplayPlayerWeapon() {
 		right * (0.24f * igi::PlayerController::WORLD_METER) -
 		up * (0.24f * igi::PlayerController::WORLD_METER);
 
-	// Vanilla weapon meshes use +Y as the barrel axis. Building the basis from
-	// the live camera keeps the held model aligned with the same aim vector as
-	// the hit-scan trace while leaving the simulation independent of rendering.
-	glm::mat4 weapon_model = glm::translate(glm::mat4(1.0f), weapon_position);
-	weapon_model[0] = glm::vec4(right, 0.0f);
-	weapon_model[1] = glm::vec4(forward, 0.0f);
-	weapon_model[2] = glm::vec4(up, 0.0f);
+	// Vanilla weapon meshes use +Y as the barrel axis. Build the camera basis
+	// first, then apply the fixed-step HumanViewSway angles in rig-local space.
+	// This keeps weapon transition timing in the simulation while leaving mesh
+	// loading and OpenGL state in the presentation layer.
+	glm::mat4 camera_basis(1.0f);
+	camera_basis[0] = glm::vec4(right, 0.0f);
+	camera_basis[1] = glm::vec4(forward, 0.0f);
+	camera_basis[2] = glm::vec4(up, 0.0f);
+	glm::mat4 local_view_sway(1.0f);
+	local_view_sway = glm::rotate(
+		local_view_sway,
+		render_snapshot.weapon_view_pitch_radians,
+		glm::vec3(1.0f, 0.0f, 0.0f));
+	local_view_sway = glm::rotate(
+		local_view_sway,
+		render_snapshot.weapon_view_yaw_radians,
+		glm::vec3(0.0f, 0.0f, 1.0f));
+	glm::mat4 weapon_model = glm::translate(glm::mat4(1.0f), weapon_position) *
+		camera_basis * local_view_sway;
 	weapon_model = glm::scale(
 		weapon_model,
 		glm::vec3(40.96f * 0.75f));

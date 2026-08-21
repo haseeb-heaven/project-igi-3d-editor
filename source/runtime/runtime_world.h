@@ -17,6 +17,7 @@
 #include "../level/task_tree.h"
 #include "../level/qvm_interpreter.h"
 #include "projectile_system.h"
+#include "../weapon_view_sway.h"
 
 namespace igi {
 
@@ -60,6 +61,13 @@ public:
 
     WeaponSystem& GetWeapons() { return weapons_; }
     const WeaponSystem& GetWeapons() const { return weapons_; }
+
+    const WeaponViewSway& GetWeaponViewSway() const {
+        return weapon_view_sway_;
+    }
+    bool IsWeaponViewTransitioning() const {
+        return weapon_selection_phase_ != WeaponSelectionPhase::Ready;
+    }
 
     ProjectileSystem& GetProjectiles() { return projectiles_; }
     const ProjectileSystem& GetProjectiles() const { return projectiles_; }
@@ -110,6 +118,7 @@ private:
     void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
+    bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
     void EndLadderTraversal();
@@ -145,6 +154,14 @@ private:
     };
 
     std::unordered_map<uint32_t, GuardCombatState> guard_combat_states_;
+    enum class WeaponSelectionPhase {
+        Ready,
+        Lowering,
+        Raising,
+    };
+    WeaponViewSway weapon_view_sway_;
+    WeaponSelectionPhase weapon_selection_phase_ = WeaponSelectionPhase::Ready;
+    int pending_weapon_slot_ = -1;
     InteractionQuery interaction_query_;
     bool fire_was_held_ = false;
     bool zoom_active_ = false;

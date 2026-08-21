@@ -17,6 +17,7 @@
 #include "../source/player_ladder.h"
 #include "../source/player_animation_driver.h"
 #include "../source/weapon_system.h"
+#include "../source/weapon_view_sway.h"
 #include "../source/ai_system.h"
 #include "../source/animation_motion.h"
 #include "../source/level_flow.h"
@@ -205,6 +206,33 @@ TEST(RuntimeRenderTargetTest, SimulationUsesGameplaySnapshotDuringEditorRepaint)
     EXPECT_EQ(
         ResolveRuntimeAssetTarget(true, true),
         RuntimeAssetTarget::GameplaySnapshot);
+}
+
+TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
+    WeaponViewSway weapon_view_sway;
+
+    weapon_view_sway.Lower();
+    EXPECT_FALSE(weapon_view_sway.IsSettled());
+    for (int tick = 0; tick < WeaponViewSway::TicksToTravel; ++tick) {
+        weapon_view_sway.Advance();
+    }
+
+    EXPECT_TRUE(weapon_view_sway.IsSettled());
+    EXPECT_FLOAT_EQ(
+        weapon_view_sway.GetPitchRadians(),
+        WeaponViewSway::LoweredPitchRadians);
+    EXPECT_FLOAT_EQ(
+        weapon_view_sway.GetYawRadians(),
+        WeaponViewSway::LoweredYawRadians);
+
+    weapon_view_sway.Raise();
+    for (int tick = 0; tick < WeaponViewSway::TicksToTravel; ++tick) {
+        weapon_view_sway.Advance();
+    }
+
+    EXPECT_TRUE(weapon_view_sway.IsSettled());
+    EXPECT_FLOAT_EQ(weapon_view_sway.GetPitchRadians(), 0.0f);
+    EXPECT_FLOAT_EQ(weapon_view_sway.GetYawRadians(), 0.0f);
 }
 
 TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers) {
@@ -1288,6 +1316,37 @@ TEST(RuntimeWeaponTest, PreservesAmmoWhenCyclingThePlayerLoadout) {
     ASSERT_TRUE(weapons.SelectWeaponSlot(0));
     ASSERT_TRUE(weapons.SelectWeaponSlot(6));
     EXPECT_EQ(weapons.GetCurrentClipAmmo(), 31U);
+}
+
+TEST(RuntimeWorldTest, LowersViewBeforeApplyingWeaponSelection) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    ASSERT_EQ(world.GetWeapons().GetActiveWeapon().id, 20U);
+
+    PlayerInputCmd select_weapon_command;
+    select_weapon_command.switch_weapon = 6;
+    world.UpdateSimulationTick(0, select_weapon_command);
+
+    EXPECT_EQ(world.GetWeapons().GetActiveWeapon().id, 20U);
+    EXPECT_TRUE(world.IsWeaponViewTransitioning());
+
+    for (uint64_t tick = 1; tick <= WeaponViewSway::TicksToTravel; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_EQ(world.GetWeapons().GetActiveWeapon().id, 7U);
+    EXPECT_FLOAT_EQ(
+        world.GetWeaponViewSway().GetPitchRadians(),
+        WeaponViewSway::LoweredPitchRadians);
+
+    for (uint64_t tick = WeaponViewSway::TicksToTravel + 1;
+         tick <= WeaponViewSway::TicksToTravel * 2;
+         ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_FALSE(world.IsWeaponViewTransitioning());
+    EXPECT_FLOAT_EQ(world.GetWeaponViewSway().GetPitchRadians(), 0.0f);
 }
 
 TEST(RuntimeWeaponTest, EmitsRetailShotgunPelletsAsOneAmmoConsumingShot) {

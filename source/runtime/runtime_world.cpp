@@ -378,6 +378,9 @@ void RuntimeWorld::Reset() {
     weapons_ = WeaponSystem();
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
     weapons_.SelectWeaponSlot(0);
+    weapon_view_sway_.Reset();
+    weapon_selection_phase_ = WeaponSelectionPhase::Ready;
+    pending_weapon_slot_ = -1;
     ladder_placements_.clear();
     ladder_traversal_ = LadderTraversal();
     active_ladder_index_ = -1;
@@ -396,6 +399,47 @@ void RuntimeWorld::Reset() {
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
+}
+
+bool RuntimeWorld::UpdateWeaponSelection(const PlayerInputCmd& input_command) {
+    const bool has_valid_requested_slot =
+        input_command.switch_weapon >= 0 &&
+        input_command.switch_weapon <= 17;
+
+    if (weapon_selection_phase_ == WeaponSelectionPhase::Ready) {
+        if (!has_valid_requested_slot) {
+            return true;
+        }
+
+        pending_weapon_slot_ = input_command.switch_weapon;
+        weapon_view_sway_.Lower();
+        weapon_selection_phase_ = WeaponSelectionPhase::Lowering;
+        return false;
+    }
+
+    if (weapon_selection_phase_ == WeaponSelectionPhase::Lowering) {
+        if (has_valid_requested_slot) {
+            pending_weapon_slot_ = input_command.switch_weapon;
+        }
+        weapon_view_sway_.Advance();
+        if (!weapon_view_sway_.IsSettled()) {
+            return false;
+        }
+
+        if (pending_weapon_slot_ >= 0) {
+            weapons_.SelectWeaponSlot(static_cast<uint32_t>(pending_weapon_slot_));
+        }
+        pending_weapon_slot_ = -1;
+        weapon_view_sway_.Raise();
+        weapon_selection_phase_ = WeaponSelectionPhase::Raising;
+        return false;
+    }
+
+    weapon_view_sway_.Advance();
+    if (weapon_view_sway_.IsSettled()) {
+        weapon_selection_phase_ = WeaponSelectionPhase::Ready;
+    }
+    return false;
 }
 
 bool RuntimeWorld::AttachGuardScript(
@@ -741,15 +785,16 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         PlayFootstepIfNeeded(input_cmd, was_grounded);
     }
 
-    // 2. Weapon switching, firing & cooldowns
-    if (input_cmd.switch_weapon >= 0 && input_cmd.switch_weapon <= 17) {
-        weapons_.SelectWeaponSlot(static_cast<uint32_t>(input_cmd.switch_weapon));
-    }
-    weapons_.Update(dt, input_cmd.fire);
+    // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
+    // lowers before the active weapon changes and raises after the new model
+    // is selected; keep those transition ticks out of the fire/reload path.
+    const bool weapon_controls_ready = UpdateWeaponSelection(input_cmd);
+    weapons_.Update(dt, weapon_controls_ready && input_cmd.fire);
     const WeaponDefinition& active_weapon = weapons_.GetActiveWeapon();
     const bool is_projectile_weapon =
         active_weapon.projectile_type != ProjectileType::None;
-    if (input_cmd.fire && (!is_projectile_weapon || !fire_was_held_)) {
+    if (weapon_controls_ready &&
+        input_cmd.fire && (!is_projectile_weapon || !fire_was_held_)) {
         float yaw_rad = glm::radians(player_.GetYaw());
         float pitch_rad = glm::radians(player_.GetPitch());
         float sin_y = std::sin(yaw_rad);
@@ -813,7 +858,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
     fire_was_held_ = input_cmd.fire;
 
-    if (input_cmd.reload) {
+    if (weapon_controls_ready && input_cmd.reload) {
         weapons_.Reload();
         AudioSystem::Play(SoundEffect::Reload);
     }

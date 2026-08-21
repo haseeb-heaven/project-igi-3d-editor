@@ -18,6 +18,8 @@
       live Play-mode projectile presentation.
 - [x] Authored guard weapon selection, scripted/patrol animation request
       delivery, and fixed-step weapon zoom state.
+- [x] Port vanilla first-person weapon-change lowering/raising timing and
+      expose the fixed-step view angles to Play-mode weapon presentation.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.
