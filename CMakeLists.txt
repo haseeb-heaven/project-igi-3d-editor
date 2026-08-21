@@ -324,6 +324,7 @@ target_sources(igi_tests PRIVATE
     source/ai_system.cpp
     source/level_flow.cpp
     source/mission_objective_loader.cpp
+    source/mission_flow_loader.cpp
     source/mission_state_loader.cpp
     source/mission_expression.cpp
     source/runtime/runtime_world.cpp

@@ -2,6 +2,7 @@
 
 #include "../source/level_flow.h"
 #include "../source/mission_expression.h"
+#include "../source/mission_flow_loader.h"
 #include "../source/mission_objective_loader.h"
 
 #include <initializer_list>
@@ -152,4 +153,76 @@ TEST(LevelFlowTest, SelectsLastAuthoredDefinitionWithValidExpression) {
 
     ASSERT_EQ(flow.GetObjectives().size(), 1U);
     EXPECT_EQ(flow.GetObjectives()[0].text_resource, "M3_OBJ3");
+}
+
+TEST(MissionFlowLoaderTest, ReadsAuthoredCompletionAndFailureFields) {
+    igi::MissionFlowTaskSource source;
+    source.task_type = "LevelFlow";
+    source.argument_tokens = {
+        "10", "\"LevelFlow\"", "\"\"",
+        "0", "0", "0", "0", "0", "0", "12",
+        "CutScene_700.isFinished",
+        "StatusMessage_4022.nTickSendt > 3*GAME_FREQUENCY",
+        "FALSE", "1200",
+    };
+
+    const auto definitions = igi::LoadAuthoredMissionFlowDefinitions({source});
+
+    ASSERT_EQ(definitions.size(), 1U);
+    EXPECT_EQ(definitions[0].start_time_seconds, 12.0);
+    EXPECT_EQ(definitions[0].complete_expression, "CutScene_700.isFinished");
+    EXPECT_EQ(
+        definitions[0].failure_expression,
+        "StatusMessage_4022.nTickSendt > 3*GAME_FREQUENCY");
+    EXPECT_FALSE(definitions[0].interface_timer_enabled);
+    EXPECT_EQ(definitions[0].maximum_level_play_time_seconds, 1200.0);
+}
+
+TEST(LevelFlowTest, AuthoredFlowOwnsMissionResultOverExtractionFallback) {
+    const std::vector<igi::AuthoredMissionObjectiveSet> objective_sets;
+    const igi::AuthoredMissionFlowDefinition authored_flow = {
+        0.0,
+        "MissionComplete",
+        "MissionFailed",
+        false,
+        0.0,
+    };
+
+    igi::MissionExpressionState expression_state;
+    igi::LevelFlow flow;
+    flow.InitializeMission(1, objective_sets, {}, authored_flow);
+    flow.SetObjectiveState(1, igi::ObjectiveState::Completed);
+
+    expression_state.SetBoolean("MissionComplete", false);
+    flow.Update(
+        true,
+        true,
+        [&expression_state](const std::string& expression) {
+            bool result = false;
+            return expression_state.TryEvaluate(expression, result) && result;
+        });
+    EXPECT_EQ(flow.GetStatus(), igi::MissionStatus::InProgress);
+
+    expression_state.SetBoolean("MissionComplete", true);
+    flow.Update(
+        true,
+        false,
+        [&expression_state](const std::string& expression) {
+            bool result = false;
+            return expression_state.TryEvaluate(expression, result) && result;
+        });
+    EXPECT_EQ(flow.GetStatus(), igi::MissionStatus::Success);
+
+    igi::LevelFlow failed_flow;
+    failed_flow.InitializeMission(1, objective_sets, {}, authored_flow);
+    expression_state.SetBoolean("MissionComplete", true);
+    expression_state.SetBoolean("MissionFailed", true);
+    failed_flow.Update(
+        true,
+        false,
+        [&expression_state](const std::string& expression) {
+            bool result = false;
+            return expression_state.TryEvaluate(expression, result) && result;
+        });
+    EXPECT_EQ(failed_flow.GetStatus(), igi::MissionStatus::Failed);
 }

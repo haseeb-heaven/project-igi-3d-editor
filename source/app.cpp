@@ -2,6 +2,7 @@
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
+#include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
 #include <array>
@@ -1561,20 +1562,39 @@ void App::InitializeGameplayMissionObjectives() {
 
 	std::vector<igi::MissionObjectiveTaskSource> objective_task_sources;
 	objective_task_sources.reserve(authored_objects.size());
+	std::vector<igi::MissionFlowTaskSource> flow_task_sources;
+	flow_task_sources.reserve(authored_objects.size());
 	for (const LevelObject& authored_object : authored_objects) {
-		if (authored_object.deleted ||
-			authored_object.type != "DefineComputerObjective") {
+		if (authored_object.deleted) {
+			continue;
+		}
+		if (authored_object.type == "DefineComputerObjective") {
+			igi::MissionObjectiveTaskSource task_source;
+			task_source.task_type = authored_object.type;
+			task_source.argument_tokens = authored_object.argTokens;
+			objective_task_sources.push_back(std::move(task_source));
+			continue;
+		}
+		if (authored_object.type != "LevelFlow") {
 			continue;
 		}
 
-		igi::MissionObjectiveTaskSource task_source;
+		igi::MissionFlowTaskSource task_source;
 		task_source.task_type = authored_object.type;
 		task_source.argument_tokens = authored_object.argTokens;
-		objective_task_sources.push_back(std::move(task_source));
+		flow_task_sources.push_back(std::move(task_source));
 	}
 
 	std::vector<igi::AuthoredMissionObjectiveSet> authored_objective_sets =
 		igi::LoadAuthoredMissionObjectiveDefinitions(objective_task_sources);
+	const std::vector<igi::AuthoredMissionFlowDefinition> authored_flow_definitions =
+		igi::LoadAuthoredMissionFlowDefinitions(flow_task_sources);
+	igi::AuthoredMissionFlowDefinition authored_flow;
+	if (!authored_flow_definitions.empty()) {
+		// LevelFlow is normally unique. Preserve the last authored row if an
+		// edited snapshot contains duplicates, matching task-update order.
+		authored_flow = authored_flow_definitions.back();
+	}
 	if (authored_objective_sets.empty()) {
 		Logger::Get().Log(
 			LogLevel::WARNING,
@@ -1612,7 +1632,13 @@ void App::InitializeGameplayMissionObjectives() {
 	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
 		mission_number,
 		std::move(authored_objective_sets),
-		std::move(text_resolver));
+		std::move(text_resolver),
+		authored_flow);
+
+	Logger::Get().Log(
+		LogLevel::INFO,
+		"[Gameplay] Loaded " + std::to_string(authored_flow_definitions.size()) +
+		" authored LevelFlow task(s)");
 }
 
 igi::RuntimeInteractionResult App::HandleGameplayInteraction(

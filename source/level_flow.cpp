@@ -16,6 +16,9 @@ void LevelFlow::InitializeMission(uint32_t mission_number) {
     authored_objective_sets_.clear();
     objective_text_resolver_ = {};
     active_authored_objective_set_index_ = 0;
+    authored_mission_flow_ = {};
+    has_authored_mission_flow_ = false;
+    mission_flow_tick_ = 0;
 
     InitializeFallbackObjectives(mission_number);
 }
@@ -23,13 +26,19 @@ void LevelFlow::InitializeMission(uint32_t mission_number) {
 void LevelFlow::InitializeMission(
     uint32_t mission_number,
     const std::vector<AuthoredMissionObjectiveSet>& authored_objective_sets,
-    MissionObjectiveTextResolver text_resolver) {
+    MissionObjectiveTextResolver text_resolver,
+    const AuthoredMissionFlowDefinition& authored_flow) {
     mission_number_ = mission_number;
     objectives_.clear();
     status_ = MissionStatus::InProgress;
     authored_objective_sets_ = authored_objective_sets;
     objective_text_resolver_ = std::move(text_resolver);
     active_authored_objective_set_index_ = 0;
+    authored_mission_flow_ = authored_flow;
+    has_authored_mission_flow_ = authored_flow.has_level_flow ||
+        !authored_flow.complete_expression.empty() ||
+        !authored_flow.failure_expression.empty();
+    mission_flow_tick_ = 0;
 
     if (authored_objective_sets_.empty()) {
         InitializeFallbackObjectives(mission_number);
@@ -300,6 +309,36 @@ void LevelFlow::EvaluateAuthoredObjectiveExpressions(
     AdvanceAuthoredObjectiveSet();
 }
 
+bool LevelFlow::EvaluateExpression(
+    const std::string& expression,
+    const MissionExpressionEvaluator& expression_evaluator) const {
+    return !expression.empty() && expression_evaluator &&
+        expression_evaluator(expression);
+}
+
+bool LevelFlow::EvaluateAuthoredMissionFlow(
+    const MissionExpressionEvaluator& expression_evaluator) {
+    if (!has_authored_mission_flow_) {
+        return false;
+    }
+
+    // Retail evaluates failure before completion when both expressions are
+    // true in the same fixed tick.
+    if (EvaluateExpression(
+            authored_mission_flow_.failure_expression,
+            expression_evaluator)) {
+        status_ = MissionStatus::Failed;
+        return true;
+    }
+    if (EvaluateExpression(
+            authored_mission_flow_.complete_expression,
+            expression_evaluator)) {
+        status_ = MissionStatus::Success;
+        return true;
+    }
+    return false;
+}
+
 void LevelFlow::Update(
     bool player_alive,
     bool in_extraction_zone,
@@ -328,9 +367,17 @@ void LevelFlow::Update(
         }
     }
 
+    if (has_authored_mission_flow_) {
+        EvaluateAuthoredMissionFlow(expression_evaluator);
+        ++mission_flow_tick_;
+        return;
+    }
+
     if (all_primaries_complete && in_extraction_zone) {
         status_ = MissionStatus::Success;
     }
+
+    ++mission_flow_tick_;
 }
 
 } // namespace igi
