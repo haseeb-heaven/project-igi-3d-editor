@@ -411,8 +411,11 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     if (level_.GetLevelNo() == 0) return false;
 
     auto& objects = GetActiveRenderLevelObjects().GetObjects();
-    constexpr float BASE_SCALE   = 40.96f;
-    constexpr float PLAYER_RADIUS = 300.0f; // ~0.075m
+    constexpr float BASE_SCALE = 40.96f;
+    constexpr float EDITOR_CAMERA_RADIUS = 300.0f; // ~0.075m
+    const float collision_radius = in_game_mode_
+        ? igi::PlayerController::BODY_RADIUS
+        : EDITOR_CAMERA_RADIUS;
 
 	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
 		const auto& obj = objects[object_index];
@@ -448,7 +451,10 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
 
         if (extents.x < 1.0f && extents.y < 1.0f && extents.z < 1.0f) continue;
 
-        float pr = PLAYER_RADIUS / BASE_SCALE;
+        // Gameplay uses the same 0.4 m body envelope as the fixed-step
+        // HumanWallProbe port; the editor camera keeps its historical narrow
+        // pick/collision envelope so authoring navigation remains precise.
+        float pr = collision_radius / BASE_SCALE;
         glm::vec3 rel = glm::vec3(localPos) - center;
         if (std::abs(rel.x) < (extents.x + pr) &&
             std::abs(rel.y) < (extents.y + pr) &&
