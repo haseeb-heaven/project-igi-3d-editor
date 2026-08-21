@@ -161,6 +161,8 @@ parity claims remain gated on IGI1 evidence.
   runtime and publish the active six-row objective set to a phosphor-style
   gameplay HUD overlay; keep the full animated tactical camera as a later
   presentation-fidelity slice.
+- [x] Copy fixed-step guard transforms and animation-request metadata into the
+  immutable render snapshot before synchronizing the gameplay scene copy.
 - [x] Publish fixed-step actor death state, transient switch/terminal pulses,
   and concrete/generic pickup aliases for authored mission expressions.
 - [x] Port authored ConditionalContainer conditions and descendant visibility

@@ -65,6 +65,9 @@
       six-row objective snapshot, and phosphor-style gameplay HUD fallback;
       keep the OpenIGI animated map-camera flight and tactical map interaction
       pending for a later presentation slice.
+- [x] Publish moving guard transforms and animation-request metadata through
+      `RuntimeRenderSnapshot`; gameplay scene synchronization consumes that
+      immutable copy instead of iterating the mutable AI vector directly.
 - [x] Publish authored player/guard death variables and one-tick interaction
       pulses; preserve concrete and generic pickup state aliases used by the
       vanilla objective expressions.
@@ -129,7 +132,8 @@
   authored GuardGenerator pre-authored-child gating,
   health/armor HUD, authored objective link positions, and objective/extraction
   flow. The map-computer input/state and six-row objective HUD fallback are
-  also implemented; the animated tactical camera remains an explicit gap.
+  also implemented; moving guard transforms now cross the render boundary, and
+  the animated tactical camera remains an explicit gap.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; the fixed-step player animation driver now feeds
