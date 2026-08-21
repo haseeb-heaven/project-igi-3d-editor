@@ -313,6 +313,7 @@ target_sources(igi_tests PRIVATE
     source/animation_motion.cpp
     source/player_animation_driver.cpp
     source/weapon_view_sway.cpp
+    source/weapon_view_recoil.cpp
     source/player_controller.cpp
     source/weapon_system.cpp
     source/ai_events.cpp

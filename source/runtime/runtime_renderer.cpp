@@ -30,6 +30,10 @@ void RuntimeRenderer::Capture(
         world.GetWeaponViewSway().GetPitchRadians();
     next_snapshot.weapon_view_yaw_radians =
         world.GetWeaponViewSway().GetYawRadians();
+    next_snapshot.weapon_recoil_pitch_radians =
+        world.GetWeaponViewRecoil().GetPitchRadians();
+    next_snapshot.weapon_recoil_yaw_radians =
+        world.GetWeaponViewRecoil().GetYawRadians();
     next_snapshot.weapon_view_transitioning =
         world.IsWeaponViewTransitioning();
     next_snapshot.clip_ammo = weapons.GetCurrentClipAmmo();

@@ -18,6 +18,7 @@
 #include "../source/player_animation_driver.h"
 #include "../source/weapon_system.h"
 #include "../source/weapon_view_sway.h"
+#include "../source/weapon_view_recoil.h"
 #include "../source/ai_system.h"
 #include "../source/animation_motion.h"
 #include "../source/level_flow.h"
@@ -235,6 +236,35 @@ TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
     EXPECT_FLOAT_EQ(weapon_view_sway.GetYawRadians(), 0.0f);
 }
 
+TEST(WeaponViewRecoilTest, RecoversThePresentationKickOverFixedTicks) {
+    WeaponViewRecoil weapon_view_recoil;
+
+    weapon_view_recoil.TriggerDegrees(3.0f, -1.5f);
+    EXPECT_NEAR(
+        weapon_view_recoil.GetPitchRadians(),
+        glm::radians(3.0f),
+        0.000001f);
+    EXPECT_NEAR(
+        weapon_view_recoil.GetYawRadians(),
+        glm::radians(-1.5f),
+        0.000001f);
+
+    weapon_view_recoil.Advance();
+    EXPECT_NEAR(
+        weapon_view_recoil.GetPitchRadians(),
+        glm::radians(2.0f),
+        0.000001f);
+    EXPECT_NEAR(
+        weapon_view_recoil.GetYawRadians(),
+        glm::radians(-1.0f),
+        0.000001f);
+
+    weapon_view_recoil.Advance();
+    weapon_view_recoil.Advance();
+    EXPECT_FLOAT_EQ(weapon_view_recoil.GetPitchRadians(), 0.0f);
+    EXPECT_FLOAT_EQ(weapon_view_recoil.GetYawRadians(), 0.0f);
+}
+
 TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);
@@ -285,6 +315,7 @@ TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
     EXPECT_FLOAT_EQ(
         renderer.GetSnapshot().muzzle_flash_strength,
         1.0f);
+    EXPECT_GT(renderer.GetSnapshot().weapon_recoil_pitch_radians, 0.0f);
 
     world.UpdateSimulationTick(1, PlayerInputCmd());
     EXPECT_NEAR(world.GetMuzzleFlashStrength(), 0.5f, 0.0001f);

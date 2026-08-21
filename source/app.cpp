@@ -1116,8 +1116,13 @@ void App::DrawGameplayPlayerWeapon() {
 		glm::vec3(1.0f, 0.0f, 0.0f));
 	local_view_sway = glm::rotate(
 		local_view_sway,
-		render_snapshot.weapon_view_yaw_radians,
+		render_snapshot.weapon_view_yaw_radians +
+			render_snapshot.weapon_recoil_yaw_radians,
 		glm::vec3(0.0f, 0.0f, 1.0f));
+	local_view_sway = glm::rotate(
+		local_view_sway,
+		render_snapshot.weapon_recoil_pitch_radians,
+		glm::vec3(1.0f, 0.0f, 0.0f));
 	glm::mat4 weapon_model = glm::translate(glm::mat4(1.0f), weapon_position) *
 		camera_basis * local_view_sway;
 	weapon_model = glm::scale(

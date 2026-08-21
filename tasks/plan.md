@@ -135,6 +135,8 @@ parity claims remain gated on IGI1 evidence.
 - [x] Carry a fixed-step firearm muzzle cue through `RuntimeRenderSnapshot` and
   draw a deterministic screen-space fallback when the authored muzzle sprite is
   unavailable.
+- [x] Carry weapon-system recoil into a short fixed-step first-person rig kick
+  and recovery, without changing the simulation-owned aim or ballistics path.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,

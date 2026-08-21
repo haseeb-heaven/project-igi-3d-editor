@@ -18,6 +18,7 @@
 #include "../level/qvm_interpreter.h"
 #include "projectile_system.h"
 #include "../weapon_view_sway.h"
+#include "../weapon_view_recoil.h"
 
 namespace igi {
 
@@ -64,6 +65,9 @@ public:
 
     const WeaponViewSway& GetWeaponViewSway() const {
         return weapon_view_sway_;
+    }
+    const WeaponViewRecoil& GetWeaponViewRecoil() const {
+        return weapon_view_recoil_;
     }
     bool IsWeaponViewTransitioning() const {
         return weapon_selection_phase_ != WeaponSelectionPhase::Ready;
@@ -163,6 +167,7 @@ private:
         Raising,
     };
     WeaponViewSway weapon_view_sway_;
+    WeaponViewRecoil weapon_view_recoil_;
     WeaponSelectionPhase weapon_selection_phase_ = WeaponSelectionPhase::Ready;
     int pending_weapon_slot_ = -1;
     InteractionQuery interaction_query_;

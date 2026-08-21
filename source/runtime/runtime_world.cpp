@@ -404,6 +404,7 @@ void RuntimeWorld::Reset() {
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
     weapons_.SelectWeaponSlot(0);
     weapon_view_sway_.Reset();
+    weapon_view_recoil_.Reset();
     weapon_selection_phase_ = WeaponSelectionPhase::Ready;
     pending_weapon_slot_ = -1;
     ladder_placements_.clear();
@@ -756,6 +757,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     muzzle_flash_strength_ = std::max(
         0.0f,
         muzzle_flash_strength_ - kMuzzleFlashStrengthDecayPerTick);
+    weapon_view_recoil_.Advance();
 
     if (flash_effect_remaining_seconds_ > 0.0f) {
         flash_effect_remaining_seconds_ = std::max(
@@ -865,6 +867,9 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                 apply_recoil();
                 if (WeaponProducesMuzzleFlash(active_weapon)) {
                     muzzle_flash_strength_ = 1.0f;
+                    weapon_view_recoil_.TriggerDegrees(
+                        weapons_.GetLastRecoilPitchDegrees(),
+                        weapons_.GetLastRecoilYawDegrees());
                 }
                 bool hit_guard = false;
                 bool hit_world_geometry = false;
