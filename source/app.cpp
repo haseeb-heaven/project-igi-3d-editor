@@ -2641,16 +2641,14 @@ void App::SetupLevelAiGuards() {
 		                obj.type == "HumanSoldierRPG");
 		if (!isEnemy) continue;
 
-		// Reject soldiers with unresolved transforms: generator/container
-		// children can carry raw uninitialized positions (observed ~1e8 units,
-		// far outside any level bounds) and would wedge forever.
+		// Reject only the authored "no position" sentinel (~1.75e8 on z).
+		// Level worlds legitimately span several 1e7 units per axis, so a
+		// small plausibility bound would reject every real soldier.
 		{
-			constexpr double kMaxPlausibleCoordinate = 5.0e6;
-			if (fabs(obj.pos.x) > kMaxPlausibleCoordinate ||
-				fabs(obj.pos.y) > kMaxPlausibleCoordinate ||
-				fabs(obj.pos.z) > kMaxPlausibleCoordinate) {
+			constexpr double kSentinelZ = 1.749e8;
+			if (obj.pos.z >= kSentinelZ) {
 				Logger::Get().Log(LogLevel::WARNING,
-					"[AI] Skipping soldier '" + obj.name + "' with implausible spawn (" +
+					"[AI] Skipping soldier '" + obj.name + "' with unresolved spawn (" +
 					std::to_string(obj.pos.x) + "," + std::to_string(obj.pos.y) + "," +
 					std::to_string(obj.pos.z) + ")");
 				continue;

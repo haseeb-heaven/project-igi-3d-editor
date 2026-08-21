@@ -551,46 +551,11 @@ void AiSystem::Update(
                 blockers.end());
         }
 
-        if (movement_collision_query_ && movement_collision_query_(guard.position)) {
-            // Repeated rejections mean the guard is wedged in geometry (bad
-            // spawn overlap or a probe inside a wall); surface it once so the
-            // log pinpoints the frozen guard instead of failing silently.
-            ++guard.blocked_move_ticks;
-            if (guard.blocked_move_ticks == 30) {
-                Logger::Get().Log(LogLevel::WARNING,
-                    "[AI] Guard " + std::to_string(guard.id) + " (" + guard.name +
-                    ") movement blocked at (" +
-                    std::to_string(guard.position.x) + "," +
-                    std::to_string(guard.position.y) + "," +
-                    std::to_string(guard.position.z) + ")");
-            }
-            // Unstick: after ~3 seconds wedged, snap to the nearest nav node.
-            // A graph node is a known-walkable position, so the patrol resumes
-            // from there instead of freezing for the rest of the mission.
-            if (guard.blocked_move_ticks >= 90 && guard.graph &&
-                !guard.graph->nodes.empty()) {
-                const GraphNode* nearest = GRAPH_FindNode(
-                    *guard.graph,
-                    GRAPH_NearestNode(*guard.graph,
-                        (double)guard.position.x - guard.graph_offset.x,
-                        (double)guard.position.y - guard.graph_offset.y,
-                        (double)guard.position.z - guard.graph_offset.z));
-                if (nearest != nullptr) {
-                    guard.position = NodeWorldPos(guard, *nearest);
-                    guard.current_node = nearest->id;
-                    guard.route.clear();
-                    guard.leg_origin = guard.position;
-                    Logger::Get().Log(LogLevel::INFO,
-                        "[AI] Guard " + std::to_string(guard.id) +
-                        " unstuck to node " + std::to_string(nearest->id));
-                }
-                guard.blocked_move_ticks = 0;
-                return;
-            }
-            guard.position = previous_position;
-        } else {
-            guard.blocked_move_ticks = 0;
-        }
+        // Vanilla AI has no per-move world collision probe: graph-following
+        // movement is authored-safe via the route table, and body blocking is
+        // handled by the separation pass above. The previous AABB probe here
+        // rejected nav nodes inside buildings and froze patrols permanently.
+        guard.blocked_move_ticks = 0;
     }
 
     // 4. Advance the 30 Hz simulation tick.
