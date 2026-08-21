@@ -50,6 +50,7 @@ public:
   void ToggleDrawParts(int part);
   void SetDrawParts(int parts);
   void ToggleGamePlayMode();
+  void ApplyAndRestartGameplay();
   bool IsGamePlayMode() const { return in_game_mode_; }
   void ToggleTerrainDrawOption(int opt);
   void ToggleTerrainModOption(int opt);
@@ -161,7 +162,11 @@ private:
   // editor & runtime
   bool in_game_mode_ = false;
   igi::GameplayHost gameplay_host_;
+  std::optional<igi::EditorSnapshot> gameplay_editor_snapshot_;
   std::optional<LevelObjects> runtime_level_objects_;
+  glm::vec3 gameplay_spawn_position_ = glm::vec3(0.0f);
+  float gameplay_spawn_yaw_ = 0.0f;
+  float gameplay_spawn_pitch_ = 0.0f;
   std::unordered_set<int> opened_door_indices_;
   bool edit_mode_;
   bool terrain_edit_enabled_;

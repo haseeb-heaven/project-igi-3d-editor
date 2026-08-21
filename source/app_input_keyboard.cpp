@@ -7,6 +7,10 @@
 
 void App::Input_OnSpecial(int key, int x, int y) {
 	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (in_game_mode_ && key == GLUT_KEY_F5) {
+		ApplyAndRestartGameplay();
+		return;
+	}
 	if (in_game_mode_ && pause_mode_) return;
 	if (in_game_mode_ && !pause_mode_) {
 		return;

@@ -1186,6 +1186,7 @@ void App::ToggleGamePlayMode() {
 		snap.was_noclip_mode = noclip_mode_;
 		snap.was_hud_visible = show_hud_;
 		snap.selected_object_id = selected_object_index_;
+		gameplay_editor_snapshot_ = snap;
 		runtime_level_objects_ = level_.GetLevelObjects();
 		opened_door_indices_.clear();
 	noclip_mode_ = false;
@@ -1262,8 +1263,12 @@ void App::ToggleGamePlayMode() {
 		if (found_spawn && spawned_from_camera) {
 			spawn_pos.z -= player_tuning.standing_eye_height_units;
 		}
+		gameplay_spawn_position_ = spawn_pos;
+		gameplay_spawn_yaw_ = spawn_yaw;
+		gameplay_spawn_pitch_ = spawn_pitch;
 
 		if (!gameplay_host_.OpenGameplay(snap)) {
+			gameplay_editor_snapshot_.reset();
 			runtime_level_objects_.reset();
 			status_message_ = "Cannot enter Game Play: runtime session is already active";
 			return;
@@ -1271,6 +1276,7 @@ void App::ToggleGamePlayMode() {
 		if (!gameplay_host_.HasGameplayWindow()) {
 			igi::EditorSnapshot ignored_snapshot;
 			gameplay_host_.CloseGameplay(ignored_snapshot);
+			gameplay_editor_snapshot_.reset();
 			runtime_level_objects_.reset();
 			status_message_ = "Cannot enter Game Play: gameplay window is unavailable";
 			return;
@@ -1324,7 +1330,7 @@ void App::ToggleGamePlayMode() {
 		show_hud_ = false;
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
-		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, ESC menu";
+		status_message_ = "Game Mode Active (Profile: " + profile.name + "): WASD move, Mouse look/fire, Space jump, C crouch, E activate, R reload, F5 apply/restart, ESC menu";
 	} else {
 		igi::EditorSnapshot snap;
 		if (!gameplay_host_.CloseGameplay(snap)) {
@@ -1334,6 +1340,7 @@ void App::ToggleGamePlayMode() {
 		gameplay_host_.HideGameplayWindow();
 		RestoreEditorViewport();
 		in_game_mode_ = false;
+		gameplay_editor_snapshot_.reset();
 		runtime_level_objects_.reset();
 		opened_door_indices_.clear();
 		runtime_animation_request_serials_.clear();
@@ -1352,6 +1359,60 @@ void App::ToggleGamePlayMode() {
 		UpdateViewerVectors();
 		status_message_ = "Editor Mode Restored";
 	}
+}
+
+void App::ApplyAndRestartGameplay() {
+	if (!in_game_mode_ || !gameplay_host_.IsGameplayActive() ||
+		!gameplay_editor_snapshot_.has_value()) {
+		status_message_ = "Cannot apply gameplay: no active runtime session";
+		return;
+	}
+
+	// Rebuild every mutable adapter from the current authoring level copy. The
+	// source LevelObjects remain untouched; runtime deaths, opened doors, and
+	// animation requests are discarded as part of the explicit restart.
+	runtime_level_objects_ = level_.GetLevelObjects();
+	opened_door_indices_.clear();
+	runtime_animation_request_serials_.clear();
+
+	if (!gameplay_host_.ApplyAndRestartGameplay(*gameplay_editor_snapshot_)) {
+		status_message_ = "Cannot apply gameplay: runtime session is not active";
+		return;
+	}
+
+	SetupLevelAiGuards();
+	int current_level = level_.GetLevelNo();
+	if (current_level <= 0) current_level = 1;
+	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
+		static_cast<uint32_t>(current_level));
+
+	// RuntimeWorld::Reset intentionally starts at the neutral origin. Restore
+	// the authored spawn used when gameplay was opened so Apply+Restart is
+	// deterministic and does not turn a source edit into a teleport surprise.
+	gameplay_host_.GetWorld().GetPlayer().SetPosition(gameplay_spawn_position_);
+	gameplay_host_.GetWorld().GetPlayer().SetOrientation(
+		gameplay_spawn_yaw_, gameplay_spawn_pitch_);
+	const float spawn_yaw_radians = glm::radians(gameplay_spawn_yaw_);
+	const glm::vec3 extraction_direction(
+		-sinf(spawn_yaw_radians), cosf(spawn_yaw_radians), 0.0f);
+	glm::vec3 extraction_center = gameplay_spawn_position_ +
+		extraction_direction * (40.0f * igi::PlayerController::WORLD_METER);
+	float extraction_ground_height = extraction_center.z;
+	if (GetLevelZ(extraction_center.x, extraction_center.y, extraction_ground_height)) {
+		extraction_center.z = extraction_ground_height;
+	}
+	gameplay_host_.GetWorld().SetExtractionZone(
+		extraction_center,
+		8.0f * igi::PlayerController::WORLD_METER);
+	gameplay_viewer_.pos_ = gameplay_host_.GetWorld().GetPlayer().GetEyePosition();
+	gameplay_viewer_.yaw_ = gameplay_spawn_yaw_;
+	gameplay_viewer_.pitch_ = gameplay_spawn_pitch_;
+	gameplay_viewer_.roll_ = 0.0f;
+	UpdateGameplayViewerVectors();
+	pause_mode_ = false;
+	gameplay_host_.SetPaused(false);
+	status_message_ = "Gameplay applied and restarted from the current editor snapshot";
+	gameplay_host_.FocusGameplayWindow();
 }
 
 igi::RuntimeInteractionResult App::HandleGameplayInteraction(

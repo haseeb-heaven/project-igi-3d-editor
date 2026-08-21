@@ -92,9 +92,11 @@ parity claims remain gated on IGI1 evidence.
   by HUD/weapon/projectile presentation; keep shared asset caches read-only and
   make restart/close destroy the mutable runtime session before moving the GL
   draw/resource ownership.
-- [ ] Add explicit editor-change handling: changes made while gameplay is open
-  require an intentional restart/apply action and never silently write source
-  files or mutate the running world.
+- [x] Add an explicit `F5` apply/restart boundary: the host replaces the
+  captured editor snapshot, rebuilds mutable runtime adapters from copied
+  level objects, and never silently writes source files or mutates the running
+  world. Native editor-window editing while gameplay is focused remains a
+  separate focus-routing gap.
 
 ### Phase 6: Fidelity and fixture coverage
 

@@ -34,8 +34,10 @@
       draw and GL asset cache still run through `App::Frame()`. The editor now
       repaints its authoring scene through a render-only target while gameplay
       remains active.
-- [ ] Add explicit apply/restart semantics for editor changes made while a
-      gameplay session exists; never silently mutate authoring data.
+- [x] Add explicit `F5` apply/restart semantics for a live gameplay session;
+      the session captures the replacement snapshot, rebuilds copied runtime
+      objects, resets mission/AI state, and never silently mutates authoring
+      data. Editor-window focus routing for editing during gameplay remains.
 - [ ] Port/verify remaining selected-vanilla-fixture traversal (ladder and
       root-motion where exercised), authored mission patrol routes, and
       non-demo extraction conditions from OpenIGI/retail evidence.
