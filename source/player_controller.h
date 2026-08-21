@@ -95,6 +95,9 @@ public:
     PlayerController();
 
     void Reset(const glm::vec3& spawn_position, float spawn_yaw = 0.0f);
+    // Spawn/teleport placement: mark the body as resting on the surface it was
+    // placed on so the first fixed tick does not synthesize a landing impact.
+    void PlaceOnGround() { is_grounded_ = true; }
     void ApplyTuning(float maximum_health, float maximum_armor);
     void ApplyTuning(const Tuning& tuning);
 
@@ -161,6 +164,9 @@ private:
     glm::vec3 slope_slide_velocity_ = glm::vec3(0.0f);
     PlayerFallImpact last_landing_impact_;
     bool is_grounded_ = true;
+    // True only after physics entered the airborne state; a spawn or teleport
+    // contact never had airtime, so it must not report a landing impact.
+    bool has_been_airborne_ = false;
     PlayerStanceState stance_ = PlayerStanceState::Standing;
     PlayerCollision collision_;
 };

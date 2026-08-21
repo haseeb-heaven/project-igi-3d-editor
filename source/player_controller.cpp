@@ -37,6 +37,7 @@ void PlayerController::Reset(const glm::vec3& spawn_position, float spawn_yaw) {
     health_ = maximum_health_;
     armor_ = maximum_armor_;
     is_grounded_ = false;
+    has_been_airborne_ = false;
     stance_ = PlayerStanceState::Standing;
     maximum_downward_velocity_ = 0.0f;
     slope_slide_velocity_ = glm::vec3(0.0f);
@@ -300,12 +301,13 @@ void PlayerController::Tick(
         velocity_.z = 0.0f;
         is_grounded_ = true;
         stance_ = should_crouch ? PlayerStanceState::Crouching : PlayerStanceState::Standing;
-        if (!was_grounded) {
+        if (!was_grounded && has_been_airborne_) {
             ApplyLandingImpactDamage(maximum_downward_velocity_);
         }
         maximum_downward_velocity_ = 0.0f;
     } else {
         is_grounded_ = false;
+        has_been_airborne_ = true;
         stance_ = PlayerStanceState::Airborne;
     }
 

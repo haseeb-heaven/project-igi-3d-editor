@@ -759,6 +759,10 @@ void RuntimeWorld::Reset() {
     }
 
     player_.Reset(spawn_pos, 0.0f);
+    // The spawn position sits on the queried surface, so the body starts
+    // grounded; otherwise the first tick would report a phantom landing
+    // impact and alert nearby guards through its hearing event.
+    player_.PlaceOnGround();
     player_.ApplyTuning(player_tuning_);
     weapons_ = WeaponSystem();
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
