@@ -3,6 +3,7 @@
 
 #include "runtime_session.h"
 #include "gameplay_window.h"
+#include "runtime_renderer.h"
 
 namespace igi {
 
@@ -22,7 +23,7 @@ public:
 
     // Frame update & render
     void Update(int64_t now_milliseconds);
-    void Render();
+    void Render(const RuntimeRenderCamera& camera);
 
     bool InitializeGameplayWindow(
         int editor_window_id,
@@ -50,10 +51,14 @@ public:
 
     WindowInputRouter& GetInputRouter() { return session_.GetInputRouter(); }
     SimulationScheduler& GetScheduler() { return session_.GetScheduler(); }
+    const RuntimeRenderSnapshot& GetRenderSnapshot() const {
+        return runtime_renderer_.GetSnapshot();
+    }
 
 private:
     RuntimeSession session_;
     GameplayWindowHost gameplay_window_;
+    RuntimeRenderer runtime_renderer_;
 };
 
 } // namespace igi

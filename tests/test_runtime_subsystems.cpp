@@ -23,6 +23,7 @@
 #include "../source/runtime/window_input_router.h"
 #include "../source/runtime/human_player_config.h"
 #include "../source/runtime/render_target.h"
+#include "../source/runtime/runtime_renderer.h"
 
 using namespace igi;
 
@@ -144,6 +145,40 @@ TEST(RuntimeRenderTargetTest, EditorRepaintCannotBecomeGameplayTarget) {
     EXPECT_EQ(
         ResolveRenderTarget(false, true),
         RenderTarget::Editor);
+}
+
+TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().Reset(glm::vec3(100.0f, 200.0f, 0.0f), 45.0f);
+    world.GetWeapons().SelectWeaponByScriptId("WEAPON_ID_MP5SD");
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(300.0f, 400.0f, 500.0f);
+    launch.velocity = glm::vec3(0.0f, 1.0f, 0.0f);
+    launch.type = ProjectileType::FragGrenade;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    RuntimeRenderCamera camera;
+    camera.position = world.GetPlayer().GetEyePosition();
+    camera.field_of_view_y_radians = 1.0f;
+    camera.viewport_width = 1280;
+    camera.viewport_height = 720;
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, camera);
+    const RuntimeRenderSnapshot captured_snapshot = renderer.GetSnapshot();
+
+    world.GetPlayer().ApplyDamage(20.0f);
+    world.GetProjectiles().Clear();
+
+    EXPECT_EQ(captured_snapshot.camera.viewport_width, 1280);
+    EXPECT_EQ(captured_snapshot.active_weapon_name, "Mp5 SD3");
+    EXPECT_EQ(captured_snapshot.active_weapon_model_id, "103_01_1");
+    EXPECT_FLOAT_EQ(captured_snapshot.player_health, 100.0f);
+    ASSERT_EQ(captured_snapshot.projectiles.size(), 1U);
+    EXPECT_EQ(captured_snapshot.projectiles[0].type, ProjectileType::FragGrenade);
+    EXPECT_EQ(renderer.GetSnapshot().projectiles.size(), 1U);
 }
 
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {

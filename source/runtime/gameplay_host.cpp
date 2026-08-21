@@ -16,6 +16,7 @@ void GameplayHost::Initialize(float (*get_terrain_z)(float x, float y), bool (*c
 
 void GameplayHost::Shutdown() {
     session_.Shutdown();
+    runtime_renderer_.Clear();
 }
 
 bool GameplayHost::OpenGameplay(const EditorSnapshot& snapshot) {
@@ -38,10 +39,13 @@ void GameplayHost::Update(int64_t now_milliseconds) {
     session_.Update(now_milliseconds);
 }
 
-void GameplayHost::Render() {
-    if (!session_.IsActive()) return;
+void GameplayHost::Render(const RuntimeRenderCamera& camera) {
+    if (!session_.IsActive()) {
+        runtime_renderer_.Clear();
+        return;
+    }
 
-    // Gameplay HUD & runtime camera render hook
+    runtime_renderer_.Capture(session_.GetWorld(), camera);
 }
 
 bool GameplayHost::InitializeGameplayWindow(

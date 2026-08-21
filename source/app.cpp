@@ -474,6 +474,8 @@ void App::OnIdle() {
 
 void App::Frame(float delta_seconds) {
 	const bool render_gameplay = IsGameplayRenderTarget();
+	const igi::RuntimeRenderSnapshot& render_snapshot =
+		gameplay_host_.GetRenderSnapshot();
 	if (developer_mode_ && !rendering_editor_window_) {
 		debug_cmd_mgr_.Update();
 	}
@@ -492,6 +494,7 @@ void App::Frame(float delta_seconds) {
 		// Skip all updates when paused, just render
 		if (render_gameplay) UpdateGameplayViewDefine();
 		else UpdateViewDefine();
+		if (render_gameplay) CaptureGameplayRenderSnapshot();
 		if (mouse_state_.prior_x_ != last_pick_x_ || mouse_state_.prior_y_ != last_pick_y_) {
 			hover_object_index_ = PickObjectAtScreenPos(mouse_state_.prior_x_, mouse_state_.prior_y_);
 			if (hover_object_index_ >= Renderer::kAttaPickBase) hover_object_index_ = -1; // ATTA hovered (clickable; promote on click)
@@ -553,15 +556,15 @@ void App::Frame(float delta_seconds) {
 				 }())),
 			.in_game_mode_         = render_gameplay,
 			.noclip_mode_          = noclip_mode_,
-			.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
-			.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
-			.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
-			.player_maximum_armor_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumArmor(),
-			.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
-			.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
-			.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
-			.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
-			.objective_text_       = gameplay_host_.GetWorld().GetLevelFlow().GetObjectiveDisplayText(),
+			.player_health_        = render_snapshot.player_health,
+			.player_maximum_health_ = render_snapshot.player_maximum_health,
+			.player_armor_         = render_snapshot.player_armor,
+			.player_maximum_armor_ = render_snapshot.player_maximum_armor,
+			.active_weapon_name_   = render_snapshot.active_weapon_name,
+			.clip_ammo_            = render_snapshot.clip_ammo,
+			.clip_capacity_        = render_snapshot.clip_capacity,
+			.reserve_ammo_         = render_snapshot.reserve_ammo,
+			.objective_text_       = render_snapshot.objective_text,
 			.help_scroll_offset_   = help_scroll_offset_,
 			.help_entries_         = &help_entries_,
 			.show_task_type_       = show_task_type_,
@@ -679,6 +682,7 @@ void App::Frame(float delta_seconds) {
 
 	if (render_gameplay) UpdateGameplayViewDefine();
 	else UpdateViewDefine();
+	if (render_gameplay) CaptureGameplayRenderSnapshot();
 	if (!in_game_mode_ &&
 		(mouse_state_.prior_x_ != last_pick_x_ ||
 		 mouse_state_.prior_y_ != last_pick_y_)) {
@@ -800,15 +804,15 @@ void App::Frame(float delta_seconds) {
 			 }())),
 		.in_game_mode_         = render_gameplay,
 		.noclip_mode_          = noclip_mode_,
-		.player_health_        = gameplay_host_.GetWorld().GetPlayer().GetHealth(),
-		.player_maximum_health_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumHealth(),
-		.player_armor_         = gameplay_host_.GetWorld().GetPlayer().GetArmor(),
-		.player_maximum_armor_ = gameplay_host_.GetWorld().GetPlayer().GetMaximumArmor(),
-		.active_weapon_name_   = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().name,
-		.clip_ammo_            = gameplay_host_.GetWorld().GetWeapons().GetCurrentClipAmmo(),
-		.clip_capacity_        = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon().clip_capacity,
-		.reserve_ammo_         = gameplay_host_.GetWorld().GetWeapons().GetReserveAmmo(),
-		.objective_text_       = gameplay_host_.GetWorld().GetLevelFlow().GetObjectiveDisplayText(),
+		.player_health_        = render_snapshot.player_health,
+		.player_maximum_health_ = render_snapshot.player_maximum_health,
+		.player_armor_         = render_snapshot.player_armor,
+		.player_maximum_armor_ = render_snapshot.player_maximum_armor,
+		.active_weapon_name_   = render_snapshot.active_weapon_name,
+		.clip_ammo_            = render_snapshot.clip_ammo,
+		.clip_capacity_        = render_snapshot.clip_capacity,
+		.reserve_ammo_         = render_snapshot.reserve_ammo,
+		.objective_text_       = render_snapshot.objective_text,
 		.help_scroll_offset_   = help_scroll_offset_,
 		.help_entries_         = &help_entries_,
 		.show_task_type_       = show_task_type_,
@@ -845,7 +849,7 @@ void App::Frame(float delta_seconds) {
 		.prop_anim_active_id_ = propAnimActiveId,
 		.prop_anim_is_playing_ = propAnimIsPlaying,
 		.flash_effect_strength_ = render_gameplay
-			? gameplay_host_.GetWorld().GetFlashEffectStrength()
+			? render_snapshot.flash_effect_strength
 			: 0.0f,
 	};
 
@@ -999,17 +1003,36 @@ void App::UpdateGameplayFieldOfView() {
         view_define_.tan_half_fovy_;
 }
 
+void App::CaptureGameplayRenderSnapshot() {
+    if (!IsGameplayRenderTarget()) {
+        return;
+    }
+
+    igi::RuntimeRenderCamera camera;
+    camera.position = gameplay_viewer_.pos_;
+    camera.forward = gameplay_viewer_.forward_;
+    camera.right = gameplay_viewer_.right_;
+    camera.up = gameplay_viewer_.up_;
+    camera.field_of_view_y_radians = view_define_.fovy_;
+    camera.viewport_width = gameplay_viewport_width_;
+    camera.viewport_height = gameplay_viewport_height_;
+    gameplay_host_.Render(camera);
+}
+
 void App::DrawGameplayPlayerWeapon() {
 	if (!IsGameplayRenderTarget()) return;
 
-	const auto& player = gameplay_host_.GetWorld().GetPlayer();
-	const auto& weapon = gameplay_host_.GetWorld().GetWeapons().GetActiveWeapon();
-	if (weapon.model_id.empty() || !player.IsAlive()) return;
+	const igi::RuntimeRenderSnapshot& render_snapshot =
+		gameplay_host_.GetRenderSnapshot();
+	if (render_snapshot.active_weapon_model_id.empty() ||
+		!render_snapshot.player_alive) {
+		return;
+	}
 
-	const glm::vec3 forward = glm::normalize(gameplay_viewer_.forward_);
-	const glm::vec3 right = glm::normalize(gameplay_viewer_.right_);
-	const glm::vec3 up = glm::normalize(gameplay_viewer_.up_);
-	const glm::vec3 weapon_position = gameplay_viewer_.pos_ +
+	const glm::vec3 forward = glm::normalize(render_snapshot.camera.forward);
+	const glm::vec3 right = glm::normalize(render_snapshot.camera.right);
+	const glm::vec3 up = glm::normalize(render_snapshot.camera.up);
+	const glm::vec3 weapon_position = render_snapshot.camera.position +
 		forward * (0.75f * igi::PlayerController::WORLD_METER) +
 		right * (0.24f * igi::PlayerController::WORLD_METER) -
 		up * (0.24f * igi::PlayerController::WORLD_METER);
@@ -1024,14 +1047,19 @@ void App::DrawGameplayPlayerWeapon() {
 	weapon_model = glm::scale(
 		weapon_model,
 		glm::vec3(40.96f * 0.75f));
-	renderer_.DrawAttachedMesh(weapon.model_id, false, weapon_model);
+	renderer_.DrawAttachedMesh(
+		render_snapshot.active_weapon_model_id,
+		false,
+		weapon_model);
 }
 
 void App::DrawGameplayProjectiles() {
 	if (!IsGameplayRenderTarget()) return;
 
-	const auto& projectiles = gameplay_host_.GetWorld().GetProjectiles().GetProjectiles();
-	for (const auto& projectile : projectiles) {
+	const igi::RuntimeRenderSnapshot& render_snapshot =
+		gameplay_host_.GetRenderSnapshot();
+	for (const igi::RuntimeProjectileRenderState& projectile :
+		render_snapshot.projectiles) {
 		const char* model_id = nullptr;
 		switch (projectile.type) {
 			case igi::ProjectileType::FragGrenade: model_id = "135_01_1"; break;

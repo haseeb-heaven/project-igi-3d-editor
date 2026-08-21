@@ -521,6 +521,7 @@ private:
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
   void UpdateGameplayFieldOfView();
+  void CaptureGameplayRenderSnapshot();
   void DispatchEventBindings();
 
   void ProcessInput(float delta_seconds);
