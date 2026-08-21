@@ -33,6 +33,7 @@ public:
     void Initialize(float (*get_terrain_z)(float x, float y), bool (*check_collision)(float x, float y, float z) = nullptr);
     void Reset();
     void SetPlayerTuning(const PlayerController::Tuning& tuning);
+    void SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle);
     void SetExtractionZone(const glm::vec3& center, float radius);
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
@@ -115,6 +116,7 @@ private:
 
     PlayerController player_;
     PlayerController::Tuning player_tuning_;
+    std::vector<uint32_t> player_weapon_cycle_;
     WeaponSystem weapons_;
     ProjectileSystem projectiles_;
     AiSystem ai_;

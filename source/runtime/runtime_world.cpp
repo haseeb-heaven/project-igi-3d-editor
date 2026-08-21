@@ -376,6 +376,8 @@ void RuntimeWorld::Reset() {
     player_.Reset(spawn_pos, 0.0f);
     player_.ApplyTuning(player_tuning_);
     weapons_ = WeaponSystem();
+    weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
+    weapons_.SelectWeaponSlot(0);
     projectiles_.Clear();
     ai_.Clear();
     ClearGuardScripts();
@@ -436,6 +438,11 @@ void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
 void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
     player_tuning_ = tuning;
     player_.ApplyTuning(player_tuning_);
+}
+
+void RuntimeWorld::SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle) {
+    player_weapon_cycle_ = weapon_cycle;
+    weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
 }
 
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {

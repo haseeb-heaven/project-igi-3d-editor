@@ -77,6 +77,7 @@ public:
 
     void SetReserveAmmo(uint32_t count);
     void AddReserveAmmo(uint32_t count);
+    void SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle);
 
 private:
     struct AmmoState {
@@ -102,6 +103,7 @@ private:
     float last_recoil_pitch_degrees_ = 0.0f;
     float last_recoil_yaw_degrees_ = 0.0f;
     std::unordered_map<uint32_t, AmmoState> ammo_state_by_weapon_id_;
+    std::vector<uint32_t> player_weapon_cycle_;
 };
 
 } // namespace igi

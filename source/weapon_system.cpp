@@ -217,6 +217,7 @@ const std::vector<uint32_t>& WeaponSystem::GetVanillaPlayerWeaponCycle() {
 }
 
 WeaponSystem::WeaponSystem() {
+    player_weapon_cycle_ = GetVanillaPlayerWeaponCycle();
     SelectWeaponSlot(0);
 }
 
@@ -256,7 +257,7 @@ bool WeaponSystem::SelectWeaponByScriptId(const std::string& script_id) {
 }
 
 bool WeaponSystem::SelectWeaponSlot(uint32_t player_cycle_slot) {
-    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    const auto& cycle = player_weapon_cycle_;
     if (player_cycle_slot >= cycle.size()) {
         return false;
     }
@@ -264,7 +265,7 @@ bool WeaponSystem::SelectWeaponSlot(uint32_t player_cycle_slot) {
 }
 
 bool WeaponSystem::SelectNextWeapon() {
-    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    const auto& cycle = player_weapon_cycle_;
     const auto current = std::find(cycle.begin(), cycle.end(), active_weapon_.id);
     const size_t current_slot = current == cycle.end()
         ? 0
@@ -273,7 +274,7 @@ bool WeaponSystem::SelectNextWeapon() {
 }
 
 bool WeaponSystem::SelectPreviousWeapon() {
-    const auto& cycle = GetVanillaPlayerWeaponCycle();
+    const auto& cycle = player_weapon_cycle_;
     const auto current = std::find(cycle.begin(), cycle.end(), active_weapon_.id);
     const size_t current_slot = current == cycle.end()
         ? 0
@@ -328,6 +329,30 @@ void WeaponSystem::SetReserveAmmo(uint32_t count) {
 void WeaponSystem::AddReserveAmmo(uint32_t count) {
     reserve_ammo_ += count;
     SaveActiveAmmoState();
+}
+
+void WeaponSystem::SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle) {
+    std::vector<uint32_t> validated_cycle;
+    const auto& catalog = GetVanillaWeaponCatalog();
+    for (const uint32_t weapon_id : weapon_cycle) {
+        const bool is_known_weapon = std::any_of(
+            catalog.begin(),
+            catalog.end(),
+            [weapon_id](const WeaponDefinition& definition) {
+                return definition.id == weapon_id;
+            });
+        const bool is_duplicate = std::find(
+            validated_cycle.begin(),
+            validated_cycle.end(),
+            weapon_id) != validated_cycle.end();
+        if (is_known_weapon && !is_duplicate) {
+            validated_cycle.push_back(weapon_id);
+        }
+    }
+
+    if (!validated_cycle.empty()) {
+        player_weapon_cycle_ = std::move(validated_cycle);
+    }
 }
 
 float WeaponSystem::NextRandomUnit() {

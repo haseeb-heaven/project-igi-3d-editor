@@ -1198,6 +1198,13 @@ void App::ToggleGamePlayMode() {
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
 		const igi::PlayerController::Tuning player_tuning = tuning.ToControllerTuning();
 		gameplay_host_.GetWorld().SetPlayerTuning(player_tuning);
+		std::vector<uint32_t> configured_weapon_cycle;
+		for (const int weapon_id : tuning.weapon_cycle) {
+			if (weapon_id >= 0) {
+				configured_weapon_cycle.push_back(static_cast<uint32_t>(weapon_id));
+			}
+		}
+		gameplay_host_.GetWorld().SetPlayerWeaponCycle(configured_weapon_cycle);
 
 		// 3. Spawn exactly at the editor camera position (primary), falling back to
 		//    HumanPlayer level object / level start pos when the camera is at origin

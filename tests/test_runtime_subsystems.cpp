@@ -1283,6 +1283,21 @@ TEST(RuntimeWorldTest, ResetPreservesConfiguredPlayerTuning) {
     EXPECT_FLOAT_EQ(world.GetPlayer().GetEyeHeight(), 6000.0f);
 }
 
+TEST(RuntimeWorldTest, ResetPreservesAuthoredWeaponCycle) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetPlayerWeaponCycle({999U, 7U, 7U, 4U});
+
+    world.Reset();
+
+    EXPECT_EQ(world.GetWeapons().GetActiveWeapon().id, 7U);
+    ASSERT_TRUE(world.GetWeapons().SelectWeaponSlot(0));
+    EXPECT_EQ(world.GetWeapons().GetActiveWeapon().id, 7U);
+    ASSERT_TRUE(world.GetWeapons().SelectWeaponSlot(1));
+    EXPECT_EQ(world.GetWeapons().GetActiveWeapon().id, 4U);
+    EXPECT_FALSE(world.GetWeapons().SelectWeaponSlot(2));
+}
+
 TEST(RuntimeWorldTest, SolidGeometryOccludesPlayerFire) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain, WallAtOneMeter);
