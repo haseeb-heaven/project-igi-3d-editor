@@ -261,6 +261,7 @@ add_executable(igi_tests
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
     tests/test_audio_asset_resolver.cpp
+    tests/test_vanilla_fixture_parity.cpp
     tests/test_mission_objectives.cpp
     tests/test_mission_expression.cpp
     tests/test_mission_state.cpp
