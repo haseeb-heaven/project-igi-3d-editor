@@ -1,5 +1,5 @@
 #include "object_lightmap.h"
-#include "../parsers/res_compiler.h"
+#include "res_writer.h"
 #include "../utils.h"
 #include "../logger.h"
 #include <filesystem>
