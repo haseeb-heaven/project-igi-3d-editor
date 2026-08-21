@@ -146,6 +146,8 @@ parity claims remain gated on IGI1 evidence.
 - [x] Port the verified-reference player `AreaActivate` volume and
   `EditVariable` add-before-sub update order into the runtime mission-state
   boundary, including authored orientation/dimensions and criteria filtering.
+- [x] Evaluate authored `DefineComputerObjective` validity expressions in
+  task order and publish the last valid definition to the runtime HUD.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; evaluate the preserved expressions and replace the
   synthetic extraction zone after scanning level/Common/Weapons QVMs.

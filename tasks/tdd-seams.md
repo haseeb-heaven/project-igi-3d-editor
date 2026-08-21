@@ -13,7 +13,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `AudioAssetResolver` / `WeaponSystem` | Loose level sound precedence, case-insensitive packed `SOUNDS.RES` extraction/cache, active-level archive precedence, missing-sound behavior, and vanilla-QVM weapon sound names. |
 | `RuntimeWorld` / `RuntimeRenderer` | Fixed-step firearm muzzle cue after a successful player shot, deterministic two-tick decay, and snapshot isolation. |
 | `WeaponViewRecoil` / `RuntimeWorld` | Inferred three-tick visual recoil recovery, firearm classification, and render-snapshot transfer of the weapon kick. |
-| `MissionObjectiveLoader` / `LevelFlow` | Vanilla six-slot objective parsing, resource-key/expression preservation, localized text fallback, and authored definition progression. |
+| `MissionObjectiveLoader` / `LevelFlow` | Vanilla six-slot objective parsing, resource-key/expression preservation, localized text fallback, last-valid-definition selection, and authored definition progression. |
 | `App` interaction bridge / `RuntimeWorld` | Interactable events publish stable authored state keys and fixed-step objective evaluation consumes them without coupling mission expressions to renderer objects. |
 | `MissionStateLoader` / `RuntimeWorld` | Authored AreaActivate geometry and EditVariable expressions are copied into runtime-owned state; area occupancy and add-before-sub latching occur before objective evaluation. |
 | `LadderPlacement` / `LadderTraversal` | Magic-vertex mount geometry, activation selection, rung boundaries, top transitions, sliding interruption, and deterministic dismount. |

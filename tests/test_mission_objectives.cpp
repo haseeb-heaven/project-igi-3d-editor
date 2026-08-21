@@ -118,3 +118,38 @@ TEST(LevelFlowTest, EvaluatesPreservedCompletionExpressionAtFixedUpdateBoundary)
     EXPECT_EQ(flow.GetObjectives()[0].state, igi::ObjectiveState::Completed);
     EXPECT_EQ(flow.GetObjectiveDisplayText(), "Reach the extraction zone");
 }
+
+TEST(LevelFlowTest, SelectsLastAuthoredDefinitionWithValidExpression) {
+    igi::AuthoredMissionObjectiveSet inactive_definition;
+    inactive_definition.valid_expression = "EditVariable_1.nValue == 0";
+    inactive_definition.objectives.push_back({
+        "M3_OBJ1", 100, "", ""});
+
+    igi::AuthoredMissionObjectiveSet active_definition;
+    active_definition.valid_expression = "EditVariable_1.nValue == 1";
+    active_definition.objectives.push_back({
+        "M3_OBJ2", 101, "", ""});
+
+    igi::AuthoredMissionObjectiveSet later_active_definition;
+    later_active_definition.valid_expression = "EditVariable_1.nValue == 1";
+    later_active_definition.objectives.push_back({
+        "M3_OBJ3", 102, "", ""});
+
+    igi::MissionExpressionState expression_state;
+    expression_state.SetNumber("EditVariable_1.nValue", 1.0);
+
+    igi::LevelFlow flow;
+    flow.InitializeMission(
+        3,
+        {inactive_definition, active_definition, later_active_definition});
+    flow.Update(
+        true,
+        false,
+        [&expression_state](const std::string& expression) {
+            bool result = false;
+            return expression_state.TryEvaluate(expression, result) && result;
+        });
+
+    ASSERT_EQ(flow.GetObjectives().size(), 1U);
+    EXPECT_EQ(flow.GetObjectives()[0].text_resource, "M3_OBJ3");
+}

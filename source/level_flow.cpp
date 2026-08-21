@@ -163,6 +163,40 @@ bool LevelFlow::AdvanceAuthoredObjectiveSet() {
     return !objectives_.empty();
 }
 
+void LevelFlow::SelectValidAuthoredObjectiveSet(
+    const MissionExpressionEvaluator& expression_evaluator) {
+    if (authored_objective_sets_.empty() || !expression_evaluator) {
+        return;
+    }
+
+    size_t selected_definition_index = 0;
+    bool has_valid_definition = false;
+    for (size_t definition_index = 0;
+         definition_index < authored_objective_sets_.size();
+         ++definition_index) {
+        const AuthoredMissionObjectiveSet& definition =
+            authored_objective_sets_[definition_index];
+        const bool is_valid = definition.valid_expression.empty() ||
+            expression_evaluator(definition.valid_expression);
+        if (!is_valid) {
+            continue;
+        }
+
+        // Retail walks definitions in task order and leaves the last valid
+        // definition published to the map computer.
+        selected_definition_index = definition_index;
+        has_valid_definition = true;
+    }
+
+    if (!has_valid_definition ||
+        selected_definition_index == active_authored_objective_set_index_) {
+        return;
+    }
+
+    active_authored_objective_set_index_ = selected_definition_index;
+    LoadAuthoredObjectiveSet(active_authored_objective_set_index_);
+}
+
 void LevelFlow::SetObjectiveState(uint32_t id, ObjectiveState state) {
     bool objective_was_updated = false;
     for (MissionObjective& objective : objectives_) {
@@ -277,6 +311,7 @@ void LevelFlow::Update(
         return;
     }
 
+    SelectValidAuthoredObjectiveSet(expression_evaluator);
     EvaluateAuthoredObjectiveExpressions(expression_evaluator);
 
     // Check primary objectives

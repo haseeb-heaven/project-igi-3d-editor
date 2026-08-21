@@ -36,6 +36,9 @@
 - [x] Port the verified-reference `AreaActivate` oriented-volume query and
       `EditVariable` add-before-sub fixed-step latch for player-authored
       mission progression; keep unsupported criteria/entities explicit.
+- [x] Select the last authored `DefineComputerObjective` definition whose
+      `Objectives Valid` expression evaluates true, matching vanilla task
+      update order while preserving objective-set progression.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.

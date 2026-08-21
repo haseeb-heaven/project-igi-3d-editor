@@ -74,6 +74,8 @@ private:
     void InitializeFallbackObjectives(uint32_t mission_number);
     void LoadAuthoredObjectiveSet(size_t authored_set_index);
     bool AdvanceAuthoredObjectiveSet();
+    void SelectValidAuthoredObjectiveSet(
+        const MissionExpressionEvaluator& expression_evaluator);
     void EvaluateAuthoredObjectiveExpressions(
         const MissionExpressionEvaluator& expression_evaluator);
 
