@@ -145,7 +145,10 @@ TEST(AiPatrolPortTest, LookAtNodeTurnsWithinTolerance) {
     };
     ai.RegisterGuard(guard);
 
-    for (int i = 0; i < 60; ++i) {
+    // The aim yaw clamp allows only ~1.47 degrees of rotation per tick, so a
+    // 90 degree turn needs about 61 ticks; run well past that plus one more
+    // tick for the cursor to advance onto Quit and stop the patrol.
+    for (int i = 0; i < 120; ++i) {
         ai.Update(1.0 / 30.0, glm::vec3(0.0f, 100.0f, 0.0f), true);
     }
 
@@ -192,9 +195,10 @@ TEST(AiPatrolPortTest, DelayWaitsAuthoredTicks) {
     }
 }
 
-// The route wraps back through the End marker: a path whose body is [WalkTo 1,
-// End] repeats the walk after the list runs out.
-TEST(AiPatrolPortTest, PathLoopsThroughEndMarker) {
+// The End marker wraps the cursor once into the loop body and then stops:
+// "the wrap happens once... a patrol runs its prologue, runs its loop body
+// once more, and then repeats its final command" (AiPatrolRoute.cs, re A7.3).
+TEST(AiPatrolPortTest, PathWrapsThroughEndMarkerOnceThenStops) {
     AiSystem ai;
     AiGuardEntity guard;
     guard.id = 1;
@@ -204,21 +208,24 @@ TEST(AiPatrolPortTest, PathLoopsThroughEndMarker) {
     guard.graph_offset = glm::vec3(0.0f);
     guard.current_node = 0;
     guard.patrol_commands = {
-        AiPatrolCommand{ AiPatrolCommandKind::WalkTo, 1 },
-        AiPatrolCommand{ AiPatrolCommandKind::End, 0 },
+        AiPatrolCommand{ AiPatrolCommandKind::WalkTo, 1 },   // prologue
+        AiPatrolCommand{ AiPatrolCommandKind::End, 0 },      // wrap marker
+        AiPatrolCommand{ AiPatrolCommandKind::WalkTo, 2 },   // loop body
     };
     ai.RegisterGuard(guard);
 
-    // Walk to node 1 (arrives ~0.26 s), wrap back to the command after End
-    // (index 0 again), and keep patrolling without stopping.
+    // The guard walks to node 1, wraps through the End onto the body walk,
+    // walks to node 2, and on the second list end stops with the cursor left
+    // on that final command.
     for (int i = 0; i < 300; ++i) {
         ai.Update(1.0 / 30.0, glm::vec3(0.0f, 100.0f, 0.0f), true);
     }
 
     const auto& g = ai.GetGuards()[0];
-    EXPECT_FALSE(g.patrol_stopped);
+    EXPECT_TRUE(g.patrol_stopped);        // second lap through End stops
     EXPECT_EQ(g.end_index, 1);            // the End marker was recorded
-    EXPECT_EQ(g.command_index, 0);        // looping back to the WalkTo body
+    EXPECT_EQ(g.command_index, 2);        // cursor rests on the final command
+    EXPECT_EQ(g.current_node, 2);         // both legs were walked in order
 }
 
 // A guard with no patrol commands stands in place (OpenIGI idle).
