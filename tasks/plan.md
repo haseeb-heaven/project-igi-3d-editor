@@ -156,6 +156,10 @@ parity claims remain gated on IGI1 evidence.
 - [x] Port authored ConditionalContainer conditions and descendant visibility
   snapshots; apply them to the copied scene before AI registration and during
   fixed-step rendering without resurrecting gameplay-deleted objects.
+- [x] Load vanilla `GuardGenerator` conditions and maximum-spawn metadata,
+  gate its pre-authored soldier children in the fixed-step AI/render seam, and
+  evaluate door-dependent conditions after authored doors publish state;
+  dynamic soldier allocation remains an explicit follow-up.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; evaluate the preserved expressions and replace the
   synthetic extraction zone after scanning level/Common/Weapons QVMs.

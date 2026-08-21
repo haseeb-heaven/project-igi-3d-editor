@@ -253,6 +253,7 @@ void App::Shutdown() {
 		runtime_level_objects_.reset();
 		runtime_initial_deleted_flags_.clear();
 		runtime_conditionally_hidden_flags_.clear();
+		runtime_guard_generator_hidden_flags_.clear();
 	}
 	gameplay_host_.ShutdownGameplayWindow();
 	if (game_process_.running) {
@@ -743,16 +744,24 @@ void App::Frame(float delta_seconds) {
 		// while gameplay is running and are restored by dropping this copy.
 		const auto& guards = gameplay_host_.GetWorld().GetAi().GetGuards();
 		auto& objects = GetActiveRenderLevelObjects().GetObjects();
-		for (const auto& g : guards) {
-			if ((int)g.id < (int)objects.size()) {
-				objects[g.id].deleted = (g.state == igi::AiGuardState::Dead);
-				if (objects[g.id].deleted) {
+		for (const auto& guard : guards) {
+			if (guard.id < objects.size()) {
+				const size_t guard_object_index = static_cast<size_t>(guard.id);
+				objects[guard_object_index].deleted =
+					guard.state == igi::AiGuardState::Dead ||
+					!guard.runtime_enabled;
+				if (objects[guard_object_index].deleted) {
 					continue;
 				}
-				objects[g.id].pos = glm::dvec3(g.position.x, g.position.y, g.position.z);
-				objects[g.id].rot.z = glm::radians((double)g.yaw);
+				objects[guard_object_index].pos = glm::dvec3(
+					guard.position.x,
+					guard.position.y,
+					guard.position.z);
+				objects[guard_object_index].rot.z = glm::radians(
+					static_cast<double>(guard.yaw));
 			}
 		}
+		ApplyRuntimeGuardGeneratorStates();
 		ApplyRuntimeAiAnimationRequests();
 	} else if (!in_game_mode_ || IsEditorInputActive()) {
 		ProcessInput(delta_seconds);
@@ -1407,6 +1416,9 @@ void App::ToggleGamePlayMode() {
 		runtime_conditionally_hidden_flags_.assign(
 			runtime_level_objects_->GetObjects().size(),
 			0U);
+		runtime_guard_generator_hidden_flags_.assign(
+			runtime_level_objects_->GetObjects().size(),
+			0U);
 		for (const LevelObject& object : runtime_level_objects_->GetObjects()) {
 			runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
 		}
@@ -1493,6 +1505,7 @@ void App::ToggleGamePlayMode() {
 			runtime_level_objects_.reset();
 			runtime_initial_deleted_flags_.clear();
 			runtime_conditionally_hidden_flags_.clear();
+			runtime_guard_generator_hidden_flags_.clear();
 			status_message_ = "Cannot enter Game Play: runtime session is already active";
 			return;
 		}
@@ -1503,6 +1516,7 @@ void App::ToggleGamePlayMode() {
 			runtime_level_objects_.reset();
 			runtime_initial_deleted_flags_.clear();
 			runtime_conditionally_hidden_flags_.clear();
+			runtime_guard_generator_hidden_flags_.clear();
 			status_message_ = "Cannot enter Game Play: gameplay window is unavailable";
 			return;
 		}
@@ -1517,13 +1531,15 @@ void App::ToggleGamePlayMode() {
 		// transforms and visibility stay in the gameplay object copy.
 		SetupRuntimeMissionState();
 		ApplyRuntimeConditionalContainerStates();
+		SetupRuntimeDoors();
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
 		SetupLevelAiGuards();
+		gameplay_host_.GetWorld().RefreshAuthoredGuardGeneratorStates();
+		ApplyRuntimeGuardGeneratorStates();
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
-		SetupRuntimeDoors();
 		SetupRuntimeInteractionState();
 
 		// Initialize authored mission objectives for this specific level.
@@ -1578,6 +1594,7 @@ void App::ToggleGamePlayMode() {
 		runtime_level_objects_.reset();
 		runtime_initial_deleted_flags_.clear();
 		runtime_conditionally_hidden_flags_.clear();
+		runtime_guard_generator_hidden_flags_.clear();
 		runtime_animation_request_serials_.clear();
 		player_animation_driver_.ClearAnimationClips();
 		viewer_.pos_ = snap.camera_pos;
@@ -1617,6 +1634,9 @@ void App::ApplyAndRestartGameplay() {
 	runtime_conditionally_hidden_flags_.assign(
 		runtime_level_objects_->GetObjects().size(),
 		0U);
+	runtime_guard_generator_hidden_flags_.assign(
+		runtime_level_objects_->GetObjects().size(),
+		0U);
 	for (const LevelObject& object : runtime_level_objects_->GetObjects()) {
 		runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
 	}
@@ -1629,10 +1649,12 @@ void App::ApplyAndRestartGameplay() {
 
 	SetupRuntimeMissionState();
 	ApplyRuntimeConditionalContainerStates();
+	SetupRuntimeDoors();
 	SetupLevelAiGuards();
+	gameplay_host_.GetWorld().RefreshAuthoredGuardGeneratorStates();
+	ApplyRuntimeGuardGeneratorStates();
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
-	SetupRuntimeDoors();
 	SetupRuntimeInteractionState();
 	InitializeGameplayMissionObjectives();
 
@@ -1700,6 +1722,12 @@ void App::SetupRuntimeMissionState() {
 			}
 		}
 		return descendant_indices;
+	};
+
+	const auto is_guard_object = [](const LevelObject& object) {
+		return object.type == "HumanSoldier" ||
+			object.type == "HumanSoldierFemale" ||
+			object.type == "HumanSoldierRPG";
 	};
 
 	const auto try_read_finite_float = [](const std::string& token, float& value) {
@@ -1793,6 +1821,7 @@ void App::SetupRuntimeMissionState() {
 				authored_object.type != "CutScene" &&
 				authored_object.type != "ConditionalSound" &&
 				authored_object.type != "ConditionalContainer" &&
+				authored_object.type != "GuardGenerator" &&
 				authored_object.type != "ExplodeObject")) {
 			continue;
 		}
@@ -1813,6 +1842,17 @@ void App::SetupRuntimeMissionState() {
 		if (authored_object.type == "ConditionalContainer") {
 			task_source.descendant_object_indices =
 				collect_descendants(object_index);
+		}
+		if (authored_object.type == "GuardGenerator") {
+			for (const int descendant_index : collect_descendants(object_index)) {
+				if (descendant_index < 0 ||
+					descendant_index >= static_cast<int>(authored_objects.size()) ||
+					authored_objects[descendant_index].deleted ||
+					!is_guard_object(authored_objects[descendant_index])) {
+					continue;
+				}
+				task_source.guard_object_indices.push_back(descendant_index);
+			}
 		}
 		task_sources.push_back(std::move(task_source));
 	}
@@ -1837,6 +1877,7 @@ void App::SetupRuntimeMissionState() {
 	const size_t conditional_sound_count = definitions.conditional_sounds.size();
 	const size_t conditional_container_count =
 		definitions.conditional_containers.size();
+	const size_t guard_generator_count = definitions.guard_generators.size();
 	const size_t explode_object_count = definitions.explode_objects.size();
 	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
@@ -1847,7 +1888,8 @@ void App::SetupRuntimeMissionState() {
 		std::move(definitions.cut_scenes),
 		std::move(definitions.conditional_sounds),
 		std::move(definitions.explode_objects),
-		std::move(definitions.conditional_containers));
+		std::move(definitions.conditional_containers),
+		std::move(definitions.guard_generators));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
@@ -1863,6 +1905,8 @@ void App::SetupRuntimeMissionState() {
 		" ConditionalSound task(s), " +
 		std::to_string(conditional_container_count) +
 		" ConditionalContainer task(s), " +
+		std::to_string(guard_generator_count) +
+		" GuardGenerator task(s), " +
 		std::to_string(explode_object_count) +
 		" ExplodeObject task(s), " +
 		std::to_string(status_message_count) +
@@ -2061,6 +2105,70 @@ void App::ApplyRuntimeConditionalContainerStates() {
 		}
 		runtime_conditionally_hidden_flags_[object_index] =
 			is_conditionally_hidden ? 1U : 0U;
+	}
+}
+
+void App::ApplyRuntimeGuardGeneratorStates() {
+	if (!runtime_level_objects_.has_value()) {
+		return;
+	}
+
+	auto& objects = runtime_level_objects_->GetObjects();
+	if (runtime_guard_generator_hidden_flags_.size() != objects.size()) {
+		runtime_guard_generator_hidden_flags_.assign(objects.size(), 0U);
+	}
+
+	std::vector<uint8_t> visible_by_guard_generator(objects.size(), 1U);
+	for (const igi::RuntimeGuardGeneratorSnapshot& snapshot :
+		 gameplay_host_.GetWorld().GetGuardGeneratorSnapshots()) {
+		const size_t maximum_spawn_count = snapshot.is_on
+			? std::min(
+				snapshot.guard_object_indices.size(),
+				static_cast<size_t>(std::max(0, snapshot.maximum_spawns)))
+			: 0U;
+		for (size_t guard_index = 0;
+			 guard_index < snapshot.guard_object_indices.size();
+			 ++guard_index) {
+			const int object_index = snapshot.guard_object_indices[guard_index];
+			if (object_index < 0 ||
+				object_index >= static_cast<int>(objects.size())) {
+				continue;
+			}
+			const bool is_enabled = guard_index < maximum_spawn_count;
+			visible_by_guard_generator[static_cast<size_t>(object_index)] =
+				visible_by_guard_generator[static_cast<size_t>(object_index)] &&
+				is_enabled;
+		}
+	}
+
+	for (size_t object_index = 0; object_index < objects.size(); ++object_index) {
+		if (runtime_initial_deleted_flags_.size() == objects.size() &&
+			runtime_initial_deleted_flags_[object_index] != 0U) {
+			objects[object_index].deleted = true;
+			continue;
+		}
+
+		const bool is_hidden_by_guard_generator =
+			visible_by_guard_generator[object_index] == 0U;
+		if (is_hidden_by_guard_generator) {
+			objects[object_index].deleted = true;
+		} else if (runtime_guard_generator_hidden_flags_[object_index] != 0U) {
+			const bool is_conditionally_hidden =
+				runtime_conditionally_hidden_flags_.size() == objects.size() &&
+				runtime_conditionally_hidden_flags_[object_index] != 0U;
+			const igi::AiGuardEntity* guard =
+				gameplay_host_.GetWorld().GetAi().FindGuard(
+					static_cast<uint32_t>(object_index));
+			const bool is_dead = guard != nullptr &&
+				guard->state == igi::AiGuardState::Dead;
+			if (!is_conditionally_hidden && !is_dead) {
+				// Restore only visibility owned by this gate. Dead guards and
+				// other authored gates remain deleted for the session.
+				objects[object_index].deleted = false;
+			}
+		}
+		runtime_guard_generator_hidden_flags_[object_index] =
+			is_hidden_by_guard_generator ? 1U : 0U;
 	}
 }
 

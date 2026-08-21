@@ -25,6 +25,9 @@
       snapshots for descendant render/collision/interaction state; initial
       hidden guards are excluded from AI registration and runtime visibility
       restoration preserves pickup, death, and explosion deletions.
+- [x] Load vanilla `GuardGenerator` condition/max-spawn fields and gate
+      pre-authored soldier children in AI, collision, combat, and Play-mode
+      render visibility; dynamic soldier allocation remains pending.
 - [x] Impact rockets collide with living guard volumes before static geometry;
       fixed-step detonation and blast damage are covered by a runtime smoke.
 - [x] Authored guard weapon selection, scripted/patrol animation request
@@ -114,6 +117,7 @@
   flashes, incoming-damage feedback, recoil, zoom, landing audio and lazy
   packed/loose vanilla sound resolution, authored objective text,
   objective-set progression, authored conditional-container visibility,
+  authored GuardGenerator pre-authored-child gating,
   health/armor HUD, and objective/extraction flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform

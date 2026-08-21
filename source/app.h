@@ -169,6 +169,7 @@ private:
   std::optional<LevelObjects> runtime_level_objects_;
   std::vector<uint8_t> runtime_initial_deleted_flags_;
   std::vector<uint8_t> runtime_conditionally_hidden_flags_;
+  std::vector<uint8_t> runtime_guard_generator_hidden_flags_;
   glm::vec3 gameplay_spawn_position_ = glm::vec3(0.0f);
   float gameplay_spawn_yaw_ = 0.0f;
   float gameplay_spawn_pitch_ = 0.0f;
@@ -651,6 +652,7 @@ private:
   void SetupRuntimeInteractionState();
   void SetupRuntimeDoors();
   void ApplyRuntimeConditionalContainerStates();
+  void ApplyRuntimeGuardGeneratorStates();
   void ApplyRuntimeDoorStates();
   void ApplyRuntimeExplodeObjectStates();
   void SetupRuntimeLadders();
