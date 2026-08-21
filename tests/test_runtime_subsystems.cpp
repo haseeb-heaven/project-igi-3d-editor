@@ -2113,6 +2113,26 @@ TEST(RuntimeWorldTest, InteractionProviderSeparatesDoorUseFromObjectiveCompletio
     EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Pending);
 }
 
+TEST(RuntimeWorldTest, MissionExpressionStateDrivesAuthoredObjectiveAtFixedTick) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M1_OBJ1",
+        1120,
+        "Terminal_501.isHacked",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(1, {objective_set});
+    world.SetMissionStateBoolean("Terminal_501.isHacked", true);
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    ASSERT_EQ(world.GetLevelFlow().GetObjectives().size(), 1U);
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

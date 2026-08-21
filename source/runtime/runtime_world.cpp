@@ -416,6 +416,7 @@ void RuntimeWorld::Reset() {
     ClearGuardScripts();
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
+    mission_expression_state_.Clear();
     guard_combat_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
@@ -508,6 +509,18 @@ bool RuntimeWorld::HasGuardScript(uint32_t guard_id) const {
 void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
     extraction_zone_center_ = center;
     extraction_zone_radius_ = std::max(0.0f, radius);
+}
+
+void RuntimeWorld::SetMissionStateBoolean(
+    const std::string& variable_name,
+    bool value) {
+    mission_expression_state_.SetBoolean(variable_name, value);
+}
+
+void RuntimeWorld::SetMissionStateNumber(
+    const std::string& variable_name,
+    double value) {
+    mission_expression_state_.SetNumber(variable_name, value);
 }
 
 void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
@@ -941,7 +954,13 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             extraction_zone_center_.x,
             extraction_zone_center_.y,
             player_.GetPosition().z)) < extraction_zone_radius_);
-    level_flow_.Update(player_.IsAlive(), in_extraction);
+    level_flow_.Update(
+        player_.IsAlive(),
+        in_extraction,
+        [this](const std::string& expression) {
+            bool result = false;
+            return mission_expression_state_.TryEvaluate(expression, result) && result;
+        });
 }
 
 void RuntimeWorld::DispatchGuardScripts() {

@@ -17,6 +17,7 @@
 #include "../level/task_tree.h"
 #include "../level/qvm_interpreter.h"
 #include "projectile_system.h"
+#include "../mission_expression.h"
 #include "../weapon_view_sway.h"
 #include "../weapon_view_recoil.h"
 
@@ -39,6 +40,8 @@ public:
     void SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle);
     void SetLadderPlacements(std::vector<LadderPlacement> ladder_placements);
     void SetExtractionZone(const glm::vec3& center, float radius);
+    void SetMissionStateBoolean(const std::string& variable_name, bool value);
+    void SetMissionStateNumber(const std::string& variable_name, double value);
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -154,6 +157,7 @@ private:
     LevelFlow level_flow_;
     TaskTree task_tree_;
     QvmNativeRegistry qvm_registry_;
+    MissionExpressionState mission_expression_state_;
     AiScriptHost ai_script_host_;
     std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;
     struct GuardCombatState {
