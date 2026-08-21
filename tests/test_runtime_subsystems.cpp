@@ -35,6 +35,7 @@
 #include "../source/runtime/runtime_renderer.h"
 #include "../source/runtime/magic_object_registry.h"
 #include "../source/runtime/simulation_scheduler.h"
+#include "../source/runtime/map_computer_camera.h"
 
 using namespace igi;
 
@@ -3379,4 +3380,64 @@ TEST(AiSystemTest, ClearResetsFixedStepSimulationTick) {
     ai.Clear();
 
     EXPECT_EQ(ai.GetSimulationTick(), 0U);
+}
+
+TEST(MapComputerCameraTest, OpensFromEyeThroughBootIntoInteractiveMap) {
+    const RuntimeMapComputerPose eye{
+        glm::vec3(120.0f, 340.0f, 12.5f), 2.1f, -0.12f};
+    const RuntimeMapComputerPose vantage{
+        glm::vec3(120.0f, 340.0f, 912.5f), 0.0f,
+        RuntimeMapComputerCamera::kMapPitchRadians};
+
+    RuntimeMapComputerCamera camera;
+    camera.BeginOpen(eye, 1.05f, vantage, 0.30f);
+    camera.Update(1.0f / 60.0f, eye, vantage, 0.30f);
+
+    EXPECT_EQ(camera.GetPhase(), RuntimeMapComputerPhase::Ascend);
+    EXPECT_LT(std::abs(camera.GetPose().position.z - eye.position.z), 0.1f);
+    EXPECT_FALSE(camera.IsInteractive());
+
+    for (int tick = 0; tick < 60; ++tick) {
+        camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+    }
+
+    EXPECT_TRUE(camera.GetPhase() == RuntimeMapComputerPhase::Boot ||
+                camera.GetPhase() == RuntimeMapComputerPhase::Open);
+    EXPECT_NEAR(camera.GetPose().position.z, vantage.position.z, 0.01f);
+    EXPECT_NEAR(camera.GetPose().pitch, vantage.pitch, 0.001f);
+    EXPECT_TRUE(camera.CanClose());
+
+    for (int tick = 0; tick < 30 && !camera.IsInteractive(); ++tick) {
+        camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+    }
+    EXPECT_TRUE(camera.IsInteractive());
+}
+
+TEST(MapComputerCameraTest, CloseReturnsExactlyToTheLivePlayerEye) {
+    const RuntimeMapComputerPose eye{
+        glm::vec3(120.0f, 340.0f, 12.5f), 2.1f, -0.12f};
+    const RuntimeMapComputerPose vantage{
+        glm::vec3(1400.0f, 2200.0f, 912.5f), 0.0f,
+        RuntimeMapComputerCamera::kMapPitchRadians};
+
+    RuntimeMapComputerCamera camera;
+    camera.BeginOpen(eye, 1.05f, vantage, 0.30f);
+    for (int tick = 0; tick < 60; ++tick) {
+        camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+    }
+    for (int tick = 0; tick < 30; ++tick) {
+        camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+    }
+
+    camera.BeginClose(vantage, 0.30f, eye, 1.05f);
+    for (int tick = 0; tick < 60; ++tick) {
+        camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+    }
+
+    EXPECT_EQ(camera.GetPhase(), RuntimeMapComputerPhase::Done);
+    EXPECT_EQ(camera.GetPose().position, eye.position);
+    EXPECT_FLOAT_EQ(camera.GetPose().yaw, eye.yaw);
+    EXPECT_FLOAT_EQ(camera.GetPose().pitch, eye.pitch);
+    EXPECT_FLOAT_EQ(camera.GetFieldOfView(), 1.05f);
+    EXPECT_FLOAT_EQ(camera.GetMotionBlur(), 0.0f);
 }
