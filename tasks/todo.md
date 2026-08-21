@@ -16,6 +16,13 @@
 - [x] Vanilla thrown-weapon categories with deterministic projectile collision,
       bounce/fuse/impact detonation, blast line-of-sight, flash exposure, and
       live Play-mode projectile presentation.
+- [x] Authored ExplodeObject loading, delayed/stateful destruction, blast damage,
+      projectile-triggered chain reactions, and transient Play-mode fireball
+      presentation.
+- [x] Authored ConditionalSound rising/falling edges with Windows per-task
+      looping channels and deterministic stop/close lifecycle.
+- [x] Impact rockets collide with living guard volumes before static geometry;
+      fixed-step detonation and blast damage are covered by a runtime smoke.
 - [x] Authored guard weapon selection, scripted/patrol animation request
       delivery, and fixed-step weapon zoom state.
 - [x] Port vanilla first-person weapon-change lowering/raising timing and
