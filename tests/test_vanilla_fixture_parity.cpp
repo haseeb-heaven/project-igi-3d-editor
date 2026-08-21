@@ -4,6 +4,10 @@
 #include "../source/level/qvm_decompiler.h"
 #include "../source/level/qvm_ai_bindings.h"
 #include "../source/level/qvm_parser.h"
+#include "../source/level/qsc_lexer.h"
+#include "../source/level/qsc_parser.h"
+#include "../source/mission_flow_loader.h"
+#include "../source/mission_objective_loader.h"
 #include "../source/renderer/graph_writer.h"
 
 #include <algorithm>
@@ -11,6 +15,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -96,6 +101,64 @@ bool ContainsText(const QVMFile& qvm, const std::string& expected_text) {
                        });
 }
 
+std::string QscToken(const qsc::Node& node) {
+    switch (node.kind) {
+    case qsc::NodeKind::IntLit:
+        return std::to_string(node.i_val);
+    case qsc::NodeKind::FloatLit:
+        return std::to_string(node.f_val);
+    case qsc::NodeKind::BoolLit:
+        return node.b_val ? "TRUE" : "FALSE";
+    case qsc::NodeKind::StringLit: {
+        std::string escaped;
+        escaped.reserve(node.s_val.size() + 2);
+        for (const char character : node.s_val) {
+            if (character == '\\' || character == '"') {
+                escaped.push_back('\\');
+            }
+            escaped.push_back(character);
+        }
+        return '"' + escaped + '"';
+    }
+    case qsc::NodeKind::IdentLit:
+        return node.s_val;
+    default:
+        return {};
+    }
+}
+
+void CollectAuthoredTaskSources(
+    const qsc::Node& node,
+    std::vector<igi::MissionObjectiveTaskSource>& objective_sources,
+    std::vector<igi::MissionFlowTaskSource>& flow_sources) {
+    if (node.kind == qsc::NodeKind::Call &&
+        node.s_val == "Task_New" &&
+        node.children.size() >= 2 &&
+        node.children[1]->kind == qsc::NodeKind::StringLit) {
+        const std::string task_type = node.children[1]->s_val;
+        std::vector<std::string> argument_tokens;
+        argument_tokens.reserve(node.children.size());
+        for (const std::unique_ptr<qsc::Node>& argument : node.children) {
+            // Nested Task_New calls are child tasks, not scalar arguments. This
+            // mirrors LevelObjects::LoadRecursive's lossless task projection.
+            if (argument->kind == qsc::NodeKind::Call) {
+                continue;
+            }
+            argument_tokens.push_back(QscToken(*argument));
+        }
+
+        if (task_type == "DefineComputerObjective") {
+            objective_sources.push_back({task_type, std::move(argument_tokens)});
+        } else if (task_type == "LevelFlow") {
+            flow_sources.push_back({task_type, std::move(argument_tokens)});
+        }
+    }
+
+    for (const std::unique_ptr<qsc::Node>& child : node.children) {
+        CollectAuthoredTaskSources(*child, objective_sources, flow_sources);
+    }
+}
+
 } // namespace
 
 TEST(VanillaFixtureParityTest, LevelOneObjectsExposeAuthoredGameplayPrimitives) {
@@ -145,6 +208,52 @@ TEST(VanillaFixtureParityTest, LevelOnePreservesAuthoredMissionResultExpressions
         objects,
         "HumanPlayer_0.isDead ||\nCar_1099.isExploded ||\nHumanSoldier_4023.isDead"));
     EXPECT_TRUE(ContainsText(objects, "MISSION_FAILED"));
+}
+
+TEST(VanillaFixtureParityTest, LevelOneDecompiledTasksDriveMissionLoaders) {
+    const std::filesystem::path objects_path = VanillaFile("objects.qvm");
+    if (VanillaRoot().empty()) {
+        GTEST_SKIP() << "Set IGI_VANILLA_ROOT to the vanilla Project IGI install "
+                        "to run this fixture parity test";
+    }
+    ASSERT_FALSE(objects_path.empty()) << "Vanilla objects.qvm is missing below "
+                                          "IGI_VANILLA_ROOT";
+
+    const QVMFile objects = QVM_Parse(objects_path.string());
+    ASSERT_TRUE(objects.valid) << objects.error;
+    const std::string decompiled_source = QVM_DecompileToString(objects);
+    ASSERT_FALSE(decompiled_source.empty());
+
+    const qsc::LexResult lexed_source = qsc::Lex(decompiled_source);
+    ASSERT_TRUE(lexed_source.ok) << lexed_source.error;
+    const qsc::ParseResult parsed_source = qsc::Parse(lexed_source.tokens);
+    ASSERT_TRUE(parsed_source.ok) << parsed_source.error;
+    ASSERT_NE(parsed_source.program, nullptr);
+
+    std::vector<igi::MissionObjectiveTaskSource> objective_sources;
+    std::vector<igi::MissionFlowTaskSource> flow_sources;
+    CollectAuthoredTaskSources(
+        *parsed_source.program,
+        objective_sources,
+        flow_sources);
+
+    const std::vector<igi::AuthoredMissionObjectiveSet> objective_sets =
+        igi::LoadAuthoredMissionObjectiveDefinitions(objective_sources);
+    const std::vector<igi::AuthoredMissionFlowDefinition> flow_definitions =
+        igi::LoadAuthoredMissionFlowDefinitions(flow_sources);
+
+    ASSERT_FALSE(objective_sets.empty());
+    ASSERT_FALSE(objective_sets.back().objectives.empty());
+    ASSERT_FALSE(flow_definitions.empty());
+    EXPECT_TRUE(flow_definitions.back().complete_expression.find(
+        "CutScene_1204.isFinished") != std::string::npos);
+    EXPECT_TRUE(flow_definitions.back().failure_expression.find(
+        "StatusMessage_1391.isSendt") != std::string::npos);
+    EXPECT_NE(decompiled_source.find(
+        "Task_New(2405, \"PatrolPath\""), std::string::npos);
+    EXPECT_NE(decompiled_source.find(
+        "Task_New(-1, \"PatrolPathCommand\", \"Walks to node id 106\", 2, 106)"),
+              std::string::npos);
 }
 
 TEST(VanillaFixtureParityTest, LevelOneGraphProvidesNavigableAuthoredData) {
