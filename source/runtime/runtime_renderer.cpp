@@ -45,6 +45,21 @@ void RuntimeRenderer::Capture(
 
     next_snapshot.zoom_active = world.IsZoomActive();
     next_snapshot.objective_text = world.GetLevelFlow().GetObjectiveDisplayText();
+    for (const MissionObjective& objective : world.GetLevelFlow().GetObjectives()) {
+        if (!objective.is_primary || objective.state != ObjectiveState::Pending) {
+            continue;
+        }
+
+        next_snapshot.objective_link_task_id = objective.link_task_id;
+        if (objective.has_location) {
+            next_snapshot.has_objective_location = true;
+            next_snapshot.objective_location = glm::vec3(
+                static_cast<float>(objective.location.x),
+                static_cast<float>(objective.location.y),
+                static_cast<float>(objective.location.z));
+        }
+        break;
+    }
     if (world.GetLevelFlow().HasAuthoredMissionFlow() &&
         world.GetLevelFlow().IsInterfaceTimerEnabled() &&
         world.GetLevelFlow().GetMaximumLevelPlayTimeSeconds() > 0.0) {

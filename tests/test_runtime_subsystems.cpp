@@ -420,6 +420,35 @@ TEST(RuntimeRenderTest, CapturesAuthoredMissionStatusAndTimerPresentation) {
         "MISSION COMPLETE");
 }
 
+TEST(RuntimeRenderTest, CapturesAuthoredObjectiveLinkLocation) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({"M1_OBJ1", 1120, "", ""});
+    world.GetLevelFlow().InitializeMission(
+        1,
+        {objective_set},
+        {},
+        {},
+        [](int32_t link_task_id, MissionObjectiveLocation& location) {
+            if (link_task_id != 1120) {
+                return false;
+            }
+            location = {100.0, 200.0, 300.0};
+            return true;
+        });
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+
+    EXPECT_EQ(renderer.GetSnapshot().objective_link_task_id, 1120);
+    EXPECT_TRUE(renderer.GetSnapshot().has_objective_location);
+    EXPECT_EQ(
+        renderer.GetSnapshot().objective_location,
+        glm::vec3(100.0f, 200.0f, 300.0f));
+}
+
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     ProjectileSystem projectiles;
     projectiles.SetCollisionQuery(

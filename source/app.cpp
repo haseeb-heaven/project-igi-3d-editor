@@ -5,6 +5,7 @@
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
+#include <charconv>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -2209,9 +2210,28 @@ void App::InitializeGameplayMissionObjectives() {
 	objective_task_sources.reserve(authored_objects.size());
 	std::vector<igi::MissionFlowTaskSource> flow_task_sources;
 	flow_task_sources.reserve(authored_objects.size());
+	std::unordered_map<int32_t, igi::MissionObjectiveLocation> objective_locations;
+	objective_locations.reserve(authored_objects.size());
 	for (const LevelObject& authored_object : authored_objects) {
 		if (authored_object.deleted) {
 			continue;
+		}
+		if (!authored_object.taskId.empty() && authored_object.taskId != "-1") {
+			int32_t task_id = -1;
+			const char* task_id_begin = authored_object.taskId.data();
+			const char* task_id_end = task_id_begin + authored_object.taskId.size();
+			const auto parse_result = std::from_chars(
+				task_id_begin,
+				task_id_end,
+				task_id);
+			if (parse_result.ec == std::errc() && parse_result.ptr == task_id_end) {
+				objective_locations.emplace(
+					task_id,
+					igi::MissionObjectiveLocation{
+						authored_object.pos.x,
+						authored_object.pos.y,
+						authored_object.pos.z});
+			}
 		}
 		if (authored_object.type == "DefineComputerObjective") {
 			igi::MissionObjectiveTaskSource task_source;
@@ -2256,12 +2276,24 @@ void App::InitializeGameplayMissionObjectives() {
 		[objective_archive_paths](const std::string& resource_key) {
 			return ResolveMissionTextResource(objective_archive_paths, resource_key);
 		};
+	igi::MissionObjectiveLocationResolver location_resolver =
+		[objective_locations = std::move(objective_locations)](
+			int32_t link_task_id,
+			igi::MissionObjectiveLocation& location) {
+			const auto location_iterator = objective_locations.find(link_task_id);
+			if (location_iterator == objective_locations.end()) {
+				return false;
+			}
+			location = location_iterator->second;
+			return true;
+		};
 
 	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
 		mission_number,
 		std::move(authored_objective_sets),
 		std::move(text_resolver),
-		authored_flow);
+		authored_flow,
+		std::move(location_resolver));
 
 	Logger::Get().Log(
 		LogLevel::INFO,

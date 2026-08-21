@@ -93,6 +93,36 @@ TEST(LevelFlowTest, UsesAuthoredTextAndAdvancesAuthoredDefinition) {
     EXPECT_EQ(flow.GetObjectives()[0].text_resource, "M1_OBJ2");
 }
 
+TEST(LevelFlowTest, ResolvesAuthoredObjectiveLinkPosition) {
+    igi::AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M1_OBJ1",
+        1120,
+        "",
+        "",
+    });
+
+    igi::LevelFlow flow;
+    flow.InitializeMission(
+        1,
+        {objective_set},
+        {},
+        {},
+        [](int32_t link_task_id, igi::MissionObjectiveLocation& location) {
+            if (link_task_id != 1120) {
+                return false;
+            }
+            location = {10.0, 20.0, 30.0};
+            return true;
+        });
+
+    ASSERT_EQ(flow.GetObjectives().size(), 1U);
+    EXPECT_TRUE(flow.GetObjectives()[0].has_location);
+    EXPECT_EQ(flow.GetObjectives()[0].location.x, 10.0);
+    EXPECT_EQ(flow.GetObjectives()[0].location.y, 20.0);
+    EXPECT_EQ(flow.GetObjectives()[0].location.z, 30.0);
+}
+
 TEST(LevelFlowTest, EvaluatesPreservedCompletionExpressionAtFixedUpdateBoundary) {
     igi::AuthoredMissionObjectiveSet objective_set;
     objective_set.objectives.push_back({

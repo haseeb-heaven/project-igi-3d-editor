@@ -154,6 +154,9 @@ parity claims remain gated on IGI1 evidence.
   boundary, including authored orientation/dimensions and criteria filtering.
 - [x] Evaluate authored `DefineComputerObjective` validity expressions in
   task order and publish the last valid definition to the runtime HUD.
+- [x] Resolve each authored objective `LinkTaskId` to its level-object
+  position and carry that immutable location through the runtime render
+  snapshot, matching OpenIGI's map-computer data contract.
 - [x] Publish fixed-step actor death state, transient switch/terminal pulses,
   and concrete/generic pickup aliases for authored mission expressions.
 - [x] Port authored ConditionalContainer conditions and descendant visibility

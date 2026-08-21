@@ -59,6 +59,8 @@
 - [x] Select the last authored `DefineComputerObjective` definition whose
       `Objectives Valid` expression evaluates true, matching vanilla task
       update order while preserving objective-set progression.
+- [x] Resolve authored objective `LinkTaskId` values to copied level-object
+      positions and expose the active target through `RuntimeRenderSnapshot`.
 - [x] Publish authored player/guard death variables and one-tick interaction
       pulses; preserve concrete and generic pickup state aliases used by the
       vanilla objective expressions.
@@ -121,7 +123,8 @@
   packed/loose vanilla sound resolution, authored objective text,
   objective-set progression, authored conditional-container visibility,
   authored GuardGenerator pre-authored-child gating,
-  health/armor HUD, and objective/extraction flow.
+  health/armor HUD, authored objective link positions, and objective/extraction
+  flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; the fixed-step player animation driver now feeds

@@ -15,6 +15,7 @@ void LevelFlow::InitializeMission(uint32_t mission_number) {
     status_ = MissionStatus::InProgress;
     authored_objective_sets_.clear();
     objective_text_resolver_ = {};
+    objective_location_resolver_ = {};
     active_authored_objective_set_index_ = 0;
     authored_mission_flow_ = {};
     has_authored_mission_flow_ = false;
@@ -27,12 +28,14 @@ void LevelFlow::InitializeMission(
     uint32_t mission_number,
     const std::vector<AuthoredMissionObjectiveSet>& authored_objective_sets,
     MissionObjectiveTextResolver text_resolver,
-    const AuthoredMissionFlowDefinition& authored_flow) {
+    const AuthoredMissionFlowDefinition& authored_flow,
+    MissionObjectiveLocationResolver location_resolver) {
     mission_number_ = mission_number;
     objectives_.clear();
     status_ = MissionStatus::InProgress;
     authored_objective_sets_ = authored_objective_sets;
     objective_text_resolver_ = std::move(text_resolver);
+    objective_location_resolver_ = std::move(location_resolver);
     active_authored_objective_set_index_ = 0;
     authored_mission_flow_ = authored_flow;
     has_authored_mission_flow_ = authored_flow.has_level_flow ||
@@ -157,6 +160,13 @@ void LevelFlow::LoadAuthoredObjectiveSet(size_t authored_set_index) {
         objective.failure_expression = authored_objective.failure_expression;
         objective.is_primary = true;
         objective.state = ObjectiveState::Pending;
+        if (objective.link_task_id >= 0 && objective_location_resolver_) {
+            MissionObjectiveLocation location;
+            if (objective_location_resolver_(objective.link_task_id, location)) {
+                objective.has_location = true;
+                objective.location = location;
+            }
+        }
         objectives_.push_back(std::move(objective));
     }
 }

@@ -15,6 +15,15 @@ enum class ObjectiveState {
     Cancelled
 };
 
+// OpenIGI resolves each objective's LinkTaskId to the authored task position
+// for the map-computer presentation. Keep this value type renderer-free so
+// level-flow tests and the Windows presentation adapter share one contract.
+struct MissionObjectiveLocation {
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
 struct MissionObjective {
     uint32_t id = 0;
     std::string description;
@@ -24,6 +33,8 @@ struct MissionObjective {
     std::string failure_expression;
     bool is_primary = true;
     ObjectiveState state = ObjectiveState::Pending;
+    bool has_location = false;
+    MissionObjectiveLocation location;
 };
 
 struct AuthoredMissionObjectiveDefinition {
@@ -51,6 +62,9 @@ struct AuthoredMissionFlowDefinition {
 };
 
 using MissionObjectiveTextResolver = std::function<std::string(const std::string&)>;
+using MissionObjectiveLocationResolver = std::function<bool(
+    int32_t link_task_id,
+    MissionObjectiveLocation& location)>;
 using MissionExpressionEvaluator = std::function<bool(const std::string&)>;
 
 enum class MissionStatus {
@@ -68,7 +82,8 @@ public:
         uint32_t mission_number,
         const std::vector<AuthoredMissionObjectiveSet>& authored_objective_sets,
         MissionObjectiveTextResolver text_resolver = {},
-        const AuthoredMissionFlowDefinition& authored_flow = {});
+        const AuthoredMissionFlowDefinition& authored_flow = {},
+        MissionObjectiveLocationResolver location_resolver = {});
     void AddObjective(uint32_t id, const std::string& desc, bool is_primary = true);
     void SetObjectiveState(uint32_t id, ObjectiveState state);
     bool CompleteFirstPendingPrimaryObjective();
@@ -110,6 +125,7 @@ private:
     MissionStatus status_ = MissionStatus::InProgress;
     std::vector<AuthoredMissionObjectiveSet> authored_objective_sets_;
     MissionObjectiveTextResolver objective_text_resolver_;
+    MissionObjectiveLocationResolver objective_location_resolver_;
     size_t active_authored_objective_set_index_ = 0;
     AuthoredMissionFlowDefinition authored_mission_flow_;
     bool has_authored_mission_flow_ = false;

@@ -53,6 +53,9 @@ struct RuntimeRenderSnapshot {
     uint32_t clip_capacity = 0;
     uint32_t reserve_ammo = 0;
     std::string objective_text;
+    int32_t objective_link_task_id = -1;
+    bool has_objective_location = false;
+    glm::vec3 objective_location = glm::vec3(0.0f);
     int64_t mission_timer_remaining_ticks = -1;
     std::vector<MissionStatusMessageDisplay> mission_status_messages;
     float flash_effect_strength = 0.0f;
