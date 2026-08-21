@@ -151,6 +151,18 @@ TEST(RuntimeRenderTargetTest, EditorRepaintCannotBecomeGameplayTarget) {
         RenderTarget::Editor);
 }
 
+TEST(RuntimeRenderTargetTest, SimulationUsesGameplaySnapshotDuringEditorRepaint) {
+    EXPECT_EQ(
+        ResolveRuntimeAssetTarget(false, true),
+        RuntimeAssetTarget::EditorSource);
+    EXPECT_EQ(
+        ResolveRuntimeAssetTarget(true, false),
+        RuntimeAssetTarget::EditorSource);
+    EXPECT_EQ(
+        ResolveRuntimeAssetTarget(true, true),
+        RuntimeAssetTarget::GameplaySnapshot);
+}
+
 TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

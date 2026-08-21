@@ -96,6 +96,8 @@ parity claims remain gated on IGI1 evidence.
   captured editor snapshot, rebuilds mutable runtime adapters from copied
   level objects, and never silently writes source files or mutates the running
   world.
+- [x] Keep simulation-side collision, interaction, and ladder discovery bound
+  to the mutable runtime snapshot while the editor window repaints.
 - [x] Add deterministic `F6` editor / `F7` gameplay focus routing. The editor
   can receive authoring input and repaint its source view while the active
   runtime continues through the fixed-step scheduler; focus changes do not

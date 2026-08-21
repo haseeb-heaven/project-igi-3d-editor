@@ -37,6 +37,8 @@
       `PlayerInputCmd`; the production seam exists, but the animation presenter
       still needs to supply the event edges.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
+- [x] Keep gameplay collision, interaction, and ladder discovery on the runtime
+      object snapshot even while the editor window owns repaint/focus.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.
 - [ ] Finish the separate native gameplay window boundary. `GameplayWindowHost`

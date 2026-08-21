@@ -1494,7 +1494,16 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 	}
 	horizontal_direction /= direction_length;
 
-	auto& objects = GetActiveRenderLevelObjects().GetObjects();
+	const bool use_gameplay_snapshot =
+		igi::ResolveRuntimeAssetTarget(
+			in_game_mode_,
+			runtime_level_objects_.has_value()) ==
+		igi::RuntimeAssetTarget::GameplaySnapshot;
+	LevelObjects& gameplay_level_objects = use_gameplay_snapshot &&
+			runtime_level_objects_.has_value()
+		? runtime_level_objects_.value()
+		: GetActiveRenderLevelObjects();
+	auto& objects = gameplay_level_objects.GetObjects();
 	int nearest_index = -1;
 	float nearest_distance = interaction_range;
 	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
@@ -1836,7 +1845,16 @@ void App::CollectAttachedRuntimeLadders(
 
 void App::SetupRuntimeLadders() {
     std::vector<igi::LadderPlacement> ladder_placements;
-    const auto& objects = GetActiveRenderLevelObjects().GetObjects();
+    const bool use_gameplay_snapshot =
+        igi::ResolveRuntimeAssetTarget(
+            in_game_mode_,
+            runtime_level_objects_.has_value()) ==
+        igi::RuntimeAssetTarget::GameplaySnapshot;
+    const LevelObjects& gameplay_level_objects = use_gameplay_snapshot &&
+            runtime_level_objects_.has_value()
+        ? runtime_level_objects_.value()
+        : GetActiveRenderLevelObjects();
+    const auto& objects = gameplay_level_objects.GetObjects();
     for (const LevelObject& object : objects) {
         if (object.deleted || object.modelId.empty()) {
             continue;

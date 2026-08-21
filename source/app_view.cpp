@@ -410,7 +410,16 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
     if (noclip_mode_) return false;
     if (level_.GetLevelNo() == 0) return false;
 
-    auto& objects = GetActiveRenderLevelObjects().GetObjects();
+    const bool use_gameplay_snapshot =
+        igi::ResolveRuntimeAssetTarget(
+            in_game_mode_,
+            runtime_level_objects_.has_value()) ==
+        igi::RuntimeAssetTarget::GameplaySnapshot;
+    const LevelObjects& collision_level_objects = use_gameplay_snapshot &&
+            runtime_level_objects_.has_value()
+        ? runtime_level_objects_.value()
+        : level_.GetLevelObjects();
+    const auto& objects = collision_level_objects.GetObjects();
     constexpr float BASE_SCALE = 40.96f;
     constexpr float EDITOR_CAMERA_RADIUS = 300.0f; // ~0.075m
     const float collision_radius = in_game_mode_
