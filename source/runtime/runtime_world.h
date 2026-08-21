@@ -175,6 +175,7 @@ public:
 private:
     struct AuthoredExplodeObjectRuntime;
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
+    bool ApplyPlayerExplodeObjectDamage(BulletTrace& bullet_trace);
     bool ApplyGuardShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
     bool IsWorldLineBlocked(const glm::vec3& line_origin, const glm::vec3& line_target) const;
@@ -200,6 +201,7 @@ private:
     void UpdateAuthoredCutScenes();
     void UpdateAuthoredConditionalSounds();
     void UpdateAuthoredExplodeObjects();
+    void RefreshAuthoredExplodeObjectSnapshots();
     void TriggerAuthoredExplodeObject(
         struct AuthoredExplodeObjectRuntime& runtime_object);
     void UpdateAuthoredCutSceneCamera(

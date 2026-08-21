@@ -2615,6 +2615,33 @@ TEST(RuntimeWorldTest, AuthoredExplodeObjectPublishesDelayedDestroyedState) {
     EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
 }
 
+TEST(RuntimeWorldTest, PlayerWeaponDestroysNearestAuthoredExplodeObject) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.GetPlayer().SetPosition(glm::vec3(0.0f));
+    world.GetPlayer().SetOrientation(0.0f, 0.0f);
+    ASSERT_TRUE(world.GetWeapons().SelectWeapon(4));
+
+    AuthoredMissionExplodeObject explode_object;
+    explode_object.object_index = 91;
+    explode_object.task_id = "-1";
+    explode_object.position = glm::vec3(
+        0.0f,
+        10.0f * PlayerController::WORLD_METER,
+        PlayerController::STANDING_EYE_HEIGHT);
+    explode_object.explosion_radius_meters = 1.0f;
+    explode_object.explosion_sound = "explo_01_s";
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {explode_object});
+
+    PlayerInputCmd input_command;
+    input_command.fire = true;
+    world.UpdateSimulationTick(0, input_command);
+
+    ASSERT_EQ(world.GetExplodeObjectSnapshots().size(), 1U);
+    EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

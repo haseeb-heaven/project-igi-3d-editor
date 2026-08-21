@@ -1666,9 +1666,6 @@ void RuntimeWorld::UpdateAuthoredExplodeObjects() {
             mission_expression_state_.TryEvaluate(expression, result) && result;
     };
 
-    authored_explode_object_snapshots_.clear();
-    authored_explode_object_snapshots_.reserve(mission_explode_objects_.size());
-
     for (AuthoredExplodeObjectRuntime& runtime_object : mission_explode_objects_) {
         const bool is_condition_active = evaluate_condition(
             runtime_object.definition.explosion_expression);
@@ -1703,6 +1700,15 @@ void RuntimeWorld::UpdateAuthoredExplodeObjects() {
         mission_expression_state_.SetBoolean(
             "ExplodeObject_" + object_identity + ".isExploded",
             runtime_object.is_exploded);
+    }
+    RefreshAuthoredExplodeObjectSnapshots();
+}
+
+void RuntimeWorld::RefreshAuthoredExplodeObjectSnapshots() {
+    authored_explode_object_snapshots_.clear();
+    authored_explode_object_snapshots_.reserve(mission_explode_objects_.size());
+    for (const AuthoredExplodeObjectRuntime& runtime_object :
+         mission_explode_objects_) {
         authored_explode_object_snapshots_.push_back({
             runtime_object.definition.object_index,
             runtime_object.definition.task_id,
@@ -2018,6 +2024,10 @@ bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {
         bullet_trace.hit_world_geometry = true;
     }
 
+    if (ApplyPlayerExplodeObjectDamage(bullet_trace)) {
+        return true;
+    }
+
     for (const AiGuardEntity& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {
             continue;
@@ -2051,6 +2061,57 @@ bool RuntimeWorld::ApplyPlayerShotDamage(BulletTrace& bullet_trace) {
     bullet_trace.distance = closest_hit_distance;
     bullet_trace.hit_position = closest_hit_position;
     ai_.ApplyDamage(closest_guard_id, bullet_trace.damage);
+    return true;
+}
+
+bool RuntimeWorld::ApplyPlayerExplodeObjectDamage(BulletTrace& bullet_trace) {
+    constexpr float minimum_object_radius_units = 0.25f *
+        PlayerController::WORLD_METER;
+    const float direction_length = glm::length(bullet_trace.direction);
+    if (direction_length <= 0.0001f) {
+        return false;
+    }
+
+    const glm::vec3 shot_direction = bullet_trace.direction / direction_length;
+    float closest_hit_distance = bullet_trace.distance;
+    AuthoredExplodeObjectRuntime* closest_object = nullptr;
+
+    for (AuthoredExplodeObjectRuntime& runtime_object : mission_explode_objects_) {
+        if (runtime_object.is_exploded) {
+            continue;
+        }
+
+        const glm::vec3 to_object = runtime_object.definition.position -
+            bullet_trace.origin;
+        const float projected_distance = glm::dot(to_object, shot_direction);
+        if (projected_distance < 0.0f || projected_distance > closest_hit_distance) {
+            continue;
+        }
+
+        const glm::vec3 closest_point = bullet_trace.origin +
+            shot_direction * projected_distance;
+        const float object_radius_units = std::max(
+            minimum_object_radius_units,
+            runtime_object.definition.explosion_radius_meters *
+                PlayerController::WORLD_METER * 0.5f);
+        if (glm::distance(closest_point, runtime_object.definition.position) >
+            object_radius_units) {
+            continue;
+        }
+
+        closest_hit_distance = projected_distance;
+        closest_object = &runtime_object;
+        bullet_trace.hit_position = closest_point;
+    }
+
+    if (closest_object == nullptr) {
+        return false;
+    }
+
+    bullet_trace.distance = closest_hit_distance;
+    bullet_trace.hit_world_geometry = true;
+    TriggerAuthoredExplodeObject(*closest_object);
+    RefreshAuthoredExplodeObjectSnapshots();
     return true;
 }
 
