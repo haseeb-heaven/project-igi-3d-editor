@@ -426,6 +426,12 @@ void App::ShutdownGameplayWindow() {
 
 void App::OnGameplayDisplay() {
 	if (!in_game_mode_) return;
+	// Same-window gameplay fills whatever size the shared window is now; the
+	// startup -w/-h values are only a fallback for headless contexts.
+	int width = glutGet(GLUT_WINDOW_WIDTH);
+	int height = glutGet(GLUT_WINDOW_HEIGHT);
+	gameplay_viewport_width_ = std::max(1, width);
+	gameplay_viewport_height_ = std::max(1, height);
 	ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
 	Frame(0.0f);
 }
@@ -554,6 +560,10 @@ void App::OnIdle() {
 		gameplay_host_.GetInputRouter().SetMapComputerOpen(
 			gameplay_host_.GetWorld().IsMapComputerOpen());
 		gameplay_host_.MakeGameplayWindowCurrent();
+		// Track the live shared-window size so gameplay always fills the
+		// window (resize/maximize during a run included).
+		gameplay_viewport_width_ = std::max(1, glutGet(GLUT_WINDOW_WIDTH));
+		gameplay_viewport_height_ = std::max(1, glutGet(GLUT_WINDOW_HEIGHT));
 		ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
 		Frame(delta_time * 0.001f); // convert to seconds
 		gameplay_host_.GetInputRouter().SetMapComputerOpen(
@@ -2750,6 +2760,14 @@ void App::SetupLevelAiGuards() {
 							}
 					}
 					guard.active_patrol_path_id = pathId;
+					Logger::Get().Log(LogLevel::INFO,
+						"[AI] Guard " + guard.name + " patrol path " +
+						std::to_string(pathId) + ": " +
+						std::to_string(guard.patrol_commands.size()) + " commands");
+				} else {
+					Logger::Get().Log(LogLevel::WARNING,
+						"[AI] Guard " + guard.name + " names patrol path " +
+						std::to_string(pathId) + " but no matching PatrolPath child");
 				}
 			}
 		}

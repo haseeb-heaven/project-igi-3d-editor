@@ -120,6 +120,7 @@ struct AiGuardEntity {
     // ---- Per-tick state ----
     uint64_t tick = 0;              // simulation tick counter (30 Hz)
     float yaw_clamp = glm::pi<float>();  // TurnTowards per-tick rotation limit
+    uint32_t blocked_move_ticks = 0;     // consecutive collision-rejected moves
 };
 
 class AiSystem {

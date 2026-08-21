@@ -1,5 +1,6 @@
 // ai_system.cpp - Runtime AI guard simulation, dual-cone vision, and combat behavior implementation
 #include "ai_system.h"
+#include "logger.h"
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -528,7 +529,21 @@ void AiSystem::Update(
         }
 
         if (movement_collision_query_ && movement_collision_query_(guard.position)) {
+            // Repeated rejections mean the guard is wedged in geometry (bad
+            // spawn overlap or a probe inside a wall); surface it once so the
+            // log pinpoints the frozen guard instead of failing silently.
+            ++guard.blocked_move_ticks;
+            if (guard.blocked_move_ticks == 30) {
+                Logger::Get().Log(LogLevel::WARNING,
+                    "[AI] Guard " + std::to_string(guard.id) + " (" + guard.name +
+                    ") movement blocked at (" +
+                    std::to_string(guard.position.x) + "," +
+                    std::to_string(guard.position.y) + "," +
+                    std::to_string(guard.position.z) + ")");
+            }
             guard.position = previous_position;
+        } else {
+            guard.blocked_move_ticks = 0;
         }
     }
 
