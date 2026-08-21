@@ -158,9 +158,9 @@ parity claims remain gated on IGI1 evidence.
   position and carry that immutable location through the runtime render
   snapshot, matching OpenIGI's map-computer data contract.
 - [x] Route the vanilla map-computer rising-edge action through the fixed-step
-  runtime and publish the active six-row objective set to a phosphor-style
-  gameplay HUD overlay; keep the full animated tactical camera as a later
-  presentation-fidelity slice.
+  runtime, freeze player input while the state is open, and publish the active
+  six-row objective set to a phosphor-style gameplay HUD overlay; keep the full
+  animated tactical camera as a later presentation-fidelity slice.
 - [x] Copy fixed-step guard transforms and animation-request metadata into the
   immutable render snapshot before synchronizing the gameplay scene copy.
 - [x] Publish fixed-step actor death state, transient switch/terminal pulses,

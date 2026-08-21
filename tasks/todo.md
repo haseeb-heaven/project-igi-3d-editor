@@ -62,7 +62,8 @@
 - [x] Resolve authored objective `LinkTaskId` values to copied level-object
       positions and expose the active target through `RuntimeRenderSnapshot`.
 - [x] Add the grounded vanilla map-computer action, held-key edge suppression,
-      six-row objective snapshot, and phosphor-style gameplay HUD fallback;
+      six-row objective snapshot, phosphor-style gameplay HUD fallback, and
+      player movement/look/interaction input freeze while it is open;
       keep the OpenIGI animated map-camera flight and tactical map interaction
       pending for a later presentation slice.
 - [x] Publish moving guard transforms and animation-request metadata through
