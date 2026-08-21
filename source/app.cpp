@@ -1584,9 +1584,10 @@ void App::ToggleGamePlayMode() {
 		}
 		gameplay_host_.GetWorld().SetPlayerWeaponCycle(configured_weapon_cycle);
 
-		// 3. Resolve the authored HumanPlayer spawn first. OpenIGI's gameplay
-		//    PlayerSpawn contract selects task id zero, then the first HumanPlayer;
-		//    editor-camera and level-start positions are incomplete-level fallbacks.
+		// 3. Spawn resolution: the editor camera is the primary spawn point so
+		//    playtesting starts exactly where the level was being inspected.
+		//    Authored HumanPlayer and level-start positions are fallbacks for
+		//    an untouched/default camera.
 		glm::vec3 spawn_pos(0.0f);
 		float spawn_yaw = 0.0f;
 		float spawn_pitch = 0.0f;
@@ -1626,18 +1627,7 @@ void App::ToggleGamePlayMode() {
 			});
 		}
 
-		if (const std::optional<igi::RuntimeSpawnPoint> authored_spawn =
-				igi::SelectAuthoredPlayerSpawn(authored_spawn_candidates)) {
-			spawn_pos = authored_spawn->position;
-			spawn_yaw = authored_spawn->yaw;
-			spawn_pitch = authored_spawn->pitch;
-			found_spawn = true;
-			Logger::Get().Log(LogLevel::INFO, "[App] Authored HumanPlayer spawn: pos=(" +
-				std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
-				"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
-		}
-
-		if (!found_spawn) {
+		{
 			const float kSpawnSnapEps = 1.0f;
 			if (glm::length(viewer_.pos_) > kSpawnSnapEps ||
 				fabsf(viewer_.yaw_) > kSpawnSnapEps) {
@@ -1646,7 +1636,20 @@ void App::ToggleGamePlayMode() {
 				spawn_pitch = viewer_.pitch_;
 				found_spawn = true;
 				spawned_from_camera = true;
-				Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera fallback: pos=(" +
+				Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera: pos=(" +
+					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
+					"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
+			}
+		}
+
+		if (!found_spawn) {
+			if (const std::optional<igi::RuntimeSpawnPoint> authored_spawn =
+					igi::SelectAuthoredPlayerSpawn(authored_spawn_candidates)) {
+				spawn_pos = authored_spawn->position;
+				spawn_yaw = authored_spawn->yaw;
+				spawn_pitch = authored_spawn->pitch;
+				found_spawn = true;
+				Logger::Get().Log(LogLevel::INFO, "[App] Authored HumanPlayer spawn: pos=(" +
 					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
 					"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
 			}
