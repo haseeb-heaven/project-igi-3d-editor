@@ -88,8 +88,10 @@ parity claims remain gated on IGI1 evidence.
   active. Full independent camera/HUD/render ownership remains pending because
   scene presentation still passes through the shared `App::Frame()` renderer.
 - [ ] Move gameplay drawing out of `App::Frame()` into a runtime presentation
-  path. Keep shared asset caches read-only and make restart/close destroy the
-  mutable runtime session.
+  path. `GameplayHost` now owns the OpenGL-free `RuntimeRenderer` snapshot used
+  by HUD/weapon/projectile presentation; keep shared asset caches read-only and
+  make restart/close destroy the mutable runtime session before moving the GL
+  draw/resource ownership.
 - [ ] Add explicit editor-change handling: changes made while gameplay is open
   require an intentional restart/apply action and never silently write source
   files or mutate the running world.
