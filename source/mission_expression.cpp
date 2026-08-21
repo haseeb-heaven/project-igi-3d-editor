@@ -19,15 +19,19 @@ public:
 
     bool TryParse(bool& out_result) {
         double numeric_result = 0.0;
-        if (!ParseOrExpression(numeric_result)) {
-            return false;
-        }
-        SkipWhitespace();
-        if (cursor_ != expression_.size()) {
+        if (!TryParseNumber(numeric_result)) {
             return false;
         }
         out_result = IsTruthy(numeric_result);
         return true;
+    }
+
+    bool TryParseNumber(double& out_result) {
+        if (!ParseOrExpression(out_result)) {
+            return false;
+        }
+        SkipWhitespace();
+        return cursor_ == expression_.size();
     }
 
 private:
@@ -288,6 +292,17 @@ void MissionExpressionState::Clear() {
 bool MissionExpressionState::TryEvaluate(
     const std::string& expression,
     bool& out_result) const {
+    double numeric_result = 0.0;
+    if (!TryEvaluateNumber(expression, numeric_result)) {
+        return false;
+    }
+    out_result = std::abs(numeric_result) > 0.0000001;
+    return true;
+}
+
+bool MissionExpressionState::TryEvaluateNumber(
+    const std::string& expression,
+    double& out_result) const {
     const VariableResolver variable_resolver = [this](
         std::string_view variable_name,
         double& out_value) {
@@ -305,7 +320,7 @@ bool MissionExpressionState::TryEvaluate(
     };
 
     ExpressionParser parser(expression, variable_resolver);
-    return parser.TryParse(out_result);
+    return parser.TryParseNumber(out_result);
 }
 
 } // namespace igi

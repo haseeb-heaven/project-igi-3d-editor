@@ -1,6 +1,10 @@
 #include "runtime_world.h"
 #include "audio_system.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -10,6 +14,60 @@ namespace igi {
 namespace {
 
 constexpr float kMuzzleFlashStrengthDecayPerTick = 0.5f;
+
+bool MissionCriteriaAcceptsPlayer(const std::string& criteria) {
+    std::string normalized_criteria;
+    normalized_criteria.reserve(criteria.size());
+    for (const unsigned char character : criteria) {
+        normalized_criteria.push_back(static_cast<char>(std::tolower(character)));
+    }
+
+    return normalized_criteria.empty() ||
+        normalized_criteria.find("criteria_human0") != std::string::npos ||
+        normalized_criteria.find("humanplayer") != std::string::npos ||
+        normalized_criteria.find("player") != std::string::npos;
+}
+
+glm::mat3 BuildEngineOrientation(const glm::vec3& angles) {
+    glm::mat4 orientation(1.0f);
+    orientation = glm::rotate(
+        orientation,
+        angles.z,
+        glm::vec3(0.0f, 0.0f, 1.0f));
+    orientation = glm::rotate(
+        orientation,
+        angles.y,
+        glm::vec3(0.0f, 1.0f, 0.0f));
+    orientation = glm::rotate(
+        orientation,
+        angles.x,
+        glm::vec3(1.0f, 0.0f, 0.0f));
+    return glm::mat3(orientation);
+}
+
+bool TryTruncateMissionExpressionValue(double value, int& result) {
+    if (!std::isfinite(value) ||
+        value < static_cast<double>(std::numeric_limits<int>::min()) ||
+        value >= static_cast<double>(std::numeric_limits<int>::max()) + 1.0) {
+        return false;
+    }
+    result = static_cast<int>(value);
+    return true;
+}
+
+void ApplyMissionVariableDelta(int& value, double expression_value, int direction) {
+    int delta = 0;
+    if (!TryTruncateMissionExpressionValue(expression_value, delta)) {
+        return;
+    }
+
+    const long long updated_value = static_cast<long long>(value) +
+        static_cast<long long>(direction) * delta;
+    value = static_cast<int>(std::clamp(
+        updated_value,
+        static_cast<long long>(std::numeric_limits<int>::min()),
+        static_cast<long long>(std::numeric_limits<int>::max())));
+}
 
 bool WeaponProducesMuzzleFlash(const WeaponDefinition& weapon) {
     switch (weapon.id) {
@@ -417,6 +475,9 @@ void RuntimeWorld::Reset() {
     task_tree_.Clear();
     level_flow_.InitializeMission(1);
     mission_expression_state_.Clear();
+    mission_area_activations_.clear();
+    mission_edit_variables_.clear();
+    mission_edit_variable_values_.clear();
     guard_combat_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
@@ -470,6 +531,51 @@ bool RuntimeWorld::UpdateWeaponSelection(const PlayerInputCmd& input_command) {
     return false;
 }
 
+void RuntimeWorld::UpdateAuthoredMissionState() {
+    for (const MissionAreaActivationState& area : mission_area_activations_) {
+        const glm::vec3 player_position = player_.GetPosition();
+        const bool active = area.accepts_player &&
+            player_position.x >= area.minimum.x &&
+            player_position.x <= area.maximum.x &&
+            player_position.y >= area.minimum.y &&
+            player_position.y <= area.maximum.y &&
+            player_position.z >= area.minimum.z &&
+            player_position.z <= area.maximum.z;
+        mission_expression_state_.SetNumber(
+            "AreaActivate_" + area.task_id + ".nActive",
+            active ? 1.0 : 0.0);
+    }
+
+    for (size_t variable_index = 0;
+         variable_index < mission_edit_variables_.size();
+         ++variable_index) {
+        const AuthoredMissionEditVariable& edit_variable =
+            mission_edit_variables_[variable_index];
+        int& current_value = mission_edit_variable_values_[variable_index];
+        const std::string variable_name =
+            "EditVariable_" + edit_variable.task_id + ".nValue";
+
+        mission_expression_state_.SetNumber("this.nValue", current_value);
+        double expression_value = 0.0;
+        if (!edit_variable.add_expression.empty() &&
+            mission_expression_state_.TryEvaluateNumber(
+                edit_variable.add_expression,
+                expression_value)) {
+            ApplyMissionVariableDelta(current_value, expression_value, 1);
+        }
+
+        mission_expression_state_.SetNumber(variable_name, current_value);
+        mission_expression_state_.SetNumber("this.nValue", current_value);
+        if (!edit_variable.subtract_expression.empty() &&
+            mission_expression_state_.TryEvaluateNumber(
+                edit_variable.subtract_expression,
+                expression_value)) {
+            ApplyMissionVariableDelta(current_value, expression_value, -1);
+        }
+        mission_expression_state_.SetNumber(variable_name, current_value);
+    }
+}
+
 bool RuntimeWorld::AttachGuardScript(
     uint32_t guard_id,
     const QVMFile& parsed_file,
@@ -521,6 +627,57 @@ void RuntimeWorld::SetMissionStateNumber(
     const std::string& variable_name,
     double value) {
     mission_expression_state_.SetNumber(variable_name, value);
+}
+
+void RuntimeWorld::SetAuthoredMissionState(
+    std::vector<AuthoredMissionAreaActivation> area_activations,
+    std::vector<AuthoredMissionEditVariable> edit_variables) {
+    mission_expression_state_.Clear();
+    mission_area_activations_.clear();
+    mission_edit_variables_ = std::move(edit_variables);
+    mission_edit_variable_values_.clear();
+    mission_edit_variable_values_.reserve(mission_edit_variables_.size());
+
+    for (const AuthoredMissionAreaActivation& authored_area : area_activations) {
+        const glm::mat3 orientation = BuildEngineOrientation(authored_area.orientation);
+        const glm::vec3 half_dimensions = glm::abs(authored_area.dimensions) * 0.5f;
+        glm::vec3 minimum(std::numeric_limits<float>::max());
+        glm::vec3 maximum(std::numeric_limits<float>::lowest());
+
+        for (int corner_index = 0; corner_index < 8; ++corner_index) {
+            const glm::vec3 local_corner(
+                (corner_index & 1) == 0 ? half_dimensions.x : -half_dimensions.x,
+                (corner_index & 2) == 0 ? half_dimensions.y : -half_dimensions.y,
+                (corner_index & 4) == 0 ? half_dimensions.z : -half_dimensions.z);
+            const glm::vec3 world_corner =
+                authored_area.position + orientation * local_corner;
+            minimum = glm::min(minimum, world_corner);
+            maximum = glm::max(maximum, world_corner);
+        }
+
+        MissionAreaActivationState area_state;
+        area_state.task_id = authored_area.task_id;
+        area_state.minimum = minimum;
+        area_state.maximum = maximum;
+        area_state.accepts_player = MissionCriteriaAcceptsPlayer(authored_area.criteria);
+        mission_area_activations_.push_back(std::move(area_state));
+    }
+
+    for (const AuthoredMissionEditVariable& edit_variable : mission_edit_variables_) {
+        mission_edit_variable_values_.push_back(edit_variable.initial_value);
+        mission_expression_state_.SetNumber(
+            "EditVariable_" + edit_variable.task_id + ".nValue",
+            edit_variable.initial_value);
+        mission_expression_state_.SetNumber(
+            "this.nValue",
+            edit_variable.initial_value);
+    }
+
+    for (const MissionAreaActivationState& area : mission_area_activations_) {
+        mission_expression_state_.SetNumber(
+            "AreaActivate_" + area.task_id + ".nActive",
+            0.0);
+    }
 }
 
 void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
@@ -829,6 +986,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         }
         PlayFootstepIfNeeded(input_cmd, was_grounded);
     }
+
+    // Vanilla updates AreaActivate and EditVariable before dependent mission
+    // expressions are evaluated at the end of this fixed simulation tick.
+    UpdateAuthoredMissionState();
 
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
     // lowers before the active weapon changes and raises after the new model

@@ -47,3 +47,13 @@ TEST(MissionExpressionTest, SupportsBooleanStateAsNumericComparisons) {
     EXPECT_TRUE(result);
 }
 
+TEST(MissionExpressionTest, EvaluatesNumericValuesForEditVariables) {
+    igi::MissionExpressionState state;
+    state.SetNumber("EditVariable_105.nValue", 2.0);
+
+    double result = 0.0;
+    EXPECT_TRUE(state.TryEvaluateNumber(
+        "EditVariable_105.nValue + 2 * 3",
+        result));
+    EXPECT_DOUBLE_EQ(result, 8.0);
+}

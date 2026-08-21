@@ -17,6 +17,9 @@ public:
     // Returns false for malformed expressions or variables absent from the
     // state. A successful evaluation writes the boolean result to out_result.
     bool TryEvaluate(const std::string& expression, bool& out_result) const;
+    // Numeric counterpart used by vanilla EditVariable add/sub expressions.
+    // Boolean expressions evaluate to 0 or 1, matching the script runtime.
+    bool TryEvaluateNumber(const std::string& expression, double& out_result) const;
 
 private:
     std::unordered_map<std::string, double> values_;

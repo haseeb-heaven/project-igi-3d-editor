@@ -2159,6 +2159,40 @@ TEST(RuntimeWorldTest, InteractionEventsCanDriveAuthoredMissionExpressions) {
     EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
 }
 
+TEST(RuntimeWorldTest, AreaActivationLatchesEditVariableBeforeObjectiveEvaluation) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionAreaActivation area;
+    area.task_id = "200";
+    area.position = glm::vec3(0.0f, 0.0f, 0.0f);
+    area.dimensions = glm::vec3(2.0f * PlayerController::WORLD_METER);
+    area.criteria = "CRITERIA_HUMAN0";
+
+    AuthoredMissionEditVariable edit_variable;
+    edit_variable.task_id = "105";
+    edit_variable.initial_value = 0;
+    edit_variable.add_expression =
+        "EditVariable_105.nValue == 0 && AreaActivate_200.nActive";
+
+    world.SetAuthoredMissionState({area}, {edit_variable});
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M1_OBJ1",
+        1120,
+        "EditVariable_105.nValue == 1",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(1, {objective_set});
+    world.GetPlayer().SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    ASSERT_EQ(world.GetLevelFlow().GetObjectives().size(), 1U);
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

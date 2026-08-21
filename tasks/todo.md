@@ -33,6 +33,9 @@
 - [x] Emit fixed-step mission-state events for authored door, terminal, switch,
       generator, vehicle, and generic-pickup interactions; evaluate the
       preserved completion/failure expressions after each interaction tick.
+- [x] Port the verified-reference `AreaActivate` oriented-volume query and
+      `EditVariable` add-before-sub fixed-step latch for player-authored
+      mission progression; keep unsupported criteria/entities explicit.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.

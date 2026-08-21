@@ -642,6 +642,7 @@ private:
   // session-owned LevelObjects copy.
   void SetupLevelAiGuards();
   void InitializeGameplayMissionObjectives();
+  void SetupRuntimeMissionState();
   void SetupRuntimeLadders();
   void CollectAttachedRuntimeLadders(
       const std::string& model_id,

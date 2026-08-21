@@ -3,6 +3,7 @@
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
 #include "mission_objective_loader.h"
+#include "mission_state_loader.h"
 #include <array>
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
@@ -1384,6 +1385,7 @@ void App::ToggleGamePlayMode() {
 		SetupLevelAiGuards();
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
+		SetupRuntimeMissionState();
 
 		// Initialize authored mission objectives for this specific level.
 		InitializeGameplayMissionObjectives();
@@ -1480,6 +1482,7 @@ void App::ApplyAndRestartGameplay() {
 	SetupLevelAiGuards();
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
+	SetupRuntimeMissionState();
 	InitializeGameplayMissionObjectives();
 
 	// RuntimeWorld::Reset intentionally starts at the neutral origin. Restore
@@ -1509,6 +1512,42 @@ void App::ApplyAndRestartGameplay() {
 	gameplay_host_.SetPaused(false);
 	FocusGameplayWindow();
 	status_message_ = "Gameplay applied and restarted from the current editor snapshot";
+}
+
+void App::SetupRuntimeMissionState() {
+	const auto& authored_objects = runtime_level_objects_.has_value()
+		? runtime_level_objects_->GetObjects()
+		: level_.GetLevelObjects().GetObjects();
+
+	std::vector<igi::MissionStateTaskSource> task_sources;
+	for (const LevelObject& authored_object : authored_objects) {
+		if (authored_object.deleted ||
+			(authored_object.type != "AreaActivate" &&
+			 authored_object.type != "EditVariable")) {
+			continue;
+		}
+
+		igi::MissionStateTaskSource task_source;
+		task_source.task_type = authored_object.type;
+		task_source.task_id = authored_object.taskId;
+		task_source.argument_tokens = authored_object.argTokens;
+		task_sources.push_back(std::move(task_source));
+	}
+
+	igi::AuthoredMissionStateDefinitions definitions =
+		igi::LoadAuthoredMissionStateDefinitions(task_sources);
+	const size_t area_count = definitions.area_activations.size();
+	const size_t edit_variable_count = definitions.edit_variables.size();
+	gameplay_host_.GetWorld().SetAuthoredMissionState(
+		std::move(definitions.area_activations),
+		std::move(definitions.edit_variables));
+
+	Logger::Get().Log(
+		LogLevel::INFO,
+		"[Gameplay] Loaded " + std::to_string(area_count) +
+		" authored AreaActivate task(s) and " +
+		std::to_string(edit_variable_count) +
+		" authored EditVariable task(s)");
 }
 
 void App::InitializeGameplayMissionObjectives() {

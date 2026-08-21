@@ -18,6 +18,7 @@
 #include "../level/qvm_interpreter.h"
 #include "projectile_system.h"
 #include "../mission_expression.h"
+#include "../mission_state.h"
 #include "../weapon_view_sway.h"
 #include "../weapon_view_recoil.h"
 
@@ -42,6 +43,9 @@ public:
     void SetExtractionZone(const glm::vec3& center, float radius);
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
+    void SetAuthoredMissionState(
+        std::vector<AuthoredMissionAreaActivation> area_activations,
+        std::vector<AuthoredMissionEditVariable> edit_variables);
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -129,6 +133,7 @@ private:
     void ApplyGuardCombatDamage(uint64_t tick_number);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
+    void UpdateAuthoredMissionState();
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
     void EndLadderTraversal();
@@ -158,6 +163,15 @@ private:
     TaskTree task_tree_;
     QvmNativeRegistry qvm_registry_;
     MissionExpressionState mission_expression_state_;
+    struct MissionAreaActivationState {
+        std::string task_id;
+        glm::vec3 minimum = glm::vec3(0.0f);
+        glm::vec3 maximum = glm::vec3(0.0f);
+        bool accepts_player = false;
+    };
+    std::vector<MissionAreaActivationState> mission_area_activations_;
+    std::vector<AuthoredMissionEditVariable> mission_edit_variables_;
+    std::vector<int> mission_edit_variable_values_;
     AiScriptHost ai_script_host_;
     std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;
     struct GuardCombatState {
