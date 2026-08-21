@@ -250,31 +250,89 @@ bool RuntimeWorld::FindProjectileCollision(
             sample_position.z);
     };
 
-    if (!is_solid(end_position)) {
-        return false;
-    }
-
-    float lower_fraction = 0.0f;
-    float upper_fraction = 1.0f;
-    if (is_solid(start_position)) {
-        upper_fraction = 0.0f;
-    } else {
-        for (int refinement_index = 0;
-             refinement_index < 12;
-             ++refinement_index) {
-            const float middle_fraction =
-                (lower_fraction + upper_fraction) * 0.5f;
-            const glm::vec3 middle_position = start_position +
-                movement * middle_fraction;
-            if (is_solid(middle_position)) {
-                upper_fraction = middle_fraction;
-            } else {
-                lower_fraction = middle_fraction;
+    bool found_world_collision = is_solid(end_position);
+    float world_collision_fraction = 1.0f;
+    if (found_world_collision) {
+        float lower_fraction = 0.0f;
+        if (is_solid(start_position)) {
+            world_collision_fraction = 0.0f;
+        } else {
+            float upper_fraction = 1.0f;
+            for (int refinement_index = 0;
+                 refinement_index < 12;
+                 ++refinement_index) {
+                const float middle_fraction =
+                    (lower_fraction + upper_fraction) * 0.5f;
+                const glm::vec3 middle_position = start_position +
+                    movement * middle_fraction;
+                if (is_solid(middle_position)) {
+                    upper_fraction = middle_fraction;
+                } else {
+                    lower_fraction = middle_fraction;
+                }
             }
+            world_collision_fraction = upper_fraction;
         }
     }
 
-    collision_hit.position = start_position + movement * upper_fraction;
+    // Projectiles use a compact swept sphere for living guards. The hit radius
+    // matches the hitscan body envelope while keeping the projectile query
+    // independent from the AI's movement collision implementation.
+    constexpr float guard_collision_radius = 0.6f * PlayerController::WORLD_METER;
+    const float movement_length_squared = glm::dot(movement, movement);
+    float guard_collision_fraction = 1.0f;
+    glm::vec3 guard_collision_center(0.0f);
+    bool found_guard_collision = false;
+    for (const AiGuardEntity& guard : ai_.GetGuards()) {
+        if (guard.state == AiGuardState::Dead) {
+            continue;
+        }
+
+        const glm::vec3 guard_center = guard.position + glm::vec3(
+            0.0f,
+            0.0f,
+            0.9f * PlayerController::WORLD_METER);
+        const float projected_fraction = glm::dot(
+            guard_center - start_position,
+            movement) / movement_length_squared;
+        const float candidate_fraction = std::clamp(
+            projected_fraction,
+            0.0f,
+            1.0f);
+        const glm::vec3 closest_position = start_position +
+            movement * candidate_fraction;
+        if (glm::distance(closest_position, guard_center) >
+            guard_collision_radius) {
+            continue;
+        }
+
+        if (!found_guard_collision ||
+            candidate_fraction < guard_collision_fraction) {
+            found_guard_collision = true;
+            guard_collision_fraction = candidate_fraction;
+            guard_collision_center = guard_center;
+        }
+    }
+
+    if (found_guard_collision &&
+        (!found_world_collision ||
+         guard_collision_fraction < world_collision_fraction)) {
+        collision_hit.position = start_position + movement *
+            guard_collision_fraction;
+        collision_hit.normal = normalize_surface_normal(
+            collision_hit.position - guard_collision_center);
+        if (glm::dot(collision_hit.normal, collision_hit.normal) <=
+            0.00000001f) {
+            collision_hit.normal = normalize_surface_normal(-movement);
+        }
+        return true;
+    }
+
+    if (!found_world_collision) {
+        return false;
+    }
+
+    collision_hit.position = start_position + movement * world_collision_fraction;
 
     // A terrain crossing has an actual height-field normal. Static model
     // collision only supplies a boolean in the existing editor callback, so

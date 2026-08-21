@@ -2702,6 +2702,45 @@ TEST(RuntimeWorldTest, ProjectileBlastTriggersNearbyAuthoredExplodeObject) {
     EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
 }
 
+TEST(RuntimeWorldTest, ImpactRocketDetonatesOnLivingGuard) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 95;
+    guard.position = glm::vec3(
+        0.0f,
+        PlayerController::WORLD_METER,
+        0.0f);
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(
+        0.0f,
+        0.0f,
+        0.9f * PlayerController::WORLD_METER);
+    launch.velocity = glm::vec3(
+        0.0f,
+        2.0f * PlayerController::WORLD_METER,
+        0.0f);
+    launch.type = ProjectileType::Rocket;
+    launch.fuse_ticks = ProjectileSystem::ReferenceGrenadeFuseTicks;
+    launch.damage = 100.0f;
+    launch.damage_factor = 5.0f;
+    launch.explosion_radius_units = 2.5f * PlayerController::WORLD_METER;
+    launch.explosion_falloff_units = 1.75f * PlayerController::WORLD_METER;
+    launch.detonate_on_impact = true;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_TRUE(world.GetProjectiles().GetProjectiles().empty());
+    ASSERT_EQ(world.GetProjectiles().GetDetonations().size(), 1U);
+    ASSERT_EQ(world.GetAi().GetGuards().size(), 1U);
+    EXPECT_EQ(world.GetAi().GetGuards()[0].state, AiGuardState::Dead);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;
