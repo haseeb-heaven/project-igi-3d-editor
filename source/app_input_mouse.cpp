@@ -40,9 +40,6 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 
 void App::Input_OnMouse(int button, int state, int x, int y) {
 	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
-	// Update mouse position first so EditorProcessClick uses correct coords
-	mouse_state_.prior_x_ = x;
-	mouse_state_.prior_y_ = y;
 
 	if (in_game_mode_ && !pause_mode_) {
 		if (button == GLUT_LEFT_BUTTON) {
@@ -54,8 +51,17 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 		} else if (button == 4 && state == GLUT_DOWN) { // Wheel Down: Prev weapon
 			gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
 		}
+		// Keep relative-look deltas measured from the recenter point. A click
+		// event may arrive at an arbitrary screen coordinate and must not create
+		// a one-frame camera jump on the next motion callback.
+		mouse_state_.prior_x_ = gameplay_viewport_width_ >> 1;
+		mouse_state_.prior_y_ = gameplay_viewport_height_ >> 1;
 		return;
 	}
+
+	// Update mouse position first so EditorProcessClick uses correct coords.
+	mouse_state_.prior_x_ = x;
+	mouse_state_.prior_y_ = y;
 
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 
@@ -632,8 +638,17 @@ void App::Input_OnMotion(int x, int y) {
 
 	if (in_game_mode_ && !pause_mode_) {
 		gameplay_host_.GetInputRouter().OnMouseMove(static_cast<float>(dx), static_cast<float>(dy));
-		mouse_state_.prior_x_ = x;
-		mouse_state_.prior_y_ = y;
+
+		// Gameplay uses relative mouse look. Re-centering after each delivered
+		// motion event prevents the OS cursor from reaching a window edge and
+		// keeps long turns continuous, matching the first-person runtime contract.
+		const int center_x = gameplay_viewport_width_ >> 1;
+		const int center_y = gameplay_viewport_height_ >> 1;
+		mouse_state_.prior_x_ = center_x;
+		mouse_state_.prior_y_ = center_y;
+		if (dx != 0 || dy != 0) {
+			glutWarpPointer(center_x, center_y);
+		}
 		return;
 	}
 	if (in_game_mode_ && pause_mode_) return;

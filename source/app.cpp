@@ -1241,6 +1241,10 @@ void App::ToggleGamePlayMode() {
 		}
 		in_game_mode_ = true;
 		gameplay_host_.FocusGameplayWindow();
+		glutSetCursor(GLUT_CURSOR_NONE);
+		mouse_state_.prior_x_ = gameplay_viewport_width_ >> 1;
+		mouse_state_.prior_y_ = gameplay_viewport_height_ >> 1;
+		glutWarpPointer(mouse_state_.prior_x_, mouse_state_.prior_y_);
 
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.

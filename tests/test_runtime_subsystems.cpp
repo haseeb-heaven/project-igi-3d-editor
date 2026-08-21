@@ -1018,6 +1018,20 @@ TEST(RuntimeInputTest, RightMouseIsAimWithoutImplicitReload) {
     EXPECT_FALSE(command.reload);
 }
 
+TEST(RuntimeInputTest, RelativeMouseLookDeltasAreConsumedOnce) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.OnMouseMove(12.0f, -4.0f);
+
+    const PlayerInputCmd command = router.ConsumeGameplayInput();
+    EXPECT_LT(command.yaw_delta, 0.0f);
+    EXPECT_GT(command.pitch_delta, 0.0f);
+
+    const PlayerInputCmd next_command = router.ConsumeGameplayInput();
+    EXPECT_FLOAT_EQ(next_command.yaw_delta, 0.0f);
+    EXPECT_FLOAT_EQ(next_command.pitch_delta, 0.0f);
+}
+
 TEST(RuntimeInputTest, OpposingMovementKeysRemainIndependent) {
     WindowInputRouter router;
     router.SetFocus(WindowFocusTarget::GameplayWindow);
