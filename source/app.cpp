@@ -1689,7 +1689,8 @@ void App::SetupRuntimeMissionState() {
 				authored_object.type != "EditVariable" &&
 				authored_object.type != "LevelTimer" &&
 				authored_object.type != "StatusMessage" &&
-				authored_object.type != "CutScene")) {
+				authored_object.type != "CutScene" &&
+				authored_object.type != "ConditionalSound")) {
 			continue;
 		}
 
@@ -1725,13 +1726,15 @@ void App::SetupRuntimeMissionState() {
 	const size_t edit_variable_count = definitions.edit_variables.size();
 	const size_t timer_count = definitions.level_timers.size();
 	const size_t cut_scene_count = definitions.cut_scenes.size();
+	const size_t conditional_sound_count = definitions.conditional_sounds.size();
 	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
 		std::move(definitions.area_activations),
 		std::move(definitions.edit_variables),
 		std::move(definitions.level_timers),
 		std::move(definitions.status_messages),
-		std::move(definitions.cut_scenes));
+		std::move(definitions.cut_scenes),
+		std::move(definitions.conditional_sounds));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
@@ -1743,6 +1746,8 @@ void App::SetupRuntimeMissionState() {
 		" LevelTimer task(s), " +
 		std::to_string(cut_scene_count) +
 		" CutScene task(s), " +
+		std::to_string(conditional_sound_count) +
+		" ConditionalSound task(s), " +
 		std::to_string(status_message_count) +
 		" StatusMessage task(s)");
 }
