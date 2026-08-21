@@ -26,8 +26,10 @@
       focus, viewport, and close recovery; Windows interactive verification and
       independent renderer ownership remain pending.
 - [ ] Move gameplay presentation/HUD/camera ownership behind the gameplay host;
-      the current gameplay scene/HUD still render through `App::Frame()`, while
-      the editor retains its last authoring frame during active gameplay.
+      the current gameplay scene/HUD still render through `App::Frame()`. The
+      editor now repaints its authoring scene through a render-only target while
+      gameplay remains active, but it is not yet an independently owned
+      `RuntimeRenderer`.
 - [ ] Add explicit apply/restart semantics for editor changes made while a
       gameplay session exists; never silently mutate authoring data.
 - [ ] Port/verify remaining selected-vanilla-fixture traversal (replace the
@@ -45,10 +47,10 @@
   selection, projectile simulation, flash exposure, zoom, audio hooks, HUD,
   and objective/extraction flow.
 - `architecture-gap`: a controlled gameplay window now owns gameplay focus,
-  input callbacks, viewport, and close recovery, but scene/HUD presentation
-  still runs through `App::Frame()` and the editor is retained as its last
-  authoring frame during active gameplay. Full runtime renderer ownership is
-  not implemented yet.
+  input callbacks, relative mouse recentering, viewport, and close recovery,
+  while scene/HUD presentation still runs through `App::Frame()`. The editor
+  repaints its authoring scene through a render-only target during active
+  gameplay, but full runtime renderer ownership is not implemented yet.
 - `inferred` or `placeholder`: some root-motion speeds, fallback guard patrol,
   fall-damage threshold, demo extraction placement, and the normalized QVM seam
   are not proof of full retail IGI1 behavior. Actual Windows execution against

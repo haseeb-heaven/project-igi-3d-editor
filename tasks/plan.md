@@ -83,9 +83,10 @@ parity claims remain gated on IGI1 evidence.
   tests and no editor/OpenGL dependency.
 - [ ] Add a controlled gameplay window owned by `GameplayHost`; the current
   slice creates the Windows/FreeGLUT window, routes callbacks, focus, cursor,
-  viewport, and close recovery. Full independent camera/HUD/render ownership
-  remains pending because scene presentation still passes through the shared
-  `App::Frame()` renderer.
+  relative mouse look, viewport, and close recovery. The editor now repaints
+  its authoring scene through a render-only target while gameplay remains
+  active. Full independent camera/HUD/render ownership remains pending because
+  scene presentation still passes through the shared `App::Frame()` renderer.
 - [ ] Move gameplay drawing out of `App::Frame()` into a runtime presentation
   path. Keep shared asset caches read-only and make restart/close destroy the
   mutable runtime session.
