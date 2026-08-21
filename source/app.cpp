@@ -1,4 +1,4 @@
-#include "app_internal.h"
+﻿#include "app_internal.h"
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
@@ -16,7 +16,7 @@
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
 // subclass globals below are used only here.
 
-// ── Global hotkey support ────────────────────────────────────────────────────
+// â”€â”€ Global hotkey support â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // We subclass GLUT's window so WM_HOTKEY messages reach our code even when
 // the editor is iconified and the game has keyboard focus.
 static WNDPROC g_origEditorWndProc = nullptr;
@@ -217,7 +217,7 @@ bool App::Init(int argc, char** argv) {
 		Logger::Get().Log(LogLevel::INFO, "[App] Editor window subclassed for global hotkey (HWND=" +
 		                  std::to_string(reinterpret_cast<uintptr_t>(editor_hwnd_)) + ")");
 	} else {
-		Logger::Get().Log(LogLevel::WARNING, "[App] editor_hwnd_ is NULL — global hotkey will not work");
+		Logger::Get().Log(LogLevel::WARNING, "[App] editor_hwnd_ is NULL â€” global hotkey will not work");
 	}
 
 	extern App g_app;
@@ -283,7 +283,7 @@ void App::Shutdown() {
 	}
 }
 
-// ── C1: Custom SPR cursor — multi-mode ────────────────────────────────────────
+// â”€â”€ C1: Custom SPR cursor â€” multi-mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 int App::GetCurLevelNo() const {
@@ -483,7 +483,7 @@ void App::CaptureEditorSnapshotForGameplayApply() {
 	gameplay_editor_snapshot_->selected_object_id = selected_object_index_;
 }
 
-// AI text editor helpers — must be defined before Input_OnMouse and Input_OnSpecial.
+// AI text editor helpers â€” must be defined before Input_OnMouse and Input_OnSpecial.
 
 // Returns flat text offsets of each visual line start.
 // Lines split on '\n'; lines longer than max_chars wrap to the next visual line.
@@ -502,7 +502,7 @@ void App::OnIdle() {
 		MSG msg = {};
 		while (PeekMessage(&msg, NULL, WM_HOTKEY, WM_HOTKEY, PM_REMOVE)) {
 			if (static_cast<int>(msg.wParam) == HOTKEY_ID_TOGGLE_GAME) {
-				Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey received — stopping game");
+				Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey received â€” stopping game");
 				LaunchGame();
 			}
 		}
@@ -540,7 +540,7 @@ void App::OnIdle() {
 				KillTimer(editor_hwnd_, 1);
 				UnregisterHotKey(editor_hwnd_, HOTKEY_ID_TOGGLE_GAME);
 			}
-			Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey unregistered — editor restored");
+			Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Global hotkey unregistered â€” editor restored");
 			if (Config::Get().musicEnabled) PlayLevelMusic(level_.GetLevelNo());
 			return;
 		}
@@ -726,8 +726,8 @@ void App::Frame(float delta_seconds) {
 		// Paused: the pause menu (a 2D overlay drawn at the end of renderer_.Draw)
 		// must sit in front of the scene, so do NOT draw the live skinned mesh after
 		// it (that painted the character on top of the menu). Instead keep the
-		// object's normal static mesh in the 3D pass — animation isn't advancing
-		// while paused anyway — by not skipping it here.
+		// object's normal static mesh in the 3D pass â€” animation isn't advancing
+		// while paused anyway â€” by not skipping it here.
 		draw_params_.skip_static_draw_indices_ = nullptr;
 		draw_params_.terrain_id_at_world_xy_ =
 			[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
@@ -1051,10 +1051,10 @@ void App::Frame(float delta_seconds) {
     // hand bone it comes out aligned with the forearm (appears vertical). Correction,
     // applied in the weapon's own local frame (right-multiplied onto the hand matrix
     // so it still follows the hand as the arm animates):
-    //   * rotate 90° about X  -> swings the barrel from vertical to horizontal,
-    //   * rotate 180° about Z  -> single horizontal flip so the barrel points the
+    //   * rotate 90Â° about X  -> swings the barrel from vertical to horizontal,
+    //   * rotate 180Â° about Z  -> single horizontal flip so the barrel points the
     //     correct way, then
-    //   * roll 180° about the barrel's OWN (post-correction) direction -> flips the
+    //   * roll 180Â° about the barrel's OWN (post-correction) direction -> flips the
     //     weapon right-side-up (was upside down) WITHOUT changing the barrel's aim,
     //     since rotating about the barrel axis leaves that axis fixed. Computed from
     //     the actual barrel direction so it's correct regardless of the gun's frame.
@@ -1065,9 +1065,9 @@ void App::Frame(float delta_seconds) {
     const glm::mat4 kWeaponHandCorrection =
         glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), kBarrelDir) * kWeaponBase;
 
-    // Draw the live skinned mesh for every AI with an active, playing clip —
+    // Draw the live skinned mesh for every AI with an active, playing clip â€”
     // all of them animate and render in parallel, not just the selected object.
-    // This MUST run whenever a clip is playing (not gated by F10) — the static
+    // This MUST run whenever a clip is playing (not gated by F10) â€” the static
     // mesh is already skipped via skip_static_draw_indices_ above, so gating
     // this would leave those objects invisible. The bone wireframe stays scoped
     // to the selected object only (avoids clutter) and gated by 'B'.
@@ -1494,7 +1494,7 @@ void App::TogglePauseMenu() {
 	if (in_game_mode_) {
 		gameplay_host_.SetPaused(pause_mode_);
 	}
-	// cursor_visible_ stays TRUE always — camera lock is handled dynamically in Input_OnMotion.
+	// cursor_visible_ stays TRUE always â€” camera lock is handled dynamically in Input_OnMotion.
 	// Hiding the cursor permanently caused the "mouse stuck" bug after resuming.
 	window_state_.cursor_visible_ = true;
 	if (pause_mode_) {
@@ -1925,70 +1925,18 @@ void App::SetupRuntimeMissionState() {
 		return false;
 	};
 
-	const auto authored_cut_scene_shots = [
-		&authored_objects,
-		&is_descendant_of,
-		&try_read_finite_float,
-		&try_read_boolean](int cut_scene_index) {
-		std::vector<igi::AuthoredMissionCutSceneShot> shots;
-		for (int object_index = 0;
-			 object_index < static_cast<int>(authored_objects.size());
-			 ++object_index) {
-			const LevelObject& object = authored_objects[object_index];
-			if (object.deleted || object.type != "EditCamera" ||
-				!is_descendant_of(object_index, cut_scene_index) ||
-				object.argTokens.size() <= 15) {
-				continue;
-			}
-
-			igi::AuthoredMissionCutSceneShot shot;
-			float duration_seconds = 0.0f;
-			if (!try_read_finite_float(
-					App::StripQuotes(object.argTokens[3]), shot.position.x) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[4]), shot.position.y) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[5]), shot.position.z) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[6]), shot.orientation.x) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[7]), shot.orientation.y) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[8]), shot.orientation.z) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[9]), shot.field_of_view_radians) ||
-				!try_read_finite_float(
-					App::StripQuotes(object.argTokens[10]), duration_seconds)) {
-				// Malformed camera shots are ignored individually; other mission
-				// state and gameplay remain loadable.
-				continue;
-			}
-			if (!try_read_boolean(
-					App::StripQuotes(object.argTokens[15]),
-					shot.smooth_to_next)) {
-				continue;
-			}
-			shot.field_of_view_radians = std::clamp(
-				shot.field_of_view_radians,
-				0.001f,
-				3.0f);
-			shot.duration_seconds = std::max(0.0f, duration_seconds);
-			shots.push_back(std::move(shot));
-		}
-		return shots;
-	};
-
 	std::vector<igi::MissionStateTaskSource> task_sources;
 	for (int object_index = 0;
 		 object_index < static_cast<int>(authored_objects.size());
 		 ++object_index) {
 		const LevelObject& authored_object = authored_objects[object_index];
+		// CutScene tasks are deliberately never collected: gameplay is the
+		// engine/interaction slice only, with no intro/end cinematics.
 		if (authored_object.deleted ||
 			(authored_object.type != "AreaActivate" &&
 				authored_object.type != "EditVariable" &&
 				authored_object.type != "LevelTimer" &&
 				authored_object.type != "StatusMessage" &&
-				authored_object.type != "CutScene" &&
 				authored_object.type != "ConditionalSound" &&
 				authored_object.type != "ConditionalContainer" &&
 				authored_object.type != "GuardGenerator" &&
@@ -2001,14 +1949,6 @@ void App::SetupRuntimeMissionState() {
 		task_source.task_id = authored_object.taskId;
 		task_source.object_index = object_index;
 		task_source.argument_tokens = authored_object.argTokens;
-		if (authored_object.type == "CutScene") {
-			task_source.authored_camera_shots =
-				authored_cut_scene_shots(object_index);
-			for (const igi::AuthoredMissionCutSceneShot& shot :
-				task_source.authored_camera_shots) {
-				task_source.authored_duration_seconds += shot.duration_seconds;
-			}
-		}
 		if (authored_object.type == "ConditionalContainer") {
 			task_source.descendant_object_indices =
 				collect_descendants(object_index);
@@ -2687,6 +2627,22 @@ void App::SetupLevelAiGuards() {
 		                obj.type == "HumanSoldierRPG");
 		if (!isEnemy) continue;
 
+		// Reject soldiers with unresolved transforms: generator/container
+		// children can carry raw uninitialized positions (observed ~1e8 units,
+		// far outside any level bounds) and would wedge forever.
+		{
+			constexpr double kMaxPlausibleCoordinate = 5.0e6;
+			if (fabs(obj.pos.x) > kMaxPlausibleCoordinate ||
+				fabs(obj.pos.y) > kMaxPlausibleCoordinate ||
+				fabs(obj.pos.z) > kMaxPlausibleCoordinate) {
+				Logger::Get().Log(LogLevel::WARNING,
+					"[AI] Skipping soldier '" + obj.name + "' with implausible spawn (" +
+					std::to_string(obj.pos.x) + "," + std::to_string(obj.pos.y) + "," +
+					std::to_string(obj.pos.z) + ")");
+				continue;
+			}
+		}
+
 		igi::AiGuardEntity guard;
 		guard.id = (uint32_t)i;
 		guard.name = obj.name.empty() ? obj.type : obj.name;
@@ -2748,7 +2704,7 @@ void App::SetupLevelAiGuards() {
 			}
 		}
 		if (guard.waypoints.empty()) {
-			// No usable AIGraph — stand guard in place (still hears/sees player).
+			// No usable AIGraph â€” stand guard in place (still hears/sees player).
 			guard.waypoints.push_back(guard.position);
 		}
 
@@ -3113,7 +3069,7 @@ float App::GetSelectedObjectScale() const {
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 
-// ── Animation system ─────────────────────────────────────────────────────────
+// â”€â”€ Animation system â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // (Per-object auto-play init now lives in LoadLevel's parallel resolution pass;
 //  see app_level.cpp. There is no single-object initializer anymore.)
 
@@ -3242,10 +3198,10 @@ const std::vector<int>& App::GetOrComputeAnimationIds(int objIndex) {
     return animIdsCache_[objIndex] = ComputeAnimationIdsForObject(objIndex);
 }
 
-// Pure computation, no cache reads/writes — safe to call concurrently from worker
+// Pure computation, no cache reads/writes â€” safe to call concurrently from worker
 // threads (level-load parallel animation resolution) as long as no other thread is
 // mutating LevelObjects/AnimationRegistry at the same time (registry must already
-// be fully imported — see LoadLevel's sequential ImportAnimations pre-pass).
+// be fully imported â€” see LoadLevel's sequential ImportAnimations pre-pass).
 std::vector<int> App::ComputeAnimationIdsForObject(int objIndex) const {
     auto& objects = level_.GetLevelObjects().GetObjects();
     if (objIndex < 0 || objIndex >= (int)objects.size()) return {};
@@ -3266,7 +3222,7 @@ std::vector<int> App::ComputeAnimationIdsForObject(int objIndex) const {
         }
     } else {
         Logger::Get().Log(LogLevel::DEBUG, "[Anim] Object " + std::to_string(objIndex) +
-            " has no HumanAI child task — only Stand Animation id (if any) is available");
+            " has no HumanAI child task â€” only Stand Animation id (if any) is available");
     }
 
     // PatrolPath children can include "PatrolPathCommand" entries that play a
@@ -3339,7 +3295,7 @@ std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
         if (idx < 0 || idx >= (int)objs.size()) continue;
         const auto& obj = objs[idx];
         if (obj.deleted) continue;
-        // Only skip the static draw if the skinned replacement can actually render —
+        // Only skip the static draw if the skinned replacement can actually render â€”
         // otherwise a model whose skin geometry fails to load goes permanently
         // invisible (neither the static nor the skinned draw ever produces anything).
         if (!renderer_.HasSkinGeometry(obj.modelId, obj.isBuilding)) continue;

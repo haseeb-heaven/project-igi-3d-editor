@@ -541,6 +541,29 @@ void AiSystem::Update(
                     std::to_string(guard.position.y) + "," +
                     std::to_string(guard.position.z) + ")");
             }
+            // Unstick: after ~3 seconds wedged, snap to the nearest nav node.
+            // A graph node is a known-walkable position, so the patrol resumes
+            // from there instead of freezing for the rest of the mission.
+            if (guard.blocked_move_ticks >= 90 && guard.graph &&
+                !guard.graph->nodes.empty()) {
+                const GraphNode* nearest = GRAPH_FindNode(
+                    *guard.graph,
+                    GRAPH_NearestNode(*guard.graph,
+                        (double)guard.position.x - guard.graph_offset.x,
+                        (double)guard.position.y - guard.graph_offset.y,
+                        (double)guard.position.z - guard.graph_offset.z));
+                if (nearest != nullptr) {
+                    guard.position = NodeWorldPos(guard, *nearest);
+                    guard.current_node = nearest->id;
+                    guard.route.clear();
+                    guard.leg_origin = guard.position;
+                    Logger::Get().Log(LogLevel::INFO,
+                        "[AI] Guard " + std::to_string(guard.id) +
+                        " unstuck to node " + std::to_string(nearest->id));
+                }
+                guard.blocked_move_ticks = 0;
+                return;
+            }
             guard.position = previous_position;
         } else {
             guard.blocked_move_ticks = 0;
