@@ -21,6 +21,7 @@ public:
     bool CloseGameplay(EditorSnapshot& out_snapshot);
     bool ApplyAndRestartGameplay(const EditorSnapshot& snapshot);
     void RestartGameplay();
+    void SetGameplayInputModifier(SimulationScheduler::GameplayInputModifier input_modifier);
 
     // Frame update & render
     void Update(int64_t now_milliseconds);

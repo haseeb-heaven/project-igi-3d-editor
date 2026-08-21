@@ -15,6 +15,9 @@ void SimulationScheduler::Update(int64_t now_milliseconds) {
 
     while (clock_.IsTickDue()) {
         PlayerInputCmd input = router_.ConsumeGameplayInput();
+        if (input_modifier_) {
+            input_modifier_(clock_.GetTickCount(), input);
+        }
         world_.UpdateSimulationTick(clock_.GetTickCount(), input);
         clock_.CompleteTick();
     }

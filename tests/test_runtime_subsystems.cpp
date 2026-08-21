@@ -29,6 +29,7 @@
 #include "../source/runtime/render_target.h"
 #include "../source/runtime/runtime_renderer.h"
 #include "../source/runtime/magic_object_registry.h"
+#include "../source/runtime/simulation_scheduler.h"
 
 using namespace igi;
 
@@ -1878,6 +1879,30 @@ TEST(RuntimeWorldTest, InteractionProviderSeparatesDoorUseFromObjectiveCompletio
 }
 
 // 8. Twin-Window & Editor Snapshot Tests
+TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
+    GameplayHost host;
+    host.Initialize(FlatTerrain);
+
+    std::vector<uint64_t> modifier_ticks;
+    host.SetGameplayInputModifier(
+        [&modifier_ticks](uint64_t tick_number, PlayerInputCmd& input_command) {
+            modifier_ticks.push_back(tick_number);
+            input_command.forward = 1.0f;
+        });
+
+    EditorSnapshot snapshot;
+    ASSERT_TRUE(host.OpenGameplay(snapshot));
+    host.Update(0);
+    host.Update(100);
+
+    ASSERT_GE(modifier_ticks.size(), 3U);
+    EXPECT_EQ(modifier_ticks.front(), 0U);
+    EXPECT_GT(host.GetWorld().GetPlayer().GetPosition().y, 0.0f);
+
+    EditorSnapshot restored_snapshot;
+    ASSERT_TRUE(host.CloseGameplay(restored_snapshot));
+}
+
 TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     GameplayHost host;
     auto dummy_terrain = [](float x, float y) -> float { return 0.0f; };

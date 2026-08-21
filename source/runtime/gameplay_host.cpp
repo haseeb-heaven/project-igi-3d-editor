@@ -1,6 +1,8 @@
 // gameplay_host.cpp - Host controller for gameplay runtime, simulation, and twin-window lifecycle implementation
 #include "gameplay_host.h"
 
+#include <utility>
+
 namespace igi {
 
 GameplayHost::GameplayHost()
@@ -33,6 +35,11 @@ bool GameplayHost::ApplyAndRestartGameplay(const EditorSnapshot& snapshot) {
 
 void GameplayHost::RestartGameplay() {
     session_.Restart();
+}
+
+void GameplayHost::SetGameplayInputModifier(
+    SimulationScheduler::GameplayInputModifier input_modifier) {
+    session_.GetScheduler().SetGameplayInputModifier(std::move(input_modifier));
 }
 
 void GameplayHost::SetPaused(bool paused) {
