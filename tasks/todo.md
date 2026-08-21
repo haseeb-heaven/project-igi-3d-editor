@@ -20,7 +20,7 @@
       delivery, and fixed-step weapon zoom state.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
-      sound selection, and regression coverage.
+      sound selection, guard hearing-radius event, and regression coverage.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.

@@ -407,6 +407,15 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
         // 1. Process hearing
         for (const auto& evt : events) {
             float dist = glm::distance(guard.position, evt.position);
+            if (evt.hearing_radius_units > 0.0f) {
+                if (dist > evt.hearing_radius_units) {
+                    continue;
+                }
+                guard.state = AiGuardState::Suspicious;
+                guard.suspicion = 1.0f;
+                continue;
+            }
+
             float heard_loudness = evt.loudness / (1.0f + 0.05f * dist);
             if (heard_loudness > 0.35f) {
                 guard.state = AiGuardState::Suspicious;

@@ -39,6 +39,39 @@ std::shared_ptr<GraphFile> MakeLineGraph(int nodeCount) {
 
 } // namespace
 
+TEST(AiPatrolPortTest, GroundImpactUsesAuthoredHearingRadius) {
+    AiSystem nearby_ai;
+    AiGuardEntity nearby_guard;
+    nearby_guard.id = 1;
+    nearby_guard.position = glm::vec3(15.0f * 4096.0f, 0.0f, 0.0f);
+    nearby_guard.state = AiGuardState::Patrol;
+    nearby_ai.RegisterGuard(nearby_guard);
+
+    AiStimulusEvent nearby_impact;
+    nearby_impact.type = AiEventType::GroundImpact;
+    nearby_impact.position = glm::vec3(0.0f);
+    nearby_impact.hearing_radius_units = 20.0f * 4096.0f;
+    nearby_ai.GetEventQueue().Post(nearby_impact);
+    nearby_ai.Update(1.0 / 30.0, glm::vec3(0.0f), false);
+
+    ASSERT_EQ(nearby_ai.GetGuards().size(), 1U);
+    EXPECT_EQ(nearby_ai.GetGuards()[0].state, AiGuardState::Suspicious);
+
+    AiSystem distant_ai;
+    AiGuardEntity distant_guard;
+    distant_guard.id = 2;
+    distant_guard.position = glm::vec3(25.0f * 4096.0f, 0.0f, 0.0f);
+    distant_guard.state = AiGuardState::Patrol;
+    distant_ai.RegisterGuard(distant_guard);
+
+    AiStimulusEvent distant_impact = nearby_impact;
+    distant_ai.GetEventQueue().Post(distant_impact);
+    distant_ai.Update(1.0 / 30.0, glm::vec3(0.0f), false);
+
+    ASSERT_EQ(distant_ai.GetGuards().size(), 1U);
+    EXPECT_EQ(distant_ai.GetGuards()[0].state, AiGuardState::Patrol);
+}
+
 // WalkTo a node: the guard moves along the graph route until it reaches the
 // destination node, then the cursor advances to the next command.
 TEST(AiPatrolPortTest, WalkToReachesNodeAlongRoute) {

@@ -470,6 +470,15 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     const bool was_grounded = player_.IsGrounded();
     player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
     const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
+    if (landing_impact.hearing_radius_units > 0.0f) {
+        AiStimulusEvent ground_impact;
+        ground_impact.type = AiEventType::GroundImpact;
+        ground_impact.position = player_.GetPosition();
+        ground_impact.hearing_radius_units = landing_impact.hearing_radius_units;
+        ground_impact.originator_id = 0;
+        ground_impact.tick_timestamp = tick_number;
+        ai_.GetEventQueue().Post(ground_impact);
+    }
     if (landing_impact.damage > 0.0f) {
         AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
     }
