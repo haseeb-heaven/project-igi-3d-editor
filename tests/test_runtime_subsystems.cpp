@@ -2180,6 +2180,11 @@ TEST(RuntimeDoorStateTest, SlidingDoorUsesAuthoredThirtyHertzOpenTime) {
     door.Tick();
 
     EXPECT_NEAR(door.GetSlideFraction(), 1.0f / 30.0f, 0.000001f);
+    // Vanilla scales the authored stop positively by the fraction and never
+    // flips it mid-travel (DoorRegistry.cs DrawPositionAt, lines 76-86).
+    EXPECT_EQ(
+        door.GetSlideOffsetUnits(),
+        glm::vec3(-PlayerController::WORLD_METER / 30.0f, 0.0f, 0.0f));
     EXPECT_FALSE(door.IsFullyClosed());
     EXPECT_FALSE(door.IsFullyOpen());
     EXPECT_TRUE(door.WasFullyClosed());
@@ -2224,6 +2229,53 @@ TEST(RuntimeDoorStateTest, SwingAndSlideReturnToClosedStateWithoutOvershoot) {
     EXPECT_NEAR(door.GetAngleRadians(), 0.0f, 0.000001f);
     EXPECT_EQ(door.GetSlideFraction(), 0.0f);
     EXPECT_EQ(door.GetTicksOpen(), 0);
+}
+
+// Vanilla carries the authored Max angle's sign through the whole swing: the
+// channel steps |max|/(Open time x 30) degrees a tick from zero onto the
+// authored target without normalizing it (DoorState.cs Tick, lines 127-145),
+// and the renderer applies that angle as Orientation * RotationZ(angle)
+// (DoorRegistry.cs DrawOrientationAt, lines 93-94).
+TEST(RuntimeDoorStateTest, SwingFollowsAuthoredMaximumAngleSign) {
+    RuntimeDoorDefinition positive;
+    positive.maximum_angle_degrees = 90.0f;
+    positive.open_time_seconds = 0.5f;
+
+    RuntimeDoorState opens_positive(positive);
+    opens_positive.CommandOpen();
+    opens_positive.Tick();
+    EXPECT_NEAR(
+        opens_positive.GetAngleRadians(),
+        glm::radians(90.0f / 15.0f),
+        0.000001f);
+
+    for (int tick = 1; tick < 15; ++tick) {
+        opens_positive.Tick();
+        EXPECT_GT(opens_positive.GetAngleRadians(), 0.0f);
+    }
+
+    EXPECT_NEAR(opens_positive.GetAngleRadians(), glm::radians(90.0f), 0.000001f);
+    EXPECT_TRUE(opens_positive.IsFullyOpen());
+
+    RuntimeDoorDefinition negative;
+    negative.maximum_angle_degrees = -90.0f;
+    negative.open_time_seconds = 0.5f;
+
+    RuntimeDoorState opens_negative(negative);
+    opens_negative.CommandOpen();
+    opens_negative.Tick();
+    EXPECT_NEAR(
+        opens_negative.GetAngleRadians(),
+        glm::radians(-90.0f / 15.0f),
+        0.000001f);
+
+    for (int tick = 1; tick < 15; ++tick) {
+        opens_negative.Tick();
+        EXPECT_LT(opens_negative.GetAngleRadians(), 0.0f);
+    }
+
+    EXPECT_NEAR(opens_negative.GetAngleRadians(), glm::radians(-90.0f), 0.000001f);
+    EXPECT_TRUE(opens_negative.IsFullyOpen());
 }
 
 TEST(RuntimeWorldTest, AuthoredDoorPublishesMotionAndMissionState) {
