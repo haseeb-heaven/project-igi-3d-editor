@@ -327,6 +327,7 @@ target_sources(igi_tests PRIVATE
     source/player_fall_impact.cpp
     source/player_motion.cpp
     source/player_ladder.cpp
+    source/player_separation.cpp
     source/animation_motion.cpp
     source/player_animation_driver.cpp
     source/weapon_view_sway.cpp

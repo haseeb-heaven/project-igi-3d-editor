@@ -1,6 +1,7 @@
 // ai_system.cpp - Runtime AI guard simulation, dual-cone vision, and combat behavior implementation
 #include "ai_system.h"
 #include "logger.h"
+#include "player_separation.h"
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -526,6 +527,28 @@ void AiSystem::Update(
             } else {
                 AdvanceFallbackPatrol(guard, delta_seconds);
             }
+        }
+
+        // Human separation (vanilla A11): a move that ends nearer to another
+        // human than it started is rejected outright. Guards block against the
+        // player and every other live guard without being displaced.
+        if (guard.position != previous_position) {
+            std::vector<glm::vec3> blockers;
+            blockers.reserve(guards_.size());
+            for (const auto& other : guards_) {
+                if (other.id != guard.id && other.state != AiGuardState::Dead &&
+                    other.runtime_enabled) {
+                    blockers.push_back(other.position);
+                }
+            }
+            if (player_alive) {
+                blockers.push_back(player_pos);
+            }
+            guard.position = HumanSeparation::ResolveAll(
+                previous_position,
+                guard.position,
+                blockers.begin(),
+                blockers.end());
         }
 
         if (movement_collision_query_ && movement_collision_query_(guard.position)) {

@@ -1,5 +1,7 @@
 #include "runtime_world.h"
 
+#include "../player_separation.h"
+
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
@@ -2323,16 +2325,15 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         }
     }
 
-    std::vector<ObstacleCollider> obstacles;
+    // Live human blockers for vanilla separation (A11): bodies block moves by
+    // rejection, not push-out. Static geometry still uses the obstacle sweep.
+    std::vector<glm::vec3> human_blockers;
+    human_blockers.reserve(ai_.GetGuards().size());
     for (const auto& guard : ai_.GetGuards()) {
         if (guard.state == AiGuardState::Dead) {
             continue;
         }
-        ObstacleCollider obs;
-        obs.center = guard.position;
-        obs.radius = 0.4f * PlayerController::WORLD_METER;
-        obs.height = 1.8f * PlayerController::WORLD_METER;
-        obstacles.push_back(obs);
+        human_blockers.push_back(guard.position);
     }
 
     // 1. Tick player physics, obstacle & 3D building collision, and movement.
@@ -2346,7 +2347,15 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     }
 
     if (!ladder_tick_handled) {
-        player_.Tick(player_input, get_terrain_z_, obstacles, check_collision_);
+        const glm::vec3 position_before_tick = player_.GetPosition();
+        player_.Tick(player_input, get_terrain_z_, {}, check_collision_);
+        // Vanilla human-vs-human pass: refuse the move if it closed the gap to
+        // any live guard; a body already overlapping can still walk out.
+        player_.SetPosition(HumanSeparation::ResolveAll(
+            position_before_tick,
+            player_.GetPosition(),
+            human_blockers.begin(),
+            human_blockers.end()));
         const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
         if (landing_impact.hearing_radius_units > 0.0f) {
             AiStimulusEvent ground_impact;

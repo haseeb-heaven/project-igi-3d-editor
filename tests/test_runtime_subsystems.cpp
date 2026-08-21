@@ -16,6 +16,7 @@
 #include "../source/player_collision.h"
 #include "../source/player_motion.h"
 #include "../source/player_ladder.h"
+#include "../source/player_separation.h"
 #include "../source/player_animation_driver.h"
 #include "../source/weapon_system.h"
 #include "../source/weapon_view_sway.h"
@@ -1336,6 +1337,52 @@ TEST(RuntimePlayerTest, VanillaFallImpactMatchesReferenceBoundaries) {
     EXPECT_NEAR(lethal_impact.damage, maximum_health, 0.0001f);
     EXPECT_EQ(lethal_impact.sound_name, "player_fall_3");
     EXPECT_FLOAT_EQ(lethal_impact.view_kick_units, -1024.0f);
+}
+
+// Human-vs-human separation (vanilla A11, 0x462BA0): a move that would end
+// nearer to another human is rejected outright; vertical separation above the
+// cylinder height never blocks; an already-overlapping body may walk out.
+TEST(RuntimePlayerTest, HumanSeparationMatchesReferenceCylinder) {
+    const glm::vec3 start(0.0f, 0.0f, 0.0f);
+    const glm::vec3 other(4096.0f, 0.0f, 0.0f); // 1 m away on +X
+
+    // Move toward the blocker closes the gap -> refused. The end point lands
+    // inside the 2252.8-unit cylinder around the other body.
+    const glm::vec3 toward = HumanSeparation::Resolve(
+        start, glm::vec3(3072.0f, 0.0f, 0.0f), other);
+    EXPECT_EQ(toward, start);
+
+    // Move away from the blocker opens the gap -> allowed.
+    const glm::vec3 away = HumanSeparation::Resolve(
+        start, glm::vec3(-1024.0f, 0.0f, 0.0f), other);
+    EXPECT_EQ(away, glm::vec3(-1024.0f, 0.0f, 0.0f));
+
+    // Beyond the radius (2252.8 units) never blocks.
+    const glm::vec3 beyond = HumanSeparation::Resolve(
+        start, glm::vec3(2048.0f, 0.0f, 0.0f), glm::vec3(8192.0f, 0.0f, 0.0f));
+    EXPECT_EQ(beyond, glm::vec3(2048.0f, 0.0f, 0.0f));
+
+    // Vertical gap at or above 7372.8 units never blocks.
+    const glm::vec3 above = HumanSeparation::Resolve(
+        start, glm::vec3(512.0f, 0.0f, 7372.8f), other);
+    EXPECT_EQ(above, glm::vec3(512.0f, 0.0f, 7372.8f));
+
+    // Already overlapping: only moves that close the gap are refused, so the
+    // body can escape by walking out.
+    const glm::vec3 overlapping_start(other.x - 100.0f, 0.0f, 0.0f);
+    const glm::vec3 escape = HumanSeparation::Resolve(
+        overlapping_start, glm::vec3(other.x + 100.0f, 0.0f, 0.0f), other);
+    EXPECT_EQ(escape, glm::vec3(other.x + 100.0f, 0.0f, 0.0f));
+
+    // ResolveAll lets each blocker overwrite the candidate in turn: one
+    // refusal is enough even with a later permissive blocker.
+    std::vector<glm::vec3> blockers = {
+        glm::vec3(1024.0f, 0.0f, 0.0f),
+        glm::vec3(-16384.0f, 0.0f, 0.0f),
+    };
+    const glm::vec3 blocked = HumanSeparation::ResolveAll(
+        start, glm::vec3(512.0f, 0.0f, 0.0f), blockers.begin(), blockers.end());
+    EXPECT_EQ(blocked, start);
 }
 
 TEST(RuntimePlayerTest, LandingDamageBypassesArmor) {
