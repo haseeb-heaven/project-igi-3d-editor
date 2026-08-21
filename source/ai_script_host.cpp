@@ -229,6 +229,21 @@ void AiScriptHost::RegisterNatives() {
     }
 
     registry_.RegisterDeferredFunctionByName(
+        "AIAction_PlaySound",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
+            AiGuardEntity* guard = GetCurrentGuard();
+            if (guard != nullptr && script_sound_handler_ != nullptr &&
+                arguments.Count() >= 2U) {
+                script_sound_handler_(
+                    guard->id,
+                    guard->position,
+                    arguments.GetString(0),
+                    arguments.GetInt(1) != 0);
+            }
+            return QvmRuntimeValue::FromInt(0);
+        });
+
+    registry_.RegisterDeferredFunctionByName(
         "AIFunction_GetCurrentEventType",
         [this](QvmExecutionContext&, const QvmNativeCallArguments&) {
             return QvmRuntimeValue::FromInt(current_event_type_);

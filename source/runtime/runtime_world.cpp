@@ -129,7 +129,28 @@ bool WeaponProducesMuzzleFlash(const WeaponDefinition& weapon) {
 } // namespace
 
 RuntimeWorld::RuntimeWorld()
-    : ai_script_host_(qvm_registry_) {}
+    : ai_script_host_(qvm_registry_) {
+    ai_script_host_.SetScriptSoundHandler(
+        [this](
+            uint32_t,
+            const glm::vec3& guard_position,
+            const std::string& authored_sound,
+            bool relative_to_guard) {
+            if (authored_sound.empty()) {
+                return;
+            }
+
+            RuntimeAudioEvent audio_event;
+            audio_event.type = RuntimeAudioEventType::OneShot;
+            // Keep missing authored guard dialogue audible without conflating
+            // a failed voice lookup with a weapon discharge.
+            audio_event.fallback_effect = SoundEffect::ObjectiveComplete;
+            audio_event.authored_sound = authored_sound;
+            audio_event.position = guard_position;
+            audio_event.relative_to_microphone = relative_to_guard;
+            QueueAudioEvent(std::move(audio_event));
+        });
+}
 RuntimeWorld::~RuntimeWorld() = default;
 
 std::vector<RuntimeAudioEvent> RuntimeWorld::ConsumePendingAudioEvents() {

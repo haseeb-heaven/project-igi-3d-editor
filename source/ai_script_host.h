@@ -2,7 +2,9 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <utility>
 
 #include "ai_system.h"
 #include "level/qvm_interpreter.h"
@@ -14,9 +16,19 @@ namespace igi {
 // selects the guard and controls when a fixed-tick event is dispatched.
 class AiScriptHost {
 public:
+    using ScriptSoundHandler = std::function<void(
+        uint32_t guard_id,
+        const glm::vec3& guard_position,
+        const std::string& authored_sound,
+        bool relative_to_guard)>;
+
     explicit AiScriptHost(QvmNativeRegistry& registry);
 
     void Reset();
+
+    void SetScriptSoundHandler(ScriptSoundHandler script_sound_handler) {
+        script_sound_handler_ = std::move(script_sound_handler);
+    }
 
     bool LoadProgram(const QVMFile& parsed_file, QvmProgram& out_program);
 
@@ -43,6 +55,7 @@ private:
 
     QvmNativeRegistry& registry_;
     QvmInterpreter interpreter_;
+    ScriptSoundHandler script_sound_handler_;
     AiGuardEntity* current_guard_ = nullptr;
     int32_t current_event_type_ = 0;
     uint32_t random_state_ = 0x1F123BB5U;

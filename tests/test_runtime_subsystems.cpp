@@ -185,6 +185,45 @@ QVMFile BuildRetailAiPatrolScript() {
     return parsed_file;
 }
 
+QVMFile BuildRetailAiSoundScript() {
+    QVMFile parsed_file;
+    parsed_file.valid = true;
+    parsed_file.identifiers = {"AIAction_PlaySound"};
+    parsed_file.strings = {"guard_alert_1"};
+
+    auto make_instruction = [](QVMOpType type, uint32_t address, uint32_t size) {
+        QVMInstruction instruction{};
+        instruction.type = type;
+        instruction.address = address;
+        instruction.size = size;
+        return instruction;
+    };
+
+    QVMInstruction play_sound_symbol = make_instruction(QVMOpType::PUSHIIB, 0, 2);
+    play_sound_symbol.operand = 0;
+    QVMInstruction play_sound_call = make_instruction(QVMOpType::CALL, 2, 5);
+    play_sound_call.operand = 3;
+    play_sound_call.signed_operand = 3;
+    play_sound_call.call_targets = {8, 11, 13};
+    QVMInstruction program_end = make_instruction(QVMOpType::BRK, 7, 1);
+
+    QVMInstruction sound_name = make_instruction(QVMOpType::PUSHSIB, 8, 2);
+    sound_name.operand = 0;
+    QVMInstruction sound_name_end = make_instruction(QVMOpType::BRK, 10, 1);
+    QVMInstruction relative_to_guard = make_instruction(QVMOpType::PUSH0, 11, 1);
+    QVMInstruction relative_to_guard_end = make_instruction(QVMOpType::BRK, 12, 1);
+    QVMInstruction action_flags = make_instruction(QVMOpType::PUSH0, 13, 1);
+    QVMInstruction action_flags_end = make_instruction(QVMOpType::BRK, 14, 1);
+
+    parsed_file.instructions = {
+        play_sound_symbol, play_sound_call, program_end,
+        sound_name, sound_name_end,
+        relative_to_guard, relative_to_guard_end,
+        action_flags, action_flags_end,
+    };
+    return parsed_file;
+}
+
 TEST(RuntimeQvmTest, ResolvesLiteralIntegerFromNativeCallArgumentBlock) {
     const QVMFile script = BuildRetailAiPatrolScript();
 
@@ -2594,6 +2633,28 @@ TEST(RuntimeWorldTest, RetailAiQvmDrivesGuardActionsOnFixedTicks) {
     EXPECT_EQ(world.GetAi().GetGuards()[0].active_patrol_path_id, 700);
     ASSERT_EQ(world.GetAi().GetGuards()[0].patrol_commands.size(), 1U);
     EXPECT_EQ(world.GetAi().GetGuards()[0].patrol_commands[0].operand, 3);
+}
+
+TEST(RuntimeWorldTest, RetailAiQvmPlaySoundPublishesAuthoredAudioEvent) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 31;
+    guard.position = glm::vec3(100.0f * PlayerController::WORLD_METER, 0.0f, 0.0f);
+    guard.state = AiGuardState::Patrol;
+    world.GetAi().RegisterGuard(guard);
+
+    ASSERT_TRUE(world.AttachGuardScript(guard.id, BuildRetailAiSoundScript()));
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    const std::vector<RuntimeAudioEvent> audio_events =
+        world.ConsumePendingAudioEvents();
+    ASSERT_EQ(audio_events.size(), 1U);
+    EXPECT_EQ(audio_events[0].type, RuntimeAudioEventType::OneShot);
+    EXPECT_EQ(audio_events[0].authored_sound, "guard_alert_1");
+    EXPECT_FALSE(audio_events[0].relative_to_microphone);
+    EXPECT_EQ(audio_events[0].position, guard.position);
 }
 
 TEST(RuntimeWorldTest, ActivateCompletesTheCurrentMissionObjective) {
