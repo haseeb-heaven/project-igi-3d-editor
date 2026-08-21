@@ -137,8 +137,12 @@ parity claims remain gated on IGI1 evidence.
   unavailable.
 - [x] Carry weapon-system recoil into a short fixed-step first-person rig kick
   and recovery, without changing the simulation-owned aim or ballistics path.
+- [x] Load authored `DefineComputerObjective` rows from the runtime level
+  snapshot and resolve their exact English `objectives.res` text for the HUD;
+  preserve links and completion/failure expressions as runtime metadata.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
-  the selected fixture; scan level/Common/Weapons QVMs before adding natives.
+  the selected fixture; evaluate the preserved expressions and replace the
+  synthetic extraction zone after scanning level/Common/Weapons QVMs.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
   weapon/projectile timing, objective progression, audio, and restart.
 - [ ] Run the authoritative Windows configure/build/test/play checks and record

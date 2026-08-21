@@ -261,6 +261,7 @@ add_executable(igi_tests
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
     tests/test_audio_asset_resolver.cpp
+    tests/test_mission_objectives.cpp
 )
 
 # Explicit runtime so igi_tests always matches igi-editor (/MDd Debug, /MD Release).
@@ -320,6 +321,7 @@ target_sources(igi_tests PRIVATE
     source/ai_script_host.cpp
     source/ai_system.cpp
     source/level_flow.cpp
+    source/mission_objective_loader.cpp
     source/runtime/runtime_world.cpp
     source/runtime/runtime_session.cpp
     source/runtime/gameplay_window.cpp

@@ -1,6 +1,8 @@
 // level_flow.cpp - Mission objective evaluation, flow state, and extraction logic implementation
 #include "level_flow.h"
 
+#include <utility>
+
 namespace igi {
 
 LevelFlow::LevelFlow() {
@@ -11,6 +13,37 @@ void LevelFlow::InitializeMission(uint32_t mission_number) {
     mission_number_ = mission_number;
     objectives_.clear();
     status_ = MissionStatus::InProgress;
+    authored_objective_sets_.clear();
+    objective_text_resolver_ = {};
+    active_authored_objective_set_index_ = 0;
+
+    InitializeFallbackObjectives(mission_number);
+}
+
+void LevelFlow::InitializeMission(
+    uint32_t mission_number,
+    const std::vector<AuthoredMissionObjectiveSet>& authored_objective_sets,
+    MissionObjectiveTextResolver text_resolver) {
+    mission_number_ = mission_number;
+    objectives_.clear();
+    status_ = MissionStatus::InProgress;
+    authored_objective_sets_ = authored_objective_sets;
+    objective_text_resolver_ = std::move(text_resolver);
+    active_authored_objective_set_index_ = 0;
+
+    if (authored_objective_sets_.empty()) {
+        InitializeFallbackObjectives(mission_number);
+        return;
+    }
+
+    LoadAuthoredObjectiveSet(active_authored_objective_set_index_);
+    if (objectives_.empty()) {
+        authored_objective_sets_.clear();
+        InitializeFallbackObjectives(mission_number);
+    }
+}
+
+void LevelFlow::InitializeFallbackObjectives(uint32_t mission_number) {
 
     switch (mission_number) {
         case 1:
@@ -84,13 +117,72 @@ void LevelFlow::AddObjective(uint32_t id, const std::string& desc, bool is_prima
     objectives_.push_back(obj);
 }
 
+void LevelFlow::LoadAuthoredObjectiveSet(size_t authored_set_index) {
+    objectives_.clear();
+    if (authored_set_index >= authored_objective_sets_.size()) {
+        return;
+    }
+
+    const AuthoredMissionObjectiveSet& objective_set =
+        authored_objective_sets_[authored_set_index];
+    for (size_t objective_index = 0;
+         objective_index < objective_set.objectives.size();
+         ++objective_index) {
+        const AuthoredMissionObjectiveDefinition& authored_objective =
+            objective_set.objectives[objective_index];
+        std::string display_text = authored_objective.text_resource;
+        if (objective_text_resolver_) {
+            const std::string resolved_text =
+                objective_text_resolver_(authored_objective.text_resource);
+            if (!resolved_text.empty()) {
+                display_text = resolved_text;
+            }
+        }
+
+        MissionObjective objective;
+        objective.id = static_cast<uint32_t>(objective_index + 1);
+        objective.description = std::move(display_text);
+        objective.text_resource = authored_objective.text_resource;
+        objective.link_task_id = authored_objective.link_task_id;
+        objective.completion_expression = authored_objective.completion_expression;
+        objective.failure_expression = authored_objective.failure_expression;
+        objective.is_primary = true;
+        objective.state = ObjectiveState::Pending;
+        objectives_.push_back(std::move(objective));
+    }
+}
+
+bool LevelFlow::AdvanceAuthoredObjectiveSet() {
+    if (authored_objective_sets_.empty() ||
+        active_authored_objective_set_index_ + 1 >= authored_objective_sets_.size()) {
+        return false;
+    }
+
+    ++active_authored_objective_set_index_;
+    LoadAuthoredObjectiveSet(active_authored_objective_set_index_);
+    return !objectives_.empty();
+}
+
 void LevelFlow::SetObjectiveState(uint32_t id, ObjectiveState state) {
-    for (auto& obj : objectives_) {
-        if (obj.id == id) {
-            obj.state = state;
+    bool objective_was_updated = false;
+    for (MissionObjective& objective : objectives_) {
+        if (objective.id == id) {
+            objective.state = state;
+            objective_was_updated = true;
             break;
         }
     }
+
+    if (!objective_was_updated || state != ObjectiveState::Completed) {
+        return;
+    }
+
+    for (const MissionObjective& objective : objectives_) {
+        if (objective.is_primary && objective.state == ObjectiveState::Pending) {
+            return;
+        }
+    }
+    AdvanceAuthoredObjectiveSet();
 }
 
 bool LevelFlow::CompleteFirstPendingPrimaryObjective() {
@@ -98,14 +190,27 @@ bool LevelFlow::CompleteFirstPendingPrimaryObjective() {
         return false;
     }
 
-    for (auto& objective : objectives_) {
+    bool objective_was_completed = false;
+    for (MissionObjective& objective : objectives_) {
         if (!objective.is_primary || objective.state != ObjectiveState::Pending) {
             continue;
         }
         objective.state = ObjectiveState::Completed;
-        return true;
+        objective_was_completed = true;
+        break;
     }
-    return false;
+
+    if (!objective_was_completed) {
+        return false;
+    }
+
+    for (const MissionObjective& objective : objectives_) {
+        if (objective.is_primary && objective.state == ObjectiveState::Pending) {
+            return true;
+        }
+    }
+    AdvanceAuthoredObjectiveSet();
+    return true;
 }
 
 std::string LevelFlow::GetObjectiveDisplayText() const {

@@ -27,6 +27,9 @@
       snapshot and render a labeled fallback cue when authored sprites are absent.
 - [x] Apply the weapon system's recoil result to the first-person rig through a
       deterministic three-tick presentation recovery.
+- [x] Parse vanilla `DefineComputerObjective` rows from the copied level task
+      snapshot and resolve their English `objectives.res` text for the Play-mode
+      HUD; preserve authored map links and state expressions.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.
@@ -82,7 +85,8 @@
 - `implemented-slice`: player movement/jump/crouch/health, weapon states,
   world-occluded hits, guard patrol/perception/combat, authored weapon
   selection, projectile simulation, flash exposure, muzzle flash, recoil, zoom, landing audio and
-  lazy packed/loose vanilla sound resolution,
+  lazy packed/loose vanilla sound resolution, authored objective text and
+  objective-set progression,
   health/armor HUD, and objective/extraction flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform

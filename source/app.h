@@ -641,6 +641,7 @@ private:
   // using its AIGraph waypoints. Runtime transforms are rendered through the
   // session-owned LevelObjects copy.
   void SetupLevelAiGuards();
+  void InitializeGameplayMissionObjectives();
   void SetupRuntimeLadders();
   void CollectAttachedRuntimeLadders(
       const std::string& model_id,

@@ -2,6 +2,8 @@
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
+#include "mission_objective_loader.h"
+#include <array>
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -1383,10 +1385,10 @@ void App::ToggleGamePlayMode() {
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
 
-		// Initialize mission objectives for this specific level
+		// Initialize authored mission objectives for this specific level.
+		InitializeGameplayMissionObjectives();
 		int current_lvl = level_.GetLevelNo();
 		if (current_lvl <= 0) current_lvl = 1;
-		gameplay_host_.GetWorld().GetLevelFlow().InitializeMission((uint32_t)current_lvl);
 
 		// Start authentic background music for the level
 		PlayLevelMusic(current_lvl);
@@ -1478,10 +1480,7 @@ void App::ApplyAndRestartGameplay() {
 	SetupLevelAiGuards();
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
-	int current_level = level_.GetLevelNo();
-	if (current_level <= 0) current_level = 1;
-	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
-		static_cast<uint32_t>(current_level));
+	InitializeGameplayMissionObjectives();
 
 	// RuntimeWorld::Reset intentionally starts at the neutral origin. Restore
 	// the authored spawn used when gameplay was opened so Apply+Restart is
@@ -1510,6 +1509,71 @@ void App::ApplyAndRestartGameplay() {
 	gameplay_host_.SetPaused(false);
 	FocusGameplayWindow();
 	status_message_ = "Gameplay applied and restarted from the current editor snapshot";
+}
+
+void App::InitializeGameplayMissionObjectives() {
+	const int loaded_level_number = level_.GetLevelNo();
+	const uint32_t mission_number = static_cast<uint32_t>(
+		loaded_level_number > 0 ? loaded_level_number : 1);
+
+	const auto& authored_objects = runtime_level_objects_.has_value()
+		? runtime_level_objects_->GetObjects()
+		: level_.GetLevelObjects().GetObjects();
+
+	std::vector<igi::MissionObjectiveTaskSource> objective_task_sources;
+	objective_task_sources.reserve(authored_objects.size());
+	for (const LevelObject& authored_object : authored_objects) {
+		if (authored_object.deleted ||
+			authored_object.type != "DefineComputerObjective") {
+			continue;
+		}
+
+		igi::MissionObjectiveTaskSource task_source;
+		task_source.task_type = authored_object.type;
+		task_source.argument_tokens = authored_object.argTokens;
+		objective_task_sources.push_back(std::move(task_source));
+	}
+
+	std::vector<igi::AuthoredMissionObjectiveSet> authored_objective_sets =
+		igi::LoadAuthoredMissionObjectiveDefinitions(objective_task_sources);
+	if (authored_objective_sets.empty()) {
+		Logger::Get().Log(
+			LogLevel::WARNING,
+			"[Gameplay] No authored DefineComputerObjective task found for level " +
+			std::to_string(mission_number) + "; using runtime fallback objectives");
+	}
+
+	const std::string game_root = Utils::GetIGIRootPath();
+	const std::array<std::string, 2> objective_archive_paths = {
+		game_root + "\\language\\ENGLISH\\objectives.res",
+		game_root + "\\language\\USA\\objectives.res",
+	};
+	igi::MissionObjectiveTextResolver text_resolver =
+		[objective_archive_paths](const std::string& resource_key) {
+			for (const std::string& archive_path : objective_archive_paths) {
+				if (!std::filesystem::exists(archive_path)) {
+					continue;
+				}
+
+				const std::vector<uint8_t> resource_data =
+					RES_Extract(archive_path, resource_key);
+				if (resource_data.empty()) {
+					continue;
+				}
+
+				const auto terminator = std::find(
+					resource_data.begin(), resource_data.end(), static_cast<uint8_t>(0));
+				return std::string(
+					resource_data.begin(),
+					terminator);
+			}
+			return resource_key;
+		};
+
+	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
+		mission_number,
+		std::move(authored_objective_sets),
+		std::move(text_resolver));
 }
 
 igi::RuntimeInteractionResult App::HandleGameplayInteraction(
