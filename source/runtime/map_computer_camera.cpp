@@ -127,9 +127,6 @@ void RuntimeMapComputerCamera::Update(
     if (phase_ == RuntimeMapComputerPhase::Ascend) {
         to_ = live_vantage;
         to_field_of_view_ = live_vantage_field_of_view;
-    } else if (phase_ == RuntimeMapComputerPhase::Shutdown) {
-        from_ = live_vantage;
-        from_field_of_view_ = live_vantage_field_of_view;
     }
 
     AdvancePhase();
@@ -142,9 +139,12 @@ void RuntimeMapComputerCamera::Update(
             break;
         case RuntimeMapComputerPhase::Boot:
         case RuntimeMapComputerPhase::Open:
-        case RuntimeMapComputerPhase::Shutdown:
             pose_ = live_vantage;
             field_of_view_ = live_vantage_field_of_view;
+            break;
+        case RuntimeMapComputerPhase::Shutdown:
+            // Keep the exact close-start pose. This preserves continuity when
+            // the player presses the map key during the opening flight.
             break;
         default:
             pose_ = landing_;
@@ -168,7 +168,8 @@ bool RuntimeMapComputerCamera::IsInteractive() const {
 }
 
 bool RuntimeMapComputerCamera::CanClose() const {
-    return phase_ == RuntimeMapComputerPhase::Boot ||
+    return phase_ == RuntimeMapComputerPhase::Ascend ||
+           phase_ == RuntimeMapComputerPhase::Boot ||
            phase_ == RuntimeMapComputerPhase::Open;
 }
 

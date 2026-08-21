@@ -3455,3 +3455,29 @@ TEST(MapComputerCameraTest, CloseReturnsExactlyToTheLivePlayerEye) {
     EXPECT_FLOAT_EQ(camera.GetFieldOfView(), 1.05f);
     EXPECT_FLOAT_EQ(camera.GetMotionBlur(), 0.0f);
 }
+
+TEST(MapComputerCameraTest, CloseDuringOpeningFlightRemainsContinuous) {
+    const RuntimeMapComputerPose eye{
+        glm::vec3(120.0f, 340.0f, 12.5f), 2.1f, -0.12f};
+    const RuntimeMapComputerPose vantage{
+        glm::vec3(120.0f, 340.0f, 912.5f), 0.0f,
+        RuntimeMapComputerCamera::kMapPitchRadians};
+
+    RuntimeMapComputerCamera camera;
+    camera.BeginOpen(eye, 1.05f, vantage, 0.30f);
+    camera.Update(0.30f, eye, vantage, 0.30f);
+    const RuntimeMapComputerPose close_start = camera.GetPose();
+    ASSERT_EQ(camera.GetPhase(), RuntimeMapComputerPhase::Ascend);
+    ASSERT_TRUE(camera.CanClose());
+
+    camera.BeginClose(
+        close_start,
+        camera.GetFieldOfView(),
+        eye,
+        1.05f);
+    camera.Update(1.0f / 30.0f, eye, vantage, 0.30f);
+
+    EXPECT_EQ(camera.GetPhase(), RuntimeMapComputerPhase::Shutdown);
+    EXPECT_EQ(camera.GetPose().position, close_start.position);
+    EXPECT_FLOAT_EQ(camera.GetPose().yaw, close_start.yaw);
+}

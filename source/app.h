@@ -14,6 +14,7 @@
 #include "player_ladder.h"
 #include "player_animation_driver.h"
 #include "runtime/gameplay_host.h"
+#include "runtime/map_computer_camera.h"
 #include "runtime/render_target.h"
 #include <atomic>
 #include <cstdint>
@@ -499,6 +500,8 @@ private:
     bool on_ground_;
   } viewer_;
   viewer_s gameplay_viewer_;
+  igi::RuntimeMapComputerCamera gameplay_map_computer_camera_;
+  bool gameplay_map_computer_open_ = false;
 
   enum class ManipulationMode {
     None,
@@ -536,6 +539,7 @@ private:
   void DrawGameplayGuardMuzzleFlashes();
   void UpdateGameplayFieldOfView();
   void ApplyRuntimeCutSceneCamera();
+  void UpdateGameplayMapComputerCamera(float delta_seconds);
   void CaptureGameplayRenderSnapshot();
   void DispatchEventBindings();
 

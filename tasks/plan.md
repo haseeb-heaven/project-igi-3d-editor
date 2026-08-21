@@ -160,8 +160,9 @@ parity claims remain gated on IGI1 evidence.
 - [x] Route the vanilla map-computer rising-edge action through the fixed-step
   runtime, freeze player input while the state is open, and publish the active
   six-row objective set to a phosphor-style gameplay HUD overlay; align the
-  default Right Ctrl crouch / C map bindings; keep the full animated tactical
-  camera as a later presentation-fidelity slice.
+  default Right Ctrl crouch / C map bindings; the animated tactical camera now
+  owns the gameplay-viewer transition, while tactical pan/zoom/markers remain
+  a later presentation-fidelity slice.
 - [x] Copy fixed-step guard transforms and animation-request metadata into the
   immutable render snapshot before synchronizing the gameplay scene copy.
 - [x] Reset the AI simulation clock when clearing a runtime world so restart

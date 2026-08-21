@@ -3,6 +3,7 @@
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
 #include "runtime/gameplay_spawn.h"
+#include "runtime/map_computer_camera.h"
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
@@ -743,6 +744,7 @@ void App::Frame(float delta_seconds) {
 		gameplay_viewer_.pitch_ = player.GetPitch();
 		UpdateGameplayViewerVectors();
 		ApplyRuntimeCutSceneCamera();
+		UpdateGameplayMapComputerCamera(delta_seconds);
 		// Publish the simulation-owned guard transforms before synchronizing the
 		// mutable render copy. Gameplay presentation must not iterate AI storage
 		// while the fixed-step world can be replaced or restarted.
@@ -1109,9 +1111,13 @@ void App::UpdateGameplayFieldOfView() {
         cut_scene_camera.active &&
         std::isfinite(cut_scene_camera.field_of_view_y_radians) &&
         cut_scene_camera.field_of_view_y_radians > 0.0f;
+    const bool map_camera_active = IsGameplayRenderTarget() &&
+        gameplay_map_computer_camera_.IsRunning();
     const bool zoom_active = IsGameplayRenderTarget() &&
         gameplay_host_.GetWorld().IsZoomActive();
-    const float desired_field_of_view = use_cut_scene_field_of_view
+    const float desired_field_of_view = map_camera_active
+        ? gameplay_map_computer_camera_.GetFieldOfView()
+        : use_cut_scene_field_of_view
         ? cut_scene_camera.field_of_view_y_radians
         : glm::radians(
             zoom_active
@@ -1161,6 +1167,72 @@ void App::ApplyRuntimeCutSceneCamera() {
     gameplay_viewer_.up_ = cut_scene_camera.up;
 }
 
+void App::UpdateGameplayMapComputerCamera(float delta_seconds) {
+    if (!IsGameplayRenderTarget()) {
+        return;
+    }
+
+    // The authored camera source does not expose a separate C++ map-camera
+    // task. Keep the presentation bridge deterministic and renderer-free: the
+    // player position is the map pivot and this fixed height is an inferred
+    // tactical vantage, while transition timings live in the tested seam.
+    constexpr float map_vantage_height_units =
+        64.0f * igi::PlayerController::WORLD_METER;
+    const igi::PlayerController& player = gameplay_host_.GetWorld().GetPlayer();
+    const float player_field_of_view = glm::radians(
+        gameplay_host_.GetWorld().IsZoomActive() ? 40.0f : FOVY_IN_DEGREE);
+    const igi::RuntimeMapComputerPose live_eye{
+        player.GetEyePosition(),
+        glm::radians(player.GetYaw()),
+        glm::radians(player.GetPitch())};
+    const glm::vec3 player_position = player.GetPosition();
+    const igi::RuntimeMapComputerPose live_vantage{
+        glm::vec3(
+            player_position.x,
+            player_position.y,
+            player_position.z + map_vantage_height_units),
+        0.0f,
+        igi::RuntimeMapComputerCamera::kMapPitchRadians};
+    const float map_field_of_view = glm::radians(18.0f);
+    const bool map_computer_open =
+        gameplay_host_.GetWorld().IsMapComputerOpen();
+
+    if (map_computer_open && !gameplay_map_computer_open_) {
+        gameplay_map_computer_camera_.BeginOpen(
+            live_eye,
+            player_field_of_view,
+            live_vantage,
+            map_field_of_view);
+        gameplay_map_computer_open_ = true;
+    } else if (!map_computer_open && gameplay_map_computer_open_) {
+        if (gameplay_map_computer_camera_.CanClose()) {
+            gameplay_map_computer_camera_.BeginClose(
+                gameplay_map_computer_camera_.GetPose(),
+                gameplay_map_computer_camera_.GetFieldOfView(),
+                live_eye,
+                player_field_of_view);
+        }
+        gameplay_map_computer_open_ = false;
+    }
+
+    gameplay_map_computer_camera_.Update(
+        delta_seconds,
+        live_eye,
+        live_vantage,
+        map_field_of_view);
+    if (!gameplay_map_computer_camera_.IsRunning()) {
+        return;
+    }
+
+    const igi::RuntimeMapComputerPose& camera_pose =
+        gameplay_map_computer_camera_.GetPose();
+    gameplay_viewer_.pos_ = camera_pose.position;
+    gameplay_viewer_.yaw_ = glm::degrees(camera_pose.yaw);
+    gameplay_viewer_.pitch_ = glm::degrees(camera_pose.pitch);
+    gameplay_viewer_.roll_ = 0.0f;
+    UpdateGameplayViewerVectors();
+}
+
 void App::CaptureGameplayRenderSnapshot() {
     if (!IsGameplayRenderTarget()) {
         return;
@@ -1179,7 +1251,11 @@ void App::CaptureGameplayRenderSnapshot() {
 
 void App::DrawGameplayPlayerWeapon() {
 	if (!IsGameplayRenderTarget()) return;
-	if (gameplay_host_.GetWorld().GetActiveCutSceneCamera().active) return;
+	if (gameplay_host_.GetWorld().GetActiveCutSceneCamera().active ||
+		gameplay_host_.GetWorld().IsMapComputerOpen() ||
+		gameplay_map_computer_camera_.IsRunning()) {
+		return;
+	}
 
 	const igi::RuntimeRenderSnapshot& render_snapshot =
 		gameplay_host_.GetRenderSnapshot();
@@ -1596,6 +1672,8 @@ void App::ToggleGamePlayMode() {
 		gameplay_viewer_.yaw_ = spawn_yaw;
 		gameplay_viewer_.pitch_ = spawn_pitch;
 		gameplay_viewer_.roll_ = 0.0f;
+		gameplay_map_computer_camera_.Reset();
+		gameplay_map_computer_open_ = false;
 		UpdateGameplayViewerVectors();
 
 		// Disable all editor modes and editor tools
@@ -1624,6 +1702,8 @@ void App::ToggleGamePlayMode() {
 		runtime_conditionally_hidden_flags_.clear();
 		runtime_guard_generator_hidden_flags_.clear();
 		runtime_animation_request_serials_.clear();
+		gameplay_map_computer_camera_.Reset();
+		gameplay_map_computer_open_ = false;
 		player_animation_driver_.ClearAnimationClips();
 		viewer_.pos_ = snap.camera_pos;
 		viewer_.yaw_ = snap.camera_yaw;
@@ -1699,6 +1779,8 @@ void App::ApplyAndRestartGameplay() {
 	gameplay_viewer_.yaw_ = gameplay_spawn_yaw_;
 	gameplay_viewer_.pitch_ = gameplay_spawn_pitch_;
 	gameplay_viewer_.roll_ = 0.0f;
+	gameplay_map_computer_camera_.Reset();
+	gameplay_map_computer_open_ = false;
 	UpdateGameplayViewerVectors();
 	pause_mode_ = false;
 	gameplay_host_.SetPaused(false);

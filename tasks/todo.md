@@ -68,9 +68,12 @@
 - [x] Port the OpenIGI map-computer camera transition as a renderer-free seam:
       authored ascend/boot/open and shutdown/descend timing, live eye/vantage
       hand-off, geometric FOV zoom, and display envelopes are fixed-step tested.
-- [ ] Attach the map-camera snapshot to the Windows gameplay scene and add
-      tactical map pan/zoom/marker interaction; the current phosphor HUD remains
-      the safe fallback until that presentation boundary is verified.
+- [x] Attach the map-camera transition to the Windows gameplay viewer and
+      `RuntimeRenderSnapshot.camera`; the first-person weapon is suppressed
+      during the tactical transition and the live eye is restored on close.
+- [ ] Add tactical map pan/zoom/marker interaction; the current phosphor HUD
+      remains the safe fallback for map rows until that interaction boundary is
+      verified.
 - [x] Publish moving guard transforms and animation-request metadata through
       `RuntimeRenderSnapshot`; gameplay scene synchronization consumes that
       immutable copy instead of iterating the mutable AI vector directly.
@@ -147,9 +150,9 @@
   objective-set progression, authored conditional-container visibility,
   authored GuardGenerator pre-authored-child gating,
   health/armor HUD, authored objective link positions, and objective/extraction
-  flow. The map-computer input/state and six-row objective HUD fallback are
-  also implemented; moving guard transforms now cross the render boundary, and
-  the animated tactical camera remains an explicit gap.
+  flow. The map-computer input/state, six-row objective HUD fallback, and
+  animated tactical camera now cross the gameplay render boundary; tactical
+  map pan/zoom/marker interaction remains open.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; the fixed-step player animation driver now feeds
