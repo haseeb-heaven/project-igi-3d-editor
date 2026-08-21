@@ -742,14 +742,18 @@ void App::Frame(float delta_seconds) {
 		gameplay_viewer_.pitch_ = player.GetPitch();
 		UpdateGameplayViewerVectors();
 		ApplyRuntimeCutSceneCamera();
+		// Publish the simulation-owned guard transforms before synchronizing the
+		// mutable render copy. Gameplay presentation must not iterate AI storage
+		// while the fixed-step world can be replaced or restarted.
+		CaptureGameplayRenderSnapshot();
 
 		// Update the session-owned render copy. Authoring objects remain immutable
 		// while gameplay is running and are restored by dropping this copy.
-		const auto& guards = gameplay_host_.GetWorld().GetAi().GetGuards();
+		const auto& guards = render_snapshot.guards;
 		auto& objects = GetActiveRenderLevelObjects().GetObjects();
 		for (const auto& guard : guards) {
-			if (guard.id < objects.size()) {
-				const size_t guard_object_index = static_cast<size_t>(guard.id);
+			if (guard.guard_id < objects.size()) {
+				const size_t guard_object_index = static_cast<size_t>(guard.guard_id);
 				objects[guard_object_index].deleted =
 					guard.state == igi::AiGuardState::Dead ||
 					!guard.runtime_enabled;

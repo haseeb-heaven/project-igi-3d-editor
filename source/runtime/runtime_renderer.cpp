@@ -71,6 +71,19 @@ void RuntimeRenderer::Capture(
             next_snapshot.map_computer_objectives.push_back(std::move(row));
         }
     }
+    const std::vector<AiGuardEntity>& guards = world.GetAi().GetGuards();
+    next_snapshot.guards.reserve(guards.size());
+    for (const AiGuardEntity& guard : guards) {
+        RuntimeGuardRenderState guard_snapshot;
+        guard_snapshot.guard_id = guard.id;
+        guard_snapshot.position = guard.position;
+        guard_snapshot.yaw = guard.yaw;
+        guard_snapshot.state = guard.state;
+        guard_snapshot.runtime_enabled = guard.runtime_enabled;
+        guard_snapshot.requested_animation = guard.requested_animation;
+        guard_snapshot.animation_request_serial = guard.animation_request_serial;
+        next_snapshot.guards.push_back(guard_snapshot);
+    }
     next_snapshot.objective_text = world.GetLevelFlow().GetObjectiveDisplayText();
     for (const MissionObjective& objective : world.GetLevelFlow().GetObjectives()) {
         if (!objective.is_primary || objective.state != ObjectiveState::Pending) {

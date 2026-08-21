@@ -38,6 +38,19 @@ struct RuntimeMapComputerObjective {
     glm::vec3 location = glm::vec3(0.0f);
 };
 
+// Immutable transform and lifecycle state for one guard at a render boundary.
+// Animation request metadata is included so the Windows presentation adapter
+// can select authored clips without reading the mutable AI container.
+struct RuntimeGuardRenderState {
+    uint32_t guard_id = 0;
+    glm::vec3 position = glm::vec3(0.0f);
+    float yaw = 0.0f;
+    AiGuardState state = AiGuardState::Patrol;
+    bool runtime_enabled = true;
+    int requested_animation = -1;
+    uint64_t animation_request_serial = 0;
+};
+
 // Immutable presentation data for one gameplay render. The simulation world
 // can continue to advance on the fixed-step boundary without exposing its
 // mutable containers directly to a renderer.
@@ -65,6 +78,7 @@ struct RuntimeRenderSnapshot {
     uint32_t reserve_ammo = 0;
     bool map_computer_open = false;
     std::vector<RuntimeMapComputerObjective> map_computer_objectives;
+    std::vector<RuntimeGuardRenderState> guards;
     std::string objective_text;
     int32_t objective_link_task_id = -1;
     bool has_objective_location = false;

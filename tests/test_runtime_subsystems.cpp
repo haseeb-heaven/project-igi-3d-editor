@@ -300,6 +300,32 @@ TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers)
     EXPECT_EQ(renderer.GetSnapshot().projectiles.size(), 1U);
 }
 
+TEST(RuntimeRenderTest, CapturesMovingGuardStateWithoutAliasingAiWorld) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 23;
+    guard.position = glm::vec3(100.0f, 200.0f, 0.0f);
+    guard.yaw = 45.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+    const RuntimeRenderSnapshot captured_snapshot = renderer.GetSnapshot();
+
+    world.GetAi().GetGuards()[0].position = glm::vec3(300.0f, 400.0f, 0.0f);
+    world.GetAi().GetGuards()[0].yaw = 90.0f;
+
+    ASSERT_EQ(captured_snapshot.guards.size(), 1U);
+    EXPECT_EQ(captured_snapshot.guards[0].guard_id, 23U);
+    EXPECT_EQ(captured_snapshot.guards[0].position,
+              glm::vec3(100.0f, 200.0f, 0.0f));
+    EXPECT_FLOAT_EQ(captured_snapshot.guards[0].yaw, 45.0f);
+    EXPECT_EQ(renderer.GetSnapshot().guards[0].position,
+              glm::vec3(100.0f, 200.0f, 0.0f));
+}
+
 TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);
