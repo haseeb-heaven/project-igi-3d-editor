@@ -374,6 +374,7 @@ void RuntimeWorld::Reset() {
     }
 
     player_.Reset(spawn_pos, 0.0f);
+    player_.ApplyTuning(player_tuning_);
     weapons_ = WeaponSystem();
     projectiles_.Clear();
     ai_.Clear();
@@ -430,6 +431,11 @@ bool RuntimeWorld::HasGuardScript(uint32_t guard_id) const {
 void RuntimeWorld::SetExtractionZone(const glm::vec3& center, float radius) {
     extraction_zone_center_ = center;
     extraction_zone_radius_ = std::max(0.0f, radius);
+}
+
+void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
+    player_tuning_ = tuning;
+    player_.ApplyTuning(player_tuning_);
 }
 
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {

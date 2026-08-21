@@ -1261,6 +1261,28 @@ TEST(RuntimeWorldTest, MissionRestartRestoresTheInitialWeaponLoadout) {
     EXPECT_EQ(world.GetWeapons().GetCurrentClipAmmo(), 32U);
 }
 
+TEST(RuntimeWorldTest, ResetPreservesConfiguredPlayerTuning) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    PlayerController::Tuning tuning;
+    tuning.maximum_health = 80.0f;
+    tuning.maximum_armor = 35.0f;
+    tuning.walk_speed_units_per_tick = 111.0f;
+    tuning.gravity_units_per_tick = 22.0f;
+    tuning.standing_eye_height_units = 6000.0f;
+    world.SetPlayerTuning(tuning);
+    world.GetPlayer().ApplyDamage(10.0f);
+
+    world.Reset();
+
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetMaximumHealth(), 80.0f);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetMaximumArmor(), 35.0f);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetHealth(), 80.0f);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetArmor(), 35.0f);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetEyeHeight(), 6000.0f);
+}
+
 TEST(RuntimeWorldTest, SolidGeometryOccludesPlayerFire) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain, WallAtOneMeter);
@@ -1530,10 +1552,16 @@ TEST(RuntimeSessionTest, LifecycleIsExplicitAndRestoresEditorSnapshot) {
     EXPECT_FALSE(session.Open(snapshot));
 
     session.Initialize(FlatTerrain);
+    PlayerController::Tuning tuning;
+    tuning.maximum_health = 80.0f;
+    tuning.maximum_armor = 35.0f;
+    session.GetWorld().SetPlayerTuning(tuning);
     EXPECT_EQ(session.GetState(), RuntimeSessionState::Created);
     EXPECT_TRUE(session.Open(snapshot));
     EXPECT_EQ(session.GetState(), RuntimeSessionState::Running);
     EXPECT_EQ(session.GetInputRouter().GetFocus(), WindowFocusTarget::GameplayWindow);
+    EXPECT_FLOAT_EQ(session.GetWorld().GetPlayer().GetMaximumHealth(), 80.0f);
+    EXPECT_FLOAT_EQ(session.GetWorld().GetPlayer().GetMaximumArmor(), 35.0f);
 
     session.SetPaused(true);
     EXPECT_EQ(session.GetState(), RuntimeSessionState::Paused);
@@ -1541,6 +1569,8 @@ TEST(RuntimeSessionTest, LifecycleIsExplicitAndRestoresEditorSnapshot) {
     session.Restart();
     EXPECT_EQ(session.GetState(), RuntimeSessionState::Running);
     EXPECT_EQ(session.GetWorld().GetPlayer().GetPosition(), glm::vec3(0.0f));
+    EXPECT_FLOAT_EQ(session.GetWorld().GetPlayer().GetMaximumHealth(), 80.0f);
+    EXPECT_FLOAT_EQ(session.GetWorld().GetPlayer().GetMaximumArmor(), 35.0f);
 
     EditorSnapshot restored;
     ASSERT_TRUE(session.Close(restored));

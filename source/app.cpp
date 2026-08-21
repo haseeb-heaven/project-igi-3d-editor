@@ -1196,7 +1196,8 @@ void App::ToggleGamePlayMode() {
 
 		// 2. Read humanplayer.qvm tuning for player speed, jump impulse, health
 		igi::HumanPlayerTuning tuning = igi::HumanPlayerConfigLoader::Load();
-		gameplay_host_.GetWorld().GetPlayer().ApplyTuning(tuning.ToControllerTuning());
+		const igi::PlayerController::Tuning player_tuning = tuning.ToControllerTuning();
+		gameplay_host_.GetWorld().SetPlayerTuning(player_tuning);
 
 		// 3. Spawn exactly at the editor camera position (primary), falling back to
 		//    HumanPlayer level object / level start pos when the camera is at origin
@@ -1252,7 +1253,7 @@ void App::ToggleGamePlayMode() {
 		// player's body base, so remove the verified standing eye height before
 		// handing this spawn to the fixed-step controller.
 		if (found_spawn && spawned_from_camera) {
-			spawn_pos.z -= igi::PlayerController::STANDING_EYE_HEIGHT;
+			spawn_pos.z -= player_tuning.standing_eye_height_units;
 		}
 
 		if (!gameplay_host_.OpenGameplay(snap)) {
