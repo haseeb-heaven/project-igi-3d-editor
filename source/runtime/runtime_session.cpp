@@ -61,6 +61,22 @@ bool RuntimeSession::Close(EditorSnapshot& restored_snapshot) {
     return restored;
 }
 
+bool RuntimeSession::ApplyEditorSnapshot(const EditorSnapshot& editor_snapshot) {
+    if (!IsActive()) {
+        return false;
+    }
+
+    // Capture first, then reset only mutable runtime state. This makes the
+    // apply boundary transactional from the editor's perspective: a later
+    // Close restores the newly applied snapshot, while no runtime mutation
+    // can leak into editor-owned objects or buffers.
+    snapshot_manager_.Capture(editor_snapshot);
+    ResetRuntimeState();
+    input_router_.SetFocus(WindowFocusTarget::GameplayWindow);
+    state_ = RuntimeSessionState::Running;
+    return true;
+}
+
 void RuntimeSession::Restart() {
     if (!IsActive()) {
         return;

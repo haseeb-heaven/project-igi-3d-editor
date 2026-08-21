@@ -1612,3 +1612,44 @@ TEST(RuntimeSessionTest, RestartDoesNotMutateTheCapturedEditorSnapshot) {
     EXPECT_EQ(restored.selected_object_id, 42U);
     EXPECT_EQ(restored.camera_pos, snapshot.camera_pos);
 }
+
+TEST(RuntimeSessionTest, ApplyingEditorSnapshotRebuildsRuntimeAndRestoresTheAppliedState) {
+    RuntimeSession session;
+    session.Initialize(FlatTerrain);
+
+    EditorSnapshot original_snapshot;
+    original_snapshot.selected_object_id = 7;
+    ASSERT_TRUE(session.Open(original_snapshot));
+    session.GetWorld().GetPlayer().SetPosition(glm::vec3(100.0f, 200.0f, 300.0f));
+    session.SetPaused(true);
+
+    EditorSnapshot applied_snapshot;
+    applied_snapshot.camera_pos = glm::vec3(11.0f, 22.0f, 33.0f);
+    applied_snapshot.camera_yaw = 135.0f;
+    applied_snapshot.selected_object_id = 99;
+
+    EXPECT_TRUE(session.ApplyEditorSnapshot(applied_snapshot));
+    EXPECT_EQ(session.GetState(), RuntimeSessionState::Running);
+    EXPECT_EQ(session.GetInputRouter().GetFocus(), WindowFocusTarget::GameplayWindow);
+    EXPECT_EQ(session.GetWorld().GetPlayer().GetPosition(), glm::vec3(0.0f));
+
+    EditorSnapshot restored_snapshot;
+    ASSERT_TRUE(session.Close(restored_snapshot));
+    EXPECT_EQ(restored_snapshot.camera_pos, applied_snapshot.camera_pos);
+    EXPECT_FLOAT_EQ(restored_snapshot.camera_yaw, applied_snapshot.camera_yaw);
+    EXPECT_EQ(restored_snapshot.selected_object_id, applied_snapshot.selected_object_id);
+}
+
+TEST(RuntimeHostTest, ApplyAndRestartRequiresAnActiveGameplaySession) {
+    GameplayHost host;
+    host.Initialize(FlatTerrain);
+
+    EditorSnapshot snapshot;
+    EXPECT_FALSE(host.ApplyAndRestartGameplay(snapshot));
+
+    ASSERT_TRUE(host.OpenGameplay(snapshot));
+    EXPECT_TRUE(host.ApplyAndRestartGameplay(snapshot));
+
+    EditorSnapshot restored_snapshot;
+    ASSERT_TRUE(host.CloseGameplay(restored_snapshot));
+}

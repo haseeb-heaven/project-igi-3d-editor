@@ -33,6 +33,9 @@ public:
 
     bool Open(const EditorSnapshot& editor_snapshot);
     bool Close(EditorSnapshot& restored_snapshot);
+    // Rebuild the mutable runtime from a new editor snapshot without leaving
+    // gameplay. The source/editor representation remains owned by the caller.
+    bool ApplyEditorSnapshot(const EditorSnapshot& editor_snapshot);
     void Restart();
     void SetPaused(bool paused);
     void Update(int64_t now_milliseconds);

@@ -19,6 +19,7 @@ public:
     // Mode Transitions (Editor <-> Gameplay)
     bool OpenGameplay(const EditorSnapshot& snapshot);
     bool CloseGameplay(EditorSnapshot& out_snapshot);
+    bool ApplyAndRestartGameplay(const EditorSnapshot& snapshot);
     void RestartGameplay();
 
     // Frame update & render

@@ -27,6 +27,10 @@ bool GameplayHost::CloseGameplay(EditorSnapshot& out_snapshot) {
     return session_.Close(out_snapshot);
 }
 
+bool GameplayHost::ApplyAndRestartGameplay(const EditorSnapshot& snapshot) {
+    return session_.ApplyEditorSnapshot(snapshot);
+}
+
 void GameplayHost::RestartGameplay() {
     session_.Restart();
 }
