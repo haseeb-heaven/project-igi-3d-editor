@@ -2418,6 +2418,76 @@ TEST(RuntimeWorldTest, LevelTimerAndStatusMessageDriveAuthoredMissionFlow) {
         "MISSION COMPLETE");
 }
 
+TEST(RuntimeWorldTest, AuthoredCutScenePublishesFixedTickCompletion) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionCutScene cut_scene;
+    cut_scene.task_id = "1204";
+    cut_scene.run_expression = "!CutScene_1204.isFinished";
+    cut_scene.time_scale = 1.0f;
+    cut_scene.duration_seconds = 1.0f;
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "CUTSCENE_DONE",
+        100,
+        "CutScene_1204.isFinished",
+        "HumanPlayer_0.isDead",
+    });
+    world.SetAuthoredMissionState({}, {}, {}, {}, {cut_scene});
+    world.GetLevelFlow().InitializeMission(1, {objective_set});
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::InProgress);
+    for (uint64_t tick = 1; tick < 32; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
+}
+
+TEST(RuntimeWorldTest, AuthoredCutSceneHonorsStartTimeAndTimeScale) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionCutScene cut_scene;
+    cut_scene.task_id = "1204";
+    cut_scene.run_expression = "RunCutScene";
+    cut_scene.start_time_seconds = 0.5f;
+    cut_scene.time_scale = 2.0f;
+    cut_scene.duration_seconds = 1.0f;
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "CUTSCENE_TICK_STARTED",
+        100,
+        "CutScene_1204.nTick > 15",
+        "HumanPlayer_0.isDead",
+    });
+    world.SetAuthoredMissionState({}, {}, {}, {}, {cut_scene});
+    world.SetMissionStateBoolean("RunCutScene", true);
+    world.GetLevelFlow().InitializeMission(1, {objective_set});
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
+
+    AuthoredMissionObjectiveSet completion_set;
+    completion_set.objectives.push_back({
+        "CUTSCENE_SCALED_DONE",
+        100,
+        "CutScene_1204.isFinished",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(1, {completion_set});
+    for (uint64_t tick = 1; tick < 62; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

@@ -57,7 +57,8 @@ public:
         std::vector<AuthoredMissionAreaActivation> area_activations,
         std::vector<AuthoredMissionEditVariable> edit_variables,
         std::vector<AuthoredMissionLevelTimer> level_timers = {},
-        std::vector<AuthoredMissionStatusMessage> status_messages = {});
+        std::vector<AuthoredMissionStatusMessage> status_messages = {},
+        std::vector<AuthoredMissionCutScene> cut_scenes = {});
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -150,6 +151,12 @@ private:
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
+    void UpdateAuthoredCutScenes();
+    void PublishAuthoredCutSceneState(
+        const AuthoredMissionCutScene& definition,
+        bool is_running,
+        bool is_finished,
+        int tick_count);
     void UpdateAuthoredDoors();
     void PublishAuthoredDoorState(
         const RuntimeDoorDefinition& definition,
@@ -207,6 +214,10 @@ private:
     std::vector<AuthoredMissionLevelTimer> mission_level_timers_;
     std::vector<int> mission_level_timer_ticks_;
     std::vector<uint8_t> mission_level_timer_running_;
+    std::vector<AuthoredMissionCutScene> mission_cut_scenes_;
+    std::vector<int> mission_cut_scene_ticks_;
+    std::vector<uint8_t> mission_cut_scene_running_;
+    std::vector<uint8_t> mission_cut_scene_finished_;
     struct AuthoredDoorRuntime {
         RuntimeDoorDefinition definition;
         RuntimeDoorState state;

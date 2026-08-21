@@ -5,7 +5,9 @@
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -1549,13 +1551,57 @@ void App::SetupRuntimeMissionState() {
 		? runtime_level_objects_->GetObjects()
 		: level_.GetLevelObjects().GetObjects();
 
+	const auto authored_cut_scene_duration = [&authored_objects](int cut_scene_index) {
+		float total_duration_seconds = 0.0f;
+		for (int object_index = 0;
+			 object_index < static_cast<int>(authored_objects.size());
+			 ++object_index) {
+			const LevelObject& object = authored_objects[object_index];
+			if (object.deleted || object.type != "EditCamera") {
+				continue;
+			}
+
+			int parent_index = object.parentIndex;
+			bool belongs_to_cut_scene = false;
+			for (size_t depth = 0;
+				 depth < authored_objects.size() &&
+				 parent_index >= 0 &&
+				 parent_index < static_cast<int>(authored_objects.size());
+				 ++depth) {
+				if (parent_index == cut_scene_index) {
+					belongs_to_cut_scene = true;
+					break;
+				}
+				parent_index = authored_objects[parent_index].parentIndex;
+			}
+			if (!belongs_to_cut_scene || object.argTokens.size() <= 10) {
+				continue;
+			}
+
+			try {
+				const float duration = std::stof(App::StripQuotes(object.argTokens[10]));
+				if (std::isfinite(duration)) {
+					total_duration_seconds += std::max(0.0f, duration);
+				}
+			} catch (...) {
+				// Malformed optional camera durations do not invalidate the mission;
+				// the runtime will still publish the authored CutScene state.
+			}
+		}
+		return total_duration_seconds;
+	};
+
 	std::vector<igi::MissionStateTaskSource> task_sources;
-	for (const LevelObject& authored_object : authored_objects) {
+	for (int object_index = 0;
+		 object_index < static_cast<int>(authored_objects.size());
+		 ++object_index) {
+		const LevelObject& authored_object = authored_objects[object_index];
 		if (authored_object.deleted ||
 			(authored_object.type != "AreaActivate" &&
 				authored_object.type != "EditVariable" &&
 				authored_object.type != "LevelTimer" &&
-				authored_object.type != "StatusMessage")) {
+				authored_object.type != "StatusMessage" &&
+				authored_object.type != "CutScene")) {
 			continue;
 		}
 
@@ -1563,6 +1609,10 @@ void App::SetupRuntimeMissionState() {
 		task_source.task_type = authored_object.type;
 		task_source.task_id = authored_object.taskId;
 		task_source.argument_tokens = authored_object.argTokens;
+		if (authored_object.type == "CutScene") {
+			task_source.authored_duration_seconds =
+				authored_cut_scene_duration(object_index);
+		}
 		task_sources.push_back(std::move(task_source));
 	}
 
@@ -1582,12 +1632,14 @@ void App::SetupRuntimeMissionState() {
 	const size_t area_count = definitions.area_activations.size();
 	const size_t edit_variable_count = definitions.edit_variables.size();
 	const size_t timer_count = definitions.level_timers.size();
+	const size_t cut_scene_count = definitions.cut_scenes.size();
 	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
 		std::move(definitions.area_activations),
 		std::move(definitions.edit_variables),
 		std::move(definitions.level_timers),
-		std::move(definitions.status_messages));
+		std::move(definitions.status_messages),
+		std::move(definitions.cut_scenes));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
@@ -1597,6 +1649,8 @@ void App::SetupRuntimeMissionState() {
 		" authored EditVariable task(s), " +
 		std::to_string(timer_count) +
 		" LevelTimer task(s), " +
+		std::to_string(cut_scene_count) +
+		" CutScene task(s), " +
 		std::to_string(status_message_count) +
 		" StatusMessage task(s)");
 }

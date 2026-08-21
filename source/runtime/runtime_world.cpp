@@ -57,6 +57,19 @@ bool TryTruncateMissionExpressionValue(double value, int& result) {
     return true;
 }
 
+int SecondsToSimulationTicks(float seconds) {
+    if (!std::isfinite(seconds) || seconds <= 0.0f) {
+        return 0;
+    }
+
+    const double tick_count = static_cast<double>(seconds) *
+        static_cast<double>(GameClock::TICK_RATE_HZ);
+    if (tick_count >= static_cast<double>(std::numeric_limits<int>::max())) {
+        return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(tick_count);
+}
+
 void ApplyMissionVariableDelta(int& value, double expression_value, int direction) {
     int delta = 0;
     if (!TryTruncateMissionExpressionValue(expression_value, delta)) {
@@ -483,6 +496,10 @@ void RuntimeWorld::Reset() {
     mission_level_timers_.clear();
     mission_level_timer_ticks_.clear();
     mission_level_timer_running_.clear();
+    mission_cut_scenes_.clear();
+    mission_cut_scene_ticks_.clear();
+    mission_cut_scene_running_.clear();
+    mission_cut_scene_finished_.clear();
     mission_status_messages_.clear();
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
@@ -1009,13 +1026,21 @@ void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionAreaActivation> area_activations,
     std::vector<AuthoredMissionEditVariable> edit_variables,
     std::vector<AuthoredMissionLevelTimer> level_timers,
-    std::vector<AuthoredMissionStatusMessage> status_messages) {
+    std::vector<AuthoredMissionStatusMessage> status_messages,
+    std::vector<AuthoredMissionCutScene> cut_scenes) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
     mission_level_timers_ = std::move(level_timers);
     mission_level_timer_ticks_.assign(mission_level_timers_.size(), 0);
     mission_level_timer_running_.assign(mission_level_timers_.size(), false);
+    mission_cut_scenes_ = std::move(cut_scenes);
+    mission_cut_scene_ticks_.clear();
+    mission_cut_scene_running_.clear();
+    mission_cut_scene_finished_.clear();
+    mission_cut_scene_ticks_.reserve(mission_cut_scenes_.size());
+    mission_cut_scene_running_.reserve(mission_cut_scenes_.size());
+    mission_cut_scene_finished_.reserve(mission_cut_scenes_.size());
     mission_status_messages_.clear();
     mission_status_messages_.reserve(status_messages.size());
     mission_status_message_slots_.fill(-1);
@@ -1074,6 +1099,19 @@ void RuntimeWorld::SetAuthoredMissionState(
             prefix + ".isRun",
             timer.initial_run);
         mission_expression_state_.SetNumber(prefix + ".nTick", 0.0);
+    }
+
+    for (const AuthoredMissionCutScene& cut_scene : mission_cut_scenes_) {
+        const int initial_tick = SecondsToSimulationTicks(
+            cut_scene.start_time_seconds);
+        mission_cut_scene_ticks_.push_back(initial_tick);
+        mission_cut_scene_running_.push_back(cut_scene.initial_run ? 1 : 0);
+        mission_cut_scene_finished_.push_back(0);
+        PublishAuthoredCutSceneState(
+            cut_scene,
+            cut_scene.initial_run,
+            false,
+            initial_tick);
     }
 
     for (AuthoredMissionStatusMessage& status_message : status_messages) {
@@ -1339,6 +1377,94 @@ void RuntimeWorld::EndLadderTraversal() {
     ladder_traversal_ = LadderTraversal();
 }
 
+void RuntimeWorld::PublishAuthoredCutSceneState(
+    const AuthoredMissionCutScene& definition,
+    bool is_running,
+    bool is_finished,
+    int tick_count) {
+    if (definition.task_id.empty() || definition.task_id == "-1") {
+        return;
+    }
+
+    const std::string prefix = "CutScene_" + definition.task_id;
+    mission_expression_state_.SetBoolean(prefix + ".isRun", is_running);
+    mission_expression_state_.SetBoolean(prefix + ".isFinished", is_finished);
+    mission_expression_state_.SetNumber(prefix + ".nTick", tick_count);
+}
+
+void RuntimeWorld::UpdateAuthoredCutScenes() {
+    const auto evaluate_condition = [this](const std::string& expression) {
+        bool result = false;
+        return !expression.empty() &&
+            mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+
+    for (size_t scene_index = 0;
+         scene_index < mission_cut_scenes_.size();
+         ++scene_index) {
+        const AuthoredMissionCutScene& definition = mission_cut_scenes_[scene_index];
+        int& tick_count = mission_cut_scene_ticks_[scene_index];
+        bool is_running = mission_cut_scene_running_[scene_index] != 0;
+        bool is_finished = mission_cut_scene_finished_[scene_index] != 0;
+
+        if (evaluate_condition(definition.reset_expression)) {
+            tick_count = 0;
+            is_finished = false;
+        }
+
+        is_running = definition.run_expression.empty()
+            ? definition.initial_run && !is_finished
+            : evaluate_condition(definition.run_expression);
+
+        if (is_running) {
+            const float scaled_duration = definition.duration_seconds *
+                std::max(0.0f, definition.time_scale);
+            if (static_cast<double>(tick_count) /
+                    static_cast<double>(GameClock::TICK_RATE_HZ) >
+                static_cast<double>(scaled_duration)) {
+                tick_count = std::max(
+                    0,
+                    SecondsToSimulationTicks(scaled_duration));
+                is_finished = true;
+            }
+
+            int tick_delta = 1;
+            if (!definition.time_delta_expression.empty()) {
+                double authored_delta_seconds = 0.0;
+                if (mission_expression_state_.TryEvaluateNumber(
+                        definition.time_delta_expression,
+                        authored_delta_seconds)) {
+                    const double authored_delta_ticks = authored_delta_seconds *
+                        static_cast<double>(GameClock::TICK_RATE_HZ);
+                    if (std::isfinite(authored_delta_ticks)) {
+                        if (authored_delta_ticks >=
+                            static_cast<double>(std::numeric_limits<int>::max())) {
+                            tick_delta = std::numeric_limits<int>::max();
+                        } else if (authored_delta_ticks > 0.0) {
+                            tick_delta = std::max(
+                                1,
+                                static_cast<int>(authored_delta_ticks));
+                        }
+                    }
+                }
+            }
+            if (tick_count > std::numeric_limits<int>::max() - tick_delta) {
+                tick_count = std::numeric_limits<int>::max();
+            } else {
+                tick_count += tick_delta;
+            }
+        }
+
+        mission_cut_scene_running_[scene_index] = is_running ? 1 : 0;
+        mission_cut_scene_finished_[scene_index] = is_finished ? 1 : 0;
+        PublishAuthoredCutSceneState(
+            definition,
+            is_running,
+            is_finished,
+            tick_count);
+    }
+}
+
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
     interaction_query_ = std::move(interaction_query);
 }
@@ -1412,6 +1538,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // Vanilla updates AreaActivate and EditVariable before dependent mission
     // expressions are evaluated at the end of this fixed simulation tick.
     UpdateAuthoredMissionState();
+    UpdateAuthoredCutScenes();
     UpdateAuthoredDoors();
     UpdateMissionActorState();
 
