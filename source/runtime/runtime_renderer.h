@@ -53,6 +53,7 @@ struct RuntimeRenderSnapshot {
     uint32_t reserve_ammo = 0;
     std::string objective_text;
     float flash_effect_strength = 0.0f;
+    float muzzle_flash_strength = 0.0f;
     std::vector<RuntimeProjectileRenderState> projectiles;
 };
 

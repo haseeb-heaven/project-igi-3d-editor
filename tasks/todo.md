@@ -23,6 +23,8 @@
 - [x] Resolve authored vanilla weapon and gameplay sounds from loose WAVs or
       packed `COMMON/SOUNDS/SOUNDS.RES` entries with a session cache; keep the
       catalog's weapon sound names aligned with the vanilla QVM evidence.
+- [x] Expose fixed-step firearm muzzle flash state through the presentation
+      snapshot and render a labeled fallback cue when authored sprites are absent.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.
@@ -77,7 +79,7 @@
   code.
 - `implemented-slice`: player movement/jump/crouch/health, weapon states,
   world-occluded hits, guard patrol/perception/combat, authored weapon
-  selection, projectile simulation, flash exposure, zoom, landing audio and
+  selection, projectile simulation, flash exposure, muzzle flash, zoom, landing audio and
   lazy packed/loose vanilla sound resolution,
   health/armor HUD, and objective/extraction flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,

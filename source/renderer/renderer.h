@@ -542,6 +542,7 @@ public:
 		int              prop_anim_active_id_ = -1;      // currently loaded clip's animId (-1 = none)
 		bool             prop_anim_is_playing_ = false;
 		float            flash_effect_strength_ = 0.0f;
+		float            muzzle_flash_strength_ = 0.0f;
 	};
 
 

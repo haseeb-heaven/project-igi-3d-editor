@@ -39,6 +39,7 @@ void RuntimeRenderer::Capture(
     next_snapshot.zoom_active = world.IsZoomActive();
     next_snapshot.objective_text = world.GetLevelFlow().GetObjectiveDisplayText();
     next_snapshot.flash_effect_strength = world.GetFlashEffectStrength();
+    next_snapshot.muzzle_flash_strength = world.GetMuzzleFlashStrength();
 
     const auto& live_projectiles = world.GetProjectiles().GetProjectiles();
     next_snapshot.projectiles.reserve(live_projectiles.size());

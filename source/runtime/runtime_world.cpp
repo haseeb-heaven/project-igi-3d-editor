@@ -7,6 +7,31 @@
 
 namespace igi {
 
+namespace {
+
+constexpr float kMuzzleFlashStrengthDecayPerTick = 0.5f;
+
+bool WeaponProducesMuzzleFlash(const WeaponDefinition& weapon) {
+    switch (weapon.id) {
+        case 1:  // Glock 17
+        case 3:  // Desert Eagle
+        case 4:  // M16A2
+        case 5:  // AK47
+        case 6:  // Uzi
+        case 7:  // MP5SD
+        case 8:  // SPAS12
+        case 9:  // Jackhammer
+        case 10: // Minimi
+        case 11: // Dragunov
+        case 21: // Colt Anaconda
+            return true;
+        default:
+            return false;
+    }
+}
+
+} // namespace
+
 RuntimeWorld::RuntimeWorld()
     : ai_script_host_(qvm_registry_) {}
 RuntimeWorld::~RuntimeWorld() = default;
@@ -396,6 +421,7 @@ void RuntimeWorld::Reset() {
     flash_effect_strength_ = 0.0f;
     flash_effect_decay_per_second_ = 0.0f;
     flash_effect_remaining_seconds_ = 0.0f;
+    muzzle_flash_strength_ = 0.0f;
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
@@ -727,6 +753,10 @@ void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
 
+    muzzle_flash_strength_ = std::max(
+        0.0f,
+        muzzle_flash_strength_ - kMuzzleFlashStrengthDecayPerTick);
+
     if (flash_effect_remaining_seconds_ > 0.0f) {
         flash_effect_remaining_seconds_ = std::max(
             0.0f,
@@ -833,6 +863,9 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
                     aim_dir,
                     traces)) {
                 apply_recoil();
+                if (WeaponProducesMuzzleFlash(active_weapon)) {
+                    muzzle_flash_strength_ = 1.0f;
+                }
                 bool hit_guard = false;
                 bool hit_world_geometry = false;
                 for (BulletTrace& trace : traces) {

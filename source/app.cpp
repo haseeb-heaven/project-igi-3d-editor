@@ -912,6 +912,9 @@ void App::Frame(float delta_seconds) {
 		.flash_effect_strength_ = render_gameplay
 			? render_snapshot.flash_effect_strength
 			: 0.0f,
+		.muzzle_flash_strength_ = render_gameplay
+			? render_snapshot.muzzle_flash_strength
+			: 0.0f,
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);

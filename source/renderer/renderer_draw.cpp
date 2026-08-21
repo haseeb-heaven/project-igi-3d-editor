@@ -3131,6 +3131,43 @@ void Renderer::Draw(const draw_params_s &params,
         draw_text_sys(ox + 8, 22, task_tree_view.objective_text_.c_str(), 0.0f, 0.95f, 0.25f);
       }
 
+      // The vanilla first-person muzzle cue is normally an authored weapon
+      // sprite. Keep a small deterministic additive fallback so a firearm
+      // still reads as firing when that sprite is not unpacked locally.
+      const float muzzle_flash_alpha = std::clamp(
+          task_tree_view.muzzle_flash_strength_, 0.0f, 1.0f);
+      if (muzzle_flash_alpha > 0.0f) {
+        const int flash_center_x = vw / 2 + std::max(18, vw / 12);
+        const int flash_center_y = vh / 2 - std::max(12, vh / 10);
+        const int outer_radius = std::max(16, std::min(vw, vh) / 18);
+        const int inner_radius = std::max(5, outer_radius / 3);
+
+        glDisable(GL_TEXTURE_2D);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glColor4f(1.0f, 0.55f, 0.08f, 0.70f * muzzle_flash_alpha);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2i(flash_center_x, flash_center_y);
+        glVertex2i(flash_center_x, flash_center_y + outer_radius);
+        glVertex2i(flash_center_x + inner_radius, flash_center_y + inner_radius);
+        glVertex2i(flash_center_x + outer_radius, flash_center_y);
+        glVertex2i(flash_center_x + inner_radius, flash_center_y - inner_radius);
+        glVertex2i(flash_center_x, flash_center_y - outer_radius);
+        glVertex2i(flash_center_x - inner_radius, flash_center_y - inner_radius);
+        glVertex2i(flash_center_x - outer_radius, flash_center_y);
+        glVertex2i(flash_center_x - inner_radius, flash_center_y + inner_radius);
+        glVertex2i(flash_center_x, flash_center_y + outer_radius);
+        glEnd();
+
+        glColor4f(1.0f, 0.95f, 0.70f, 0.85f * muzzle_flash_alpha);
+        glBegin(GL_QUADS);
+        glVertex2i(flash_center_x - inner_radius, flash_center_y - inner_radius);
+        glVertex2i(flash_center_x + inner_radius, flash_center_y - inner_radius);
+        glVertex2i(flash_center_x + inner_radius, flash_center_y + inner_radius);
+        glVertex2i(flash_center_x - inner_radius, flash_center_y + inner_radius);
+        glEnd();
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      }
+
       // Flashbang exposure is drawn last so it washes out the weapon, HUD, and
       // scene together, matching the player-facing effect instead of merely
       // playing an audio cue.

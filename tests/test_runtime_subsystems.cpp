@@ -269,6 +269,29 @@ TEST(RuntimeRenderTest, CapturesPresentationStateWithoutAliasingWorldContainers)
     EXPECT_EQ(renderer.GetSnapshot().projectiles.size(), 1U);
 }
 
+TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    ASSERT_TRUE(world.GetWeapons().SelectWeapon(4));
+
+    PlayerInputCmd fire_command;
+    fire_command.fire = true;
+    world.UpdateSimulationTick(0, fire_command);
+
+    EXPECT_FLOAT_EQ(world.GetMuzzleFlashStrength(), 1.0f);
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+    EXPECT_FLOAT_EQ(
+        renderer.GetSnapshot().muzzle_flash_strength,
+        1.0f);
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_NEAR(world.GetMuzzleFlashStrength(), 0.5f, 0.0001f);
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    EXPECT_FLOAT_EQ(world.GetMuzzleFlashStrength(), 0.0f);
+}
+
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     ProjectileSystem projectiles;
     projectiles.SetCollisionQuery(
