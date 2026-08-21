@@ -1,4 +1,10 @@
-// gameplay_window.cpp - Windows gameplay-window lifecycle implementation
+// gameplay_window.cpp - Same-window gameplay surface lifecycle implementation
+//
+// Gameplay renders directly into the existing editor GLUT window instead of a
+// separate top-level window. The host keeps its id bookkeeping so callers can
+// query availability, but "the gameplay window" is an alias of the editor
+// window: display/input callbacks are already routed by App via in_game_mode_
+// and the WindowInputRouter focus, so no second set of GLUT callbacks exists.
 #include "gameplay_window.h"
 
 #if defined(_WIN32)
@@ -24,104 +30,57 @@ bool GameplayWindowHost::Create(
     (void)callbacks;
     return false;
 #else
-    if (IsCreated() || editor_window_id <= 0 || callbacks.display == nullptr) {
-        return IsCreated();
+    if (IsCreated()) {
+        return true;
     }
-
-    editor_window_id_ = editor_window_id;
-    glutSetWindow(editor_window_id_);
-
-    glutInitWindowSize(width > 0 ? width : 1280, height > 0 ? height : 720);
-    // FreeGLUT's current-context mode keeps the renderer's VAOs, buffers,
-    // textures, and shader programs valid in the gameplay window. A separate
-    // WGL context plus wglShareLists would not share VAOs, which would make
-    // the editor's loaded meshes disappear in gameplay presentation.
-    glutSetOption(GLUT_RENDERING_CONTEXT, GLUT_USE_CURRENT_CONTEXT);
-    gameplay_window_id_ = glutCreateWindow("IGI Gameplay");
-    if (gameplay_window_id_ == 0) {
-        editor_window_id_ = 0;
+    if (editor_window_id <= 0 || !glutGetWindow()) {
         return false;
     }
 
-    glutDisplayFunc(callbacks.display);
-    if (callbacks.reshape != nullptr) glutReshapeFunc(callbacks.reshape);
-    if (callbacks.mouse != nullptr) glutMouseFunc(callbacks.mouse);
-    if (callbacks.mouse_wheel != nullptr) glutMouseWheelFunc(callbacks.mouse_wheel);
-    if (callbacks.motion != nullptr) glutMotionFunc(callbacks.motion);
-    if (callbacks.passive_motion != nullptr) glutPassiveMotionFunc(callbacks.passive_motion);
-    if (callbacks.special != nullptr) glutSpecialFunc(callbacks.special);
-    if (callbacks.special_up != nullptr) glutSpecialUpFunc(callbacks.special_up);
-    if (callbacks.keyboard != nullptr) glutKeyboardFunc(callbacks.keyboard);
-    if (callbacks.keyboard_up != nullptr) glutKeyboardUpFunc(callbacks.keyboard_up);
-    if (callbacks.close != nullptr) glutCloseFunc(callbacks.close);
-
-    glutHideWindow();
-    glutSetWindow(editor_window_id_);
+    // Same-window mode: alias the gameplay surface onto the editor window.
+    // The editor's registered callbacks keep firing; App routes them to
+    // gameplay presentation/input while the runtime session is active.
+    (void)width;
+    (void)height;
+    (void)callbacks;
+    editor_window_id_ = editor_window_id;
+    gameplay_window_id_ = editor_window_id;
     return true;
 #endif
 }
 
 void GameplayWindowHost::Destroy() {
-#if defined(_WIN32)
-    if (!IsCreated()) {
-        return;
-    }
-
-    if (editor_window_id_ != 0) {
-        glutSetWindow(editor_window_id_);
-    }
-    glutDestroyWindow(gameplay_window_id_);
-#endif
+    // The aliased window is the editor's own window; never destroy it.
     gameplay_window_id_ = 0;
     editor_window_id_ = 0;
 }
 
 void GameplayWindowHost::NotifyClosed() {
-#if defined(_WIN32)
-    if (!IsCreated()) {
-        return;
-    }
-
-    // The close callback is delivered with the gameplay window selected.
-    // Restore the editor as the current GLUT window before invalidating the
-    // gameplay ID so the next editor frame has a valid context.
-    if (editor_window_id_ != 0) {
-        glutSetWindow(editor_window_id_);
-    }
-#endif
     gameplay_window_id_ = 0;
 }
 
 void GameplayWindowHost::Show() {
-#if defined(_WIN32)
-    if (!IsCreated()) return;
-    glutSetWindow(gameplay_window_id_);
-    glutShowWindow();
-#endif
+    // Single shared window: it is already visible.
 }
 
 void GameplayWindowHost::Hide() {
-#if defined(_WIN32)
-    if (!IsCreated()) return;
-    glutSetWindow(gameplay_window_id_);
-    glutHideWindow();
-    if (editor_window_id_ != 0) glutSetWindow(editor_window_id_);
-#endif
+    // Leaving gameplay must keep the editor window on screen; do nothing.
 }
 
 void GameplayWindowHost::Focus() {
 #if defined(_WIN32)
     if (!IsCreated()) return;
+
     glutSetWindow(gameplay_window_id_);
     glutShowWindow();
 
     // FreeGLUT's current-window selection does not guarantee OS focus after
     // another top-level window was active. Resolve the native handle by the
-    // stable title and explicitly return focus to gameplay.
-    HWND gameplay_window_handle = FindWindowA(nullptr, "IGI Gameplay");
-    if (gameplay_window_handle != nullptr) {
-        SetForegroundWindow(gameplay_window_handle);
-        SetFocus(gameplay_window_handle);
+    // stable title and explicitly return focus to the shared window.
+    HWND shared_window_handle = FindWindowA(nullptr, "IGI Editor");
+    if (shared_window_handle != nullptr) {
+        SetForegroundWindow(shared_window_handle);
+        SetFocus(shared_window_handle);
     }
 #endif
 }

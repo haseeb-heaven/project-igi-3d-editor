@@ -394,7 +394,9 @@ void App::RestoreEditorViewport() {
 }
 
 void App::OnDisplay() {
-	if (gameplay_host_.IsGameplayWindowCurrent()) {
+	// Same-window gameplay: the shared surface renders gameplay whenever the
+	// runtime session is active, and the editor scene otherwise.
+	if (in_game_mode_ && !rendering_editor_window_) {
 		OnGameplayDisplay();
 		return;
 	}
@@ -423,7 +425,7 @@ void App::ShutdownGameplayWindow() {
 }
 
 void App::OnGameplayDisplay() {
-	if (!in_game_mode_ || !gameplay_host_.IsGameplayWindowCurrent()) return;
+	if (!in_game_mode_) return;
 	ApplyViewportSize(gameplay_viewport_width_, gameplay_viewport_height_);
 	Frame(0.0f);
 }
