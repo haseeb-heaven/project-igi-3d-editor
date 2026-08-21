@@ -2578,6 +2578,43 @@ TEST(RuntimeWorldTest, AuthoredOneShotSoundDoesNotRetrigger) {
     EXPECT_EQ(play_count, 1);
 }
 
+TEST(RuntimeWorldTest, AuthoredExplodeObjectPublishesDelayedDestroyedState) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionExplodeObject explode_object;
+    explode_object.object_index = 77;
+    explode_object.task_id = "-1";
+    explode_object.destroyed_model_name = "300_02_1";
+    explode_object.explosion_expression = "TriggerExplosion";
+    explode_object.explosion_delay_seconds =
+        2.0f / static_cast<float>(GameClock::TICK_RATE_HZ);
+
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {explode_object});
+    world.SetMissionStateBoolean("TriggerExplosion", false);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    ASSERT_EQ(world.GetExplodeObjectSnapshots().size(), 1U);
+    EXPECT_FALSE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+
+    world.SetMissionStateBoolean("TriggerExplosion", true);
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_FALSE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    EXPECT_FALSE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+    world.UpdateSimulationTick(3, PlayerInputCmd());
+    EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+    EXPECT_EQ(
+        world.GetExplodeObjectSnapshots()[0].destroyed_model_name,
+        "300_02_1");
+
+    world.SetMissionStateBoolean("TriggerExplosion", false);
+    world.UpdateSimulationTick(4, PlayerInputCmd());
+    world.SetMissionStateBoolean("TriggerExplosion", true);
+    world.UpdateSimulationTick(5, PlayerInputCmd());
+    EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

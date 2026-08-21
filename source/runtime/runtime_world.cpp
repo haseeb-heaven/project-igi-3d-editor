@@ -518,6 +518,8 @@ void RuntimeWorld::Reset() {
     mission_cut_scene_finished_.clear();
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
     mission_conditional_sounds_.clear();
+    mission_explode_objects_.clear();
+    authored_explode_object_snapshots_.clear();
     mission_status_messages_.clear();
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
@@ -1046,7 +1048,8 @@ void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionLevelTimer> level_timers,
     std::vector<AuthoredMissionStatusMessage> status_messages,
     std::vector<AuthoredMissionCutScene> cut_scenes,
-    std::vector<AuthoredMissionConditionalSound> conditional_sounds) {
+    std::vector<AuthoredMissionConditionalSound> conditional_sounds,
+    std::vector<AuthoredMissionExplodeObject> explode_objects) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
@@ -1065,6 +1068,14 @@ void RuntimeWorld::SetAuthoredMissionState(
         runtime_sound.definition = std::move(definition);
         mission_conditional_sounds_.push_back(std::move(runtime_sound));
     }
+    mission_explode_objects_.clear();
+    mission_explode_objects_.reserve(explode_objects.size());
+    for (AuthoredMissionExplodeObject& definition : explode_objects) {
+        AuthoredExplodeObjectRuntime runtime_object;
+        runtime_object.definition = std::move(definition);
+        mission_explode_objects_.push_back(std::move(runtime_object));
+    }
+    authored_explode_object_snapshots_.clear();
     mission_cut_scene_ticks_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_running_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_finished_.reserve(mission_cut_scenes_.size());
@@ -1626,6 +1637,81 @@ void RuntimeWorld::UpdateAuthoredConditionalSounds() {
     }
 }
 
+void RuntimeWorld::TriggerAuthoredExplodeObject(
+    AuthoredExplodeObjectRuntime& runtime_object) {
+    runtime_object.delay_pending = false;
+    runtime_object.delay_ticks_remaining = 0;
+    runtime_object.is_exploded = true;
+
+    const std::string object_identity = runtime_object.definition.task_id == "-1"
+        ? std::to_string(runtime_object.definition.object_index)
+        : runtime_object.definition.task_id;
+    mission_expression_state_.SetBoolean(
+        "ExplodeObject_" + object_identity + ".isExploded",
+        true);
+
+    if (runtime_object.definition.explosion_sound.empty()) {
+        AudioSystem::Play(SoundEffect::Explosion);
+    } else {
+        AudioSystem::PlayWeaponFire(
+            runtime_object.definition.explosion_sound,
+            SoundEffect::Explosion);
+    }
+}
+
+void RuntimeWorld::UpdateAuthoredExplodeObjects() {
+    const auto evaluate_condition = [this](const std::string& expression) {
+        bool result = false;
+        return !expression.empty() &&
+            mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+
+    authored_explode_object_snapshots_.clear();
+    authored_explode_object_snapshots_.reserve(mission_explode_objects_.size());
+
+    for (AuthoredExplodeObjectRuntime& runtime_object : mission_explode_objects_) {
+        const bool is_condition_active = evaluate_condition(
+            runtime_object.definition.explosion_expression);
+        const bool condition_started = is_condition_active &&
+            !runtime_object.condition_active;
+
+        if (runtime_object.delay_pending) {
+            if (!is_condition_active) {
+                runtime_object.delay_pending = false;
+                runtime_object.delay_ticks_remaining = 0;
+            } else if (runtime_object.delay_ticks_remaining > 0) {
+                --runtime_object.delay_ticks_remaining;
+                if (runtime_object.delay_ticks_remaining == 0) {
+                    TriggerAuthoredExplodeObject(runtime_object);
+                }
+            }
+        } else if (condition_started && !runtime_object.is_exploded) {
+            const int delay_ticks = SecondsToSimulationTicks(
+                runtime_object.definition.explosion_delay_seconds);
+            if (delay_ticks == 0) {
+                TriggerAuthoredExplodeObject(runtime_object);
+            } else {
+                runtime_object.delay_pending = true;
+                runtime_object.delay_ticks_remaining = delay_ticks;
+            }
+        }
+
+        runtime_object.condition_active = is_condition_active;
+        const std::string object_identity = runtime_object.definition.task_id == "-1"
+            ? std::to_string(runtime_object.definition.object_index)
+            : runtime_object.definition.task_id;
+        mission_expression_state_.SetBoolean(
+            "ExplodeObject_" + object_identity + ".isExploded",
+            runtime_object.is_exploded);
+        authored_explode_object_snapshots_.push_back({
+            runtime_object.definition.object_index,
+            runtime_object.definition.task_id,
+            runtime_object.definition.destroyed_model_name,
+            runtime_object.is_exploded,
+        });
+    }
+}
+
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
     interaction_query_ = std::move(interaction_query);
 }
@@ -1701,6 +1787,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     UpdateAuthoredMissionState();
     UpdateAuthoredCutScenes();
     UpdateAuthoredConditionalSounds();
+    UpdateAuthoredExplodeObjects();
     UpdateAuthoredDoors();
     UpdateMissionActorState();
 

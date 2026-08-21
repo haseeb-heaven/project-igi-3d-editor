@@ -56,6 +56,13 @@ struct RuntimeMissionSoundEvent {
     bool relative_to_microphone = false;
 };
 
+struct RuntimeExplodeObjectSnapshot {
+    int object_index = -1;
+    std::string task_id;
+    std::string destroyed_model_name;
+    bool is_exploded = false;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -88,7 +95,12 @@ public:
         std::vector<AuthoredMissionLevelTimer> level_timers = {},
         std::vector<AuthoredMissionStatusMessage> status_messages = {},
         std::vector<AuthoredMissionCutScene> cut_scenes = {},
-        std::vector<AuthoredMissionConditionalSound> conditional_sounds = {});
+        std::vector<AuthoredMissionConditionalSound> conditional_sounds = {},
+        std::vector<AuthoredMissionExplodeObject> explode_objects = {});
+    const std::vector<RuntimeExplodeObjectSnapshot>&
+    GetExplodeObjectSnapshots() const {
+        return authored_explode_object_snapshots_;
+    }
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -161,6 +173,7 @@ public:
     }
 
 private:
+    struct AuthoredExplodeObjectRuntime;
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
     bool ApplyGuardShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
@@ -186,6 +199,9 @@ private:
     void UpdateAuthoredMissionState();
     void UpdateAuthoredCutScenes();
     void UpdateAuthoredConditionalSounds();
+    void UpdateAuthoredExplodeObjects();
+    void TriggerAuthoredExplodeObject(
+        struct AuthoredExplodeObjectRuntime& runtime_object);
     void UpdateAuthoredCutSceneCamera(
         const AuthoredMissionCutScene& definition,
         int tick_count);
@@ -263,6 +279,16 @@ private:
     };
     std::vector<AuthoredConditionalSoundRuntime> mission_conditional_sounds_;
     MissionSoundEventHandler mission_sound_event_handler_;
+    struct AuthoredExplodeObjectRuntime {
+        AuthoredMissionExplodeObject definition;
+        bool condition_active = false;
+        bool delay_pending = false;
+        int delay_ticks_remaining = 0;
+        bool is_exploded = false;
+    };
+    std::vector<AuthoredExplodeObjectRuntime> mission_explode_objects_;
+    std::vector<RuntimeExplodeObjectSnapshot>
+        authored_explode_object_snapshots_;
     struct AuthoredDoorRuntime {
         RuntimeDoorDefinition definition;
         RuntimeDoorState state;
