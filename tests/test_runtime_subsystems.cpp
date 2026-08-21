@@ -23,6 +23,7 @@
 #include "../source/animation_motion.h"
 #include "../source/level_flow.h"
 #include "../source/runtime/runtime_world.h"
+#include "../source/runtime/door_state.h"
 #include "../source/runtime/runtime_session.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
@@ -1675,6 +1676,65 @@ TEST(RuntimeInputTest, FocusLossClearsHeldGameplayState) {
 
     router.SetFocus(WindowFocusTarget::GameplayWindow);
     EXPECT_FLOAT_EQ(router.ConsumeGameplayInput().forward, 0.0f);
+}
+
+TEST(RuntimeDoorStateTest, SlidingDoorUsesAuthoredThirtyHertzOpenTime) {
+    RuntimeDoorDefinition definition;
+    definition.slide_offset_units = glm::vec3(-PlayerController::WORLD_METER, 0.0f, 0.0f);
+    definition.open_time_seconds = 1.0f;
+
+    RuntimeDoorState door(definition);
+    EXPECT_TRUE(door.IsFullyClosed());
+    EXPECT_FALSE(door.IsFullyOpen());
+
+    door.CommandOpen();
+    door.Tick();
+
+    EXPECT_NEAR(door.GetSlideFraction(), 1.0f / 30.0f, 0.000001f);
+    EXPECT_FALSE(door.IsFullyClosed());
+    EXPECT_FALSE(door.IsFullyOpen());
+    EXPECT_TRUE(door.WasFullyClosed());
+    EXPECT_EQ(door.GetUseState(), RuntimeDoorUseState::Opening);
+
+    for (int tick = 1; tick < 30; ++tick) {
+        door.Tick();
+    }
+
+    EXPECT_FLOAT_EQ(door.GetSlideFraction(), 1.0f);
+    EXPECT_EQ(door.GetSlideOffsetUnits(), glm::vec3(-PlayerController::WORLD_METER, 0.0f, 0.0f));
+    EXPECT_TRUE(door.IsFullyOpen());
+    EXPECT_FALSE(door.IsFullyClosed());
+    EXPECT_EQ(door.GetTicksOpen(), 1);
+    EXPECT_EQ(door.GetUseState(), RuntimeDoorUseState::Open);
+}
+
+TEST(RuntimeDoorStateTest, SwingAndSlideReturnToClosedStateWithoutOvershoot) {
+    RuntimeDoorDefinition definition;
+    definition.maximum_angle_degrees = 90.0f;
+    definition.slide_offset_units = glm::vec3(0.0f, PlayerController::WORLD_METER, 0.0f);
+    definition.open_time_seconds = 0.5f;
+
+    RuntimeDoorState door(definition);
+    door.CommandOpen();
+    for (int tick = 0; tick < 15; ++tick) {
+        door.Tick();
+    }
+
+    EXPECT_TRUE(door.IsFullyOpen());
+    EXPECT_NEAR(door.GetAngleRadians(), glm::radians(90.0f), 0.000001f);
+    EXPECT_EQ(door.GetSlideOffsetUnits(), glm::vec3(0.0f, PlayerController::WORLD_METER, 0.0f));
+
+    door.CommandClosed();
+    door.Tick();
+    EXPECT_EQ(door.GetUseState(), RuntimeDoorUseState::Closing);
+    for (int tick = 1; tick < 15; ++tick) {
+        door.Tick();
+    }
+
+    EXPECT_TRUE(door.IsFullyClosed());
+    EXPECT_NEAR(door.GetAngleRadians(), 0.0f, 0.000001f);
+    EXPECT_EQ(door.GetSlideFraction(), 0.0f);
+    EXPECT_EQ(door.GetTicksOpen(), 0);
 }
 
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {

@@ -336,6 +336,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/gameplay_host.cpp
     source/runtime/runtime_renderer.cpp
     source/runtime/projectile_system.cpp
+    source/runtime/door_state.cpp
     source/runtime/audio_system.cpp
     source/runtime/audio_asset_resolver.cpp
     source/runtime/config_qvm.cpp
