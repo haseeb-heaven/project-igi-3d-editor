@@ -61,6 +61,8 @@ struct AiPatrolCommand {
 struct AiGuardEntity {
     uint32_t id = 0;
     std::string name;
+    std::string mission_state_type;
+    std::string mission_task_id;
     std::string weapon_script_id;
     glm::vec3 position = glm::vec3(0.0f);
     float yaw = 0.0f;

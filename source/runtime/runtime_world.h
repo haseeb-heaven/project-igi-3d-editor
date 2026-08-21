@@ -43,6 +43,7 @@ public:
     void SetExtractionZone(const glm::vec3& center, float radius);
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
+    void SetMissionStatePulse(const std::string& variable_name);
     void SetAuthoredMissionState(
         std::vector<AuthoredMissionAreaActivation> area_activations,
         std::vector<AuthoredMissionEditVariable> edit_variables);
@@ -134,6 +135,7 @@ private:
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
+    void UpdateMissionActorState();
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
     void EndLadderTraversal();
@@ -172,6 +174,7 @@ private:
     std::vector<MissionAreaActivationState> mission_area_activations_;
     std::vector<AuthoredMissionEditVariable> mission_edit_variables_;
     std::vector<int> mission_edit_variable_values_;
+    std::vector<std::string> mission_state_pulse_names_;
     AiScriptHost ai_script_host_;
     std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;
     struct GuardCombatState {

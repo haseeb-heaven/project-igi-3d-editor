@@ -2193,6 +2193,34 @@ TEST(RuntimeWorldTest, AreaActivationLatchesEditVariableBeforeObjectiveEvaluatio
     EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
 }
 
+TEST(RuntimeWorldTest, DeadGuardPublishesAuthoredMissionState) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 401;
+    guard.mission_state_type = "HumanSoldier";
+    guard.mission_task_id = "2050";
+    guard.position = glm::vec3(10.0f * PlayerController::WORLD_METER, 0.0f, 0.0f);
+    guard.waypoints.push_back(guard.position);
+    world.GetAi().RegisterGuard(guard);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "M13_OBJ2",
+        2500,
+        "HumanSoldier_2050.isDead",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(13, {objective_set});
+    world.GetAi().ApplyDamage(401, 1000.0f);
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    ASSERT_EQ(world.GetLevelFlow().GetObjectives().size(), 1U);
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

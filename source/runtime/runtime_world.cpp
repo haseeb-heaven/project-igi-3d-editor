@@ -478,6 +478,7 @@ void RuntimeWorld::Reset() {
     mission_area_activations_.clear();
     mission_edit_variables_.clear();
     mission_edit_variable_values_.clear();
+    mission_state_pulse_names_.clear();
     guard_combat_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
@@ -576,6 +577,22 @@ void RuntimeWorld::UpdateAuthoredMissionState() {
     }
 }
 
+void RuntimeWorld::UpdateMissionActorState() {
+    mission_expression_state_.SetBoolean(
+        "HumanPlayer_0.isDead",
+        !player_.IsAlive());
+
+    for (const AiGuardEntity& guard : ai_.GetGuards()) {
+        if (guard.mission_state_type.empty() || guard.mission_task_id.empty()) {
+            continue;
+        }
+
+        mission_expression_state_.SetBoolean(
+            guard.mission_state_type + "_" + guard.mission_task_id + ".isDead",
+            guard.state == AiGuardState::Dead);
+    }
+}
+
 bool RuntimeWorld::AttachGuardScript(
     uint32_t guard_id,
     const QVMFile& parsed_file,
@@ -627,6 +644,16 @@ void RuntimeWorld::SetMissionStateNumber(
     const std::string& variable_name,
     double value) {
     mission_expression_state_.SetNumber(variable_name, value);
+}
+
+void RuntimeWorld::SetMissionStatePulse(const std::string& variable_name) {
+    if (std::find(
+            mission_state_pulse_names_.begin(),
+            mission_state_pulse_names_.end(),
+            variable_name) == mission_state_pulse_names_.end()) {
+        mission_state_pulse_names_.push_back(variable_name);
+    }
+    mission_expression_state_.SetBoolean(variable_name, true);
 }
 
 void RuntimeWorld::SetAuthoredMissionState(
@@ -990,6 +1017,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // Vanilla updates AreaActivate and EditVariable before dependent mission
     // expressions are evaluated at the end of this fixed simulation tick.
     UpdateAuthoredMissionState();
+    UpdateMissionActorState();
 
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig
     // lowers before the active weapon changes and raises after the new model
@@ -1104,6 +1132,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     ApplyGuardCombatDamage(tick_number);
     projectiles_.Tick();
     ApplyProjectileDetonations();
+    UpdateMissionActorState();
 
     // 4. Tick runtime task tree
     task_tree_.Update(dt);
@@ -1122,6 +1151,12 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             bool result = false;
             return mission_expression_state_.TryEvaluate(expression, result) && result;
         });
+
+    // Pulse fields are observable for the entire fixed tick, including the
+    // mission-flow evaluation above, and clear before the next tick begins.
+    for (const std::string& pulse_name : mission_state_pulse_names_) {
+        mission_expression_state_.SetBoolean(pulse_name, false);
+    }
 }
 
 void RuntimeWorld::DispatchGuardScripts() {

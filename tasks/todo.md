@@ -39,6 +39,9 @@
 - [x] Select the last authored `DefineComputerObjective` definition whose
       `Objectives Valid` expression evaluates true, matching vanilla task
       update order while preserving objective-set progression.
+- [x] Publish authored player/guard death variables and one-tick interaction
+      pulses; preserve concrete and generic pickup state aliases used by the
+      vanilla objective expressions.
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.

@@ -1700,9 +1700,8 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 		gameplay_host_.GetWorld().SetMissionStateBoolean(
 			terminal_prefix + ".isHacked",
 			true);
-		gameplay_host_.GetWorld().SetMissionStateBoolean(
-			terminal_prefix + ".isHackedThisTick",
-			true);
+		gameplay_host_.GetWorld().SetMissionStatePulse(
+			terminal_prefix + ".isHackedThisTick");
 		status_message_ = "Terminal hacked";
 		return {true, !current_objective_requires_authored_state()};
 	}
@@ -1712,9 +1711,8 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 		gameplay_host_.GetWorld().SetMissionStateBoolean(
 			switch_prefix + ".isPressed",
 			true);
-		gameplay_host_.GetWorld().SetMissionStateBoolean(
-			switch_prefix + ".isLastPressed",
-			true);
+		gameplay_host_.GetWorld().SetMissionStatePulse(
+			switch_prefix + ".isLastPressed");
 		status_message_ = "Switch activated";
 		return {true, !current_objective_requires_authored_state()};
 	}
@@ -1729,6 +1727,9 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 
 	if (target.type == "GunPickup") {
 		if (gameplay_host_.GetWorld().GetWeapons().SelectWeaponByScriptId(target.weaponEnumId)) {
+			gameplay_host_.GetWorld().SetMissionStateBoolean(
+				"GunPickup_" + target.taskId + ".isPickedUp",
+				true);
 			gameplay_host_.GetWorld().SetMissionStateBoolean(
 				"GenericPickup_" + target.taskId + ".isPickedUp",
 				true);
@@ -1751,6 +1752,9 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 			}
 		}
 		gameplay_host_.GetWorld().GetWeapons().AddReserveAmmo(rounds);
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			"AmmoPickup_" + target.taskId + ".isPickedUp",
+			true);
 		gameplay_host_.GetWorld().SetMissionStateBoolean(
 			"GenericPickup_" + target.taskId + ".isPickedUp",
 			true);
@@ -1821,6 +1825,8 @@ void App::SetupLevelAiGuards() {
 		igi::AiGuardEntity guard;
 		guard.id = (uint32_t)i;
 		guard.name = obj.name.empty() ? obj.type : obj.name;
+		guard.mission_state_type = obj.type;
+		guard.mission_task_id = obj.taskId;
 		guard.weapon_script_id = !obj.weaponEnumId.empty()
 			? obj.weaponEnumId
 			: obj.primaryWeapon;
