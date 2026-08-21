@@ -2201,6 +2201,26 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     AdvanceGuardMuzzleFlashStates();
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
 
+    // The map computer is a player weapon state in vanilla. Once it is open,
+    // retain only simulation inputs that belong to the map-computer toggle;
+    // movement, look, traversal, and interaction input must not leak into the
+    // player controller or authored interaction bridge.
+    PlayerInputCmd player_input = input_cmd;
+    if (map_computer_open_) {
+        player_input.forward = 0.0f;
+        player_input.strafe = 0.0f;
+        player_input.yaw_delta = 0.0f;
+        player_input.pitch_delta = 0.0f;
+        player_input.jump = false;
+        player_input.crouch = false;
+        player_input.sprint = false;
+        player_input.interact = false;
+        player_input.root_motion_delta = glm::vec3(0.0f);
+        player_input.ladder_step_complete = false;
+        player_input.ladder_top_transition_complete = false;
+        player_input.ladder_slide_complete = false;
+    }
+
     muzzle_flash_strength_ = std::max(
         0.0f,
         muzzle_flash_strength_ - kTransientPresentationStrengthDecayPerTick);
@@ -2240,13 +2260,13 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // inferred fixed-step state machine is active.
     const bool was_grounded = player_.IsGrounded();
     bool ladder_tick_handled = ladder_traversal_.IsOnLadder() &&
-        TickLadderTraversal(input_cmd);
-    if (!ladder_tick_handled && input_cmd.interact) {
+        TickLadderTraversal(player_input);
+    if (!ladder_tick_handled && player_input.interact) {
         ladder_tick_handled = TryMountNearestLadder();
     }
 
     if (!ladder_tick_handled) {
-        player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
+        player_.Tick(player_input, get_terrain_z_, obstacles, check_collision_);
         const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
         if (landing_impact.hearing_radius_units > 0.0f) {
             AiStimulusEvent ground_impact;
@@ -2261,10 +2281,10 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             player_damage_effect_strength_ = 1.0f;
             QueueOneShotAudio(SoundEffect::Pain, landing_impact.sound_name);
         }
-        if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
+        if (player_input.jump && was_grounded && !player_.IsGrounded()) {
             QueueOneShotAudio(SoundEffect::Jump);
         }
-        PlayFootstepIfNeeded(input_cmd, was_grounded);
+        PlayFootstepIfNeeded(player_input, was_grounded);
     }
 
     // OpenIGI identifies MapComputer as a grounded rising-edge weapon action.
@@ -2377,7 +2397,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         QueueOneShotAudio(SoundEffect::Reload);
     }
 
-    if (input_cmd.interact && !ladder_tick_handled) {
+    if (player_input.interact && !ladder_tick_handled) {
         RuntimeInteractionResult interaction_result;
         if (interaction_query_) {
             const float yaw_radians = glm::radians(player_.GetYaw());

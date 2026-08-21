@@ -1850,6 +1850,45 @@ TEST(RuntimeWorldTest, MapComputerSuppressesWeaponControlsUntilClosed) {
         ammo_before_map_fire);
 }
 
+TEST(RuntimeWorldTest, MapComputerFreezesPlayerPresentationAndInteractionInput) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    int interaction_call_count = 0;
+    world.SetInteractionQuery(
+        [&interaction_call_count](
+            const glm::vec3&,
+            const glm::vec3&) {
+            ++interaction_call_count;
+            return RuntimeInteractionResult();
+        });
+
+    PlayerInputCmd open_command;
+    open_command.map_computer = true;
+    world.UpdateSimulationTick(0, open_command);
+    ASSERT_TRUE(world.IsMapComputerOpen());
+
+    const glm::vec3 position_before_map_input =
+        world.GetPlayer().GetPosition();
+    const float yaw_before_map_input = world.GetPlayer().GetYaw();
+    const float pitch_before_map_input = world.GetPlayer().GetPitch();
+
+    PlayerInputCmd map_input;
+    map_input.forward = 1.0f;
+    map_input.strafe = 1.0f;
+    map_input.yaw_delta = 12.0f;
+    map_input.pitch_delta = -6.0f;
+    map_input.jump = true;
+    map_input.crouch = true;
+    map_input.interact = true;
+    world.UpdateSimulationTick(1, map_input);
+
+    EXPECT_EQ(world.GetPlayer().GetPosition(), position_before_map_input);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetYaw(), yaw_before_map_input);
+    EXPECT_FLOAT_EQ(world.GetPlayer().GetPitch(), pitch_before_map_input);
+    EXPECT_EQ(interaction_call_count, 0);
+}
+
 TEST(RuntimeInputTest, RelativeMouseLookDeltasAreConsumedOnce) {
     WindowInputRouter router;
     router.SetFocus(WindowFocusTarget::GameplayWindow);
