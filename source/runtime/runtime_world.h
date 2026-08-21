@@ -47,6 +47,15 @@ struct RuntimeCutSceneCamera {
     int shot_index = -1;
 };
 
+struct RuntimeMissionSoundEvent {
+    std::string task_id;
+    std::string sound_name;
+    glm::vec3 position = glm::vec3(0.0f);
+    bool playing = false;
+    bool simple = false;
+    bool relative_to_microphone = false;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -62,6 +71,11 @@ public:
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
     void SetMissionStatePulse(const std::string& variable_name);
+    using MissionSoundEventHandler = std::function<void(
+        const RuntimeMissionSoundEvent& sound_event)>;
+    void SetMissionSoundEventHandler(MissionSoundEventHandler event_handler) {
+        mission_sound_event_handler_ = std::move(event_handler);
+    }
     void SetAuthoredDoors(std::vector<RuntimeDoorDefinition> door_definitions);
     bool ToggleDoor(int object_index);
     const std::vector<RuntimeDoorSnapshot>& GetDoorSnapshots() const {
@@ -73,7 +87,8 @@ public:
         std::vector<AuthoredMissionEditVariable> edit_variables,
         std::vector<AuthoredMissionLevelTimer> level_timers = {},
         std::vector<AuthoredMissionStatusMessage> status_messages = {},
-        std::vector<AuthoredMissionCutScene> cut_scenes = {});
+        std::vector<AuthoredMissionCutScene> cut_scenes = {},
+        std::vector<AuthoredMissionConditionalSound> conditional_sounds = {});
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -170,6 +185,7 @@ private:
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
     void UpdateAuthoredCutScenes();
+    void UpdateAuthoredConditionalSounds();
     void UpdateAuthoredCutSceneCamera(
         const AuthoredMissionCutScene& definition,
         int tick_count);
@@ -240,6 +256,13 @@ private:
     std::vector<uint8_t> mission_cut_scene_running_;
     std::vector<uint8_t> mission_cut_scene_finished_;
     RuntimeCutSceneCamera active_cut_scene_camera_;
+    struct AuthoredConditionalSoundRuntime {
+        AuthoredMissionConditionalSound definition;
+        bool is_running = false;
+        bool has_played = false;
+    };
+    std::vector<AuthoredConditionalSoundRuntime> mission_conditional_sounds_;
+    MissionSoundEventHandler mission_sound_event_handler_;
     struct AuthoredDoorRuntime {
         RuntimeDoorDefinition definition;
         RuntimeDoorState state;

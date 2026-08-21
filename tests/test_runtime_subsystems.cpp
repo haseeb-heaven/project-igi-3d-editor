@@ -2515,6 +2515,69 @@ TEST(RuntimeWorldTest, AuthoredCutScenePublishesCameraSnapshot) {
     EXPECT_EQ(camera.shot_index, 0);
 }
 
+TEST(RuntimeWorldTest, AuthoredConditionalSoundEmitsRisingAndStoppingEdges) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionConditionalSound conditional_sound;
+    conditional_sound.task_id = "3005";
+    conditional_sound.condition_expression = "SoundTrigger";
+    conditional_sound.sound_name = "land_ground_2";
+    conditional_sound.simple = false;
+    conditional_sound.one_shot = false;
+
+    std::vector<RuntimeMissionSoundEvent> events;
+    world.SetMissionSoundEventHandler(
+        [&events](const RuntimeMissionSoundEvent& sound_event) {
+            events.push_back(sound_event);
+        });
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {conditional_sound});
+    world.SetMissionStateBoolean("SoundTrigger", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_TRUE(events[0].playing);
+    EXPECT_EQ(events[0].sound_name, "land_ground_2");
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_EQ(events.size(), 1U);
+
+    world.SetMissionStateBoolean("SoundTrigger", false);
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    ASSERT_EQ(events.size(), 2U);
+    EXPECT_FALSE(events[1].playing);
+}
+
+TEST(RuntimeWorldTest, AuthoredOneShotSoundDoesNotRetrigger) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionConditionalSound conditional_sound;
+    conditional_sound.task_id = "3998";
+    conditional_sound.condition_expression = "VoiceTrigger";
+    conditional_sound.sound_name = "_cut01_01";
+    conditional_sound.simple = true;
+    conditional_sound.one_shot = true;
+
+    int play_count = 0;
+    world.SetMissionSoundEventHandler(
+        [&play_count](const RuntimeMissionSoundEvent& sound_event) {
+            if (sound_event.playing) {
+                ++play_count;
+            }
+        });
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {conditional_sound});
+    world.SetMissionStateBoolean("VoiceTrigger", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    world.SetMissionStateBoolean("VoiceTrigger", false);
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    world.SetMissionStateBoolean("VoiceTrigger", true);
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+
+    EXPECT_EQ(play_count, 1);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

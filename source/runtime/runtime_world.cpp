@@ -517,6 +517,7 @@ void RuntimeWorld::Reset() {
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
+    mission_conditional_sounds_.clear();
     mission_status_messages_.clear();
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
@@ -1044,7 +1045,8 @@ void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionEditVariable> edit_variables,
     std::vector<AuthoredMissionLevelTimer> level_timers,
     std::vector<AuthoredMissionStatusMessage> status_messages,
-    std::vector<AuthoredMissionCutScene> cut_scenes) {
+    std::vector<AuthoredMissionCutScene> cut_scenes,
+    std::vector<AuthoredMissionConditionalSound> conditional_sounds) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
@@ -1056,6 +1058,13 @@ void RuntimeWorld::SetAuthoredMissionState(
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
     active_cut_scene_camera_ = RuntimeCutSceneCamera();
+    mission_conditional_sounds_.clear();
+    mission_conditional_sounds_.reserve(conditional_sounds.size());
+    for (AuthoredMissionConditionalSound& definition : conditional_sounds) {
+        AuthoredConditionalSoundRuntime runtime_sound;
+        runtime_sound.definition = std::move(definition);
+        mission_conditional_sounds_.push_back(std::move(runtime_sound));
+    }
     mission_cut_scene_ticks_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_running_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_finished_.reserve(mission_cut_scenes_.size());
@@ -1575,6 +1584,48 @@ void RuntimeWorld::UpdateAuthoredCutScenes() {
     }
 }
 
+void RuntimeWorld::UpdateAuthoredConditionalSounds() {
+    const auto evaluate_condition = [this](const std::string& expression) {
+        bool result = false;
+        return mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+
+    for (AuthoredConditionalSoundRuntime& runtime_sound : mission_conditional_sounds_) {
+        const bool is_running = evaluate_condition(
+            runtime_sound.definition.condition_expression);
+        if (is_running && !runtime_sound.is_running &&
+            (!runtime_sound.definition.one_shot || !runtime_sound.has_played)) {
+            runtime_sound.has_played = true;
+            AudioSystem::PlayWeaponFire(
+                runtime_sound.definition.sound_name,
+                SoundEffect::ObjectiveComplete);
+            if (mission_sound_event_handler_) {
+                mission_sound_event_handler_({
+                    runtime_sound.definition.task_id,
+                    runtime_sound.definition.sound_name,
+                    runtime_sound.definition.position,
+                    true,
+                    runtime_sound.definition.simple,
+                    runtime_sound.definition.relative_to_microphone,
+                });
+            }
+        } else if (!is_running && runtime_sound.is_running &&
+                   !runtime_sound.definition.simple &&
+                   runtime_sound.has_played &&
+                   mission_sound_event_handler_) {
+            mission_sound_event_handler_({
+                runtime_sound.definition.task_id,
+                runtime_sound.definition.sound_name,
+                runtime_sound.definition.position,
+                false,
+                runtime_sound.definition.simple,
+                runtime_sound.definition.relative_to_microphone,
+            });
+        }
+        runtime_sound.is_running = is_running;
+    }
+}
+
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
     interaction_query_ = std::move(interaction_query);
 }
@@ -1649,6 +1700,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // expressions are evaluated at the end of this fixed simulation tick.
     UpdateAuthoredMissionState();
     UpdateAuthoredCutScenes();
+    UpdateAuthoredConditionalSounds();
     UpdateAuthoredDoors();
     UpdateMissionActorState();
 
