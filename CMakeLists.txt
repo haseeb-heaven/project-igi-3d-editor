@@ -326,6 +326,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/audio_system.cpp
     source/runtime/config_qvm.cpp
     source/runtime/human_player_config.cpp
+    source/runtime/magic_object_registry.cpp
 )
 
 set_source_files_properties(

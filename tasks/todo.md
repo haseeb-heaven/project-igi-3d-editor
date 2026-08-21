@@ -26,6 +26,8 @@
       expose animation-local deltas at the fixed-step player boundary.
 - [x] Port the verified-reference ladder climb line, mount offsets, activation
       geometry, and four-phase traversal state machine as a renderer-free seam.
+- [x] Replace the renderer's ad-hoc magic-object scan with a shared parser that
+      resolves `TASKTYPE_LADDER` by name rather than by a process-local integer.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.
@@ -46,8 +48,8 @@
       gameplay; switching focus does not restart simulation. Auto-save,
       terrain editing, and level switching stay gated during an active run
       until immutable terrain/asset snapshots are complete.
-- [ ] Bind/verify selected-vanilla-fixture traversal (magic-object ladder
-      discovery, attachment transforms, animation events, and player input), authored mission patrol routes, and
+- [ ] Bind/verify selected-vanilla-fixture traversal (attachment transforms,
+      animation events, and player input), authored mission patrol routes, and
       non-demo extraction conditions from OpenIGI/retail evidence.
 - [ ] Final Windows verification and evidence/limitations report.
 

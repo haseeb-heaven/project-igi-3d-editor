@@ -27,6 +27,7 @@
 #include "../source/runtime/human_player_config.h"
 #include "../source/runtime/render_target.h"
 #include "../source/runtime/runtime_renderer.h"
+#include "../source/runtime/magic_object_registry.h"
 
 using namespace igi;
 
@@ -660,6 +661,20 @@ TEST(PlayerLadderTest, BuildsReferenceClimbLineAndMountOffsets) {
     EXPECT_NEAR(ladder.GetBottomMount().z, 3915.776f, 0.001f);
     EXPECT_NEAR(ladder.GetTopMount().y, -1638.4f, 0.001f);
     EXPECT_NEAR(ladder.GetTopMount().z, 15769.6f, 0.001f);
+}
+
+TEST(MagicObjectRegistryTest, ResolvesLadderTaskTypesWithoutHardCodedIds) {
+    MagicObjectRegistry registry;
+    ASSERT_TRUE(registry.LoadDecompiledSource(
+        "DefineMagicObj(\"ladder.obj\", \"ladder.obj\", TASKTYPE_LADDER);\n"
+        "DefineMagicObj(\"deathzone.obj\", \"deathzone.obj\", TASKTYPE_DEATHZONE);\n"
+        "DefineMagicObj(\"ladder.obj\", \"other.obj\", TASKTYPE_DEATHZONE);\n"));
+
+    ASSERT_EQ(registry.GetDefinitions().size(), 2U);
+    EXPECT_TRUE(registry.IsLadderAttachment("ladder.obj"));
+    EXPECT_FALSE(registry.IsLadderAttachment("deathzone.obj"));
+    ASSERT_NE(registry.Find("ladder.obj"), nullptr);
+    EXPECT_EQ(registry.Find("ladder.obj")->model_id, "ladder.obj");
 }
 
 TEST(PlayerLadderTest, ResolvesBottomAndTopActivationGeometry) {

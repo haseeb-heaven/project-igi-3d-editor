@@ -693,6 +693,19 @@ void Renderer_Objects::PrePopulateAttaFromParsed(const std::string& modelId, boo
     attachment_cache_[cacheKey] = std::move(attaches);
 }
 
+std::vector<AttachInfo> Renderer_Objects::GetModelAttachments(
+    const std::string& modelId,
+    bool isBuilding) {
+    GetOrLoadMesh(modelId, isBuilding);
+    const std::string cacheKey = std::to_string(current_level_) + ":" +
+        (isBuilding ? "building:" : "object:") + modelId;
+    const auto attachment_iterator = attachment_cache_.find(cacheKey);
+    if (attachment_iterator == attachment_cache_.end()) {
+        return {};
+    }
+    return attachment_iterator->second;
+}
+
 void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool isBuilding,
                                                  std::unordered_set<std::string>& visited) {
     if (!visited.insert(modelId).second) return; // cycle guard
@@ -1200,7 +1213,6 @@ void Renderer_Objects::DrawAttachmentsForSpline(
     glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(0);
 }
-
 
 
 

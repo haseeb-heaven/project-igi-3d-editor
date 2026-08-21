@@ -104,6 +104,8 @@ public:
     glm::vec3 GetMeshCenter(const std::string& modelId, bool isBuilding);
     float GetMeshZOffset(const std::string& modelId, bool isBuilding);
     Mesh GetOrLoadMesh(const std::string& modelId, bool isBuilding);
+    std::vector<AttachInfo> GetModelAttachments(const std::string& modelId, bool isBuilding);
+    bool IsLadderMagicObject(const std::string& modelId);
     // Render one model centered in a viewport rectangle, auto-rotated by (rotX,rotY)
     // radians, for the model-picker preview. Uploads its own preview camera into the
     // shared matrices UBO (overwritten next frame by the scene), so it must be called
@@ -281,6 +283,7 @@ private:
     bool deathzone_ids_loaded_ = false;
 
     std::set<std::string> magicobj_ids_;
+    std::set<std::string> ladder_magicobj_ids_;
     bool magicobj_ids_loaded_ = false;
     GLuint sphere_vao_ = 0;
     GLuint sphere_vbo_ = 0;

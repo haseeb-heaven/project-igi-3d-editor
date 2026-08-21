@@ -710,6 +710,12 @@ public:
 	std::string GetModelFilePath(const std::string& modelId, bool isBuilding) {
 		return objects_.GetModelFilePath(modelId, isBuilding);
 	}
+	std::vector<AttachInfo> GetModelAttachments(const std::string& modelId, bool isBuilding) {
+		return objects_.GetModelAttachments(modelId, isBuilding);
+	}
+	bool IsLadderMagicObject(const std::string& modelId) {
+		return objects_.IsLadderMagicObject(modelId);
+	}
 	std::string GetOrExtractMefTemp(const std::string& modelId, bool isBuilding) {
 		return objects_.GetOrExtractMefTemp(modelId, isBuilding);
 	}

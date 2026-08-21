@@ -112,8 +112,10 @@ parity claims remain gated on IGI1 evidence.
   root-motion transform order, and the fixed-step player-controller seam.
 - [x] Port the OpenIGI-referenced ladder placement offsets, activation geometry,
   rung discretization, and traversal state transitions as a headless seam.
-- [ ] Bind ladder discovery to the runtime magic-object registry, attachment
-  transforms, animation events, and player input in the selected fixture.
+- [x] Parse the runtime-allocated `magicobj.qvm` definitions through a shared
+  registry and expose named ladder attachment lookup to the renderer bridge.
+- [ ] Bind ladder discovery to runtime attachment transforms, animation events,
+  and player input in the selected fixture.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
