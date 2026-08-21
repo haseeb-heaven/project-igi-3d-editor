@@ -1737,6 +1737,27 @@ TEST(RuntimeAiTest, PatrolAnimationCommandPublishesMonotonicRequest) {
     EXPECT_EQ(ai.GetGuards()[0].animation_request_serial, 1U);
 }
 
+TEST(RuntimeAiTest, GuardDoesNotHearItsOwnGunshotStimulus) {
+    AiSystem ai;
+    AiGuardEntity guard;
+    guard.id = 15;
+    guard.state = AiGuardState::Combat;
+    ai.RegisterGuard(guard);
+
+    AiStimulusEvent gunshot;
+    gunshot.type = AiEventType::Gunshot;
+    gunshot.originator_id = guard.id;
+    gunshot.position = guard.position;
+    gunshot.loudness = 1.0f;
+    ai.GetEventQueue().Post(gunshot);
+
+    ai.Update(GameClock::TICK_INTERVAL_SECONDS, glm::vec3(100000.0f), false);
+
+    ASSERT_EQ(ai.GetGuards().size(), 1U);
+    EXPECT_EQ(ai.GetGuards()[0].state, AiGuardState::Combat);
+    EXPECT_FLOAT_EQ(ai.GetGuards()[0].suspicion, 0.0f);
+}
+
 TEST(RuntimeAiTest, RetailInvulnerabilityFlagBlocksDamage) {
     AiSystem ai;
     AiGuardEntity guard;
@@ -2429,6 +2450,40 @@ TEST(RuntimeWorldTest, CombatGuardUsesAuthoredWeaponScriptIdentifier) {
     world.UpdateSimulationTick(0, PlayerInputCmd());
 
     EXPECT_FLOAT_EQ(world.GetPlayer().GetHealth(), 50.0f);
+}
+
+TEST(RuntimeWorldTest, CombatGuardReloadsAuthoredWeaponAfterEmptyMagazine) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    PlayerController::Tuning player_tuning;
+    player_tuning.maximum_health = 10000.0f;
+    player_tuning.maximum_armor = 0.0f;
+    player_tuning.gravity_units_per_tick = 0.0f;
+    world.SetPlayerTuning(player_tuning);
+    world.GetPlayer().Reset(glm::vec3(0.0f, 0.0f, 0.0f));
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    world.GetAi().GetEventQueue().Clear();
+
+    AiGuardEntity guard;
+    guard.id = 30;
+    guard.weapon_script_id = "WEAPON_ID_M16A2";
+    guard.position = glm::vec3(0.0f, 2.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.yaw = 180.0f;
+    guard.state = AiGuardState::Combat;
+    guard.health = 100.0f;
+    world.GetAi().RegisterGuard(guard);
+
+    for (uint64_t tick = 1; tick <= 61; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+    const float health_after_emptying_magazine = world.GetPlayer().GetHealth();
+
+    for (uint64_t tick = 62; tick <= 131; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_LT(health_after_emptying_magazine, 10000.0f);
+    EXPECT_LT(world.GetPlayer().GetHealth(), health_after_emptying_magazine);
 }
 
 TEST(RuntimeWorldTest, SolidGeometryBlocksGuardLineOfSightDamage) {

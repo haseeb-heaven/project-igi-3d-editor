@@ -2787,7 +2787,26 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
                 combat_state.weapon.SelectWeapon(4); // WEAPON_ID_M16A2 fallback
             }
         }
-        combat_state.weapon.Update(GameClock::TICK_INTERVAL_SECONDS, true);
+        // Treat the reload interval as a released trigger so the weapon's
+        // burst counter resets before the first post-reload shot. Keeping the
+        // trigger held forever would leave automatic weapons permanently
+        // blocked by maximum_rounds_per_burst after their first magazine.
+        const bool was_reloading = combat_state.weapon.IsReloading();
+        combat_state.weapon.Update(
+            GameClock::TICK_INTERVAL_SECONDS,
+            !was_reloading);
+
+        // Guards use the same fixed-step weapon state machine as the player.
+        // Retail combat does not permanently disarm a guard when its current
+        // magazine is empty, so begin the authored weapon's reload before
+        // attempting another shot and keep the guard silent while it runs.
+        if (combat_state.weapon.GetCurrentClipAmmo() == 0U) {
+            combat_state.weapon.Reload();
+            continue;
+        }
+        if (combat_state.weapon.IsReloading()) {
+            continue;
+        }
 
         BulletTrace trace;
         const glm::vec3 aim_direction = player_.GetEyePosition() - guard_eye_position;

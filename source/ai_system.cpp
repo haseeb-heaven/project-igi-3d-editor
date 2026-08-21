@@ -94,6 +94,12 @@ constexpr float kMetersToUnits = 4096.0f;
 constexpr float kPatrolSpeed = 1.6f * kMetersToUnits; // walk ~1.6 m/s
 constexpr float kChaseSpeed  = 4.5f * kMetersToUnits; // run  ~4.5 m/s
 constexpr float kWaypointArriveRadius = 180.0f;
+constexpr float kGuardCollisionRadius = 0.4f * kMetersToUnits;
+// Keep the guard outside the combined player/guard collision envelope while
+// still close enough for hitscan combat. The previous tiny threshold let the
+// chase overshoot into the player and made the player obstacle resolver push
+// both actors through the firefight.
+constexpr float kCombatStopDistance = 2.1f * kGuardCollisionRadius;
 
 // OpenIGI patrol constants (AiPatrolRoute / AiMovementStep / AiSoldier).
 constexpr int    kNoCommand        = -1;
@@ -409,6 +415,14 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
 
         // 1. Process hearing
         for (const auto& evt : events) {
+            // OpenIGI's per-soldier event queues reject records naming the
+            // receiving AI as their source/subject. RuntimeWorld uses one
+            // shared queue, so preserve that owner filter explicitly; a
+            // firing guard must not hear its own gunshot on the next tick.
+            if (evt.originator_id != 0 && evt.originator_id == guard.id) {
+                continue;
+            }
+
             float dist = glm::distance(guard.position, evt.position);
             if (evt.hearing_radius_units > 0.0f) {
                 if (dist > evt.hearing_radius_units) {
@@ -466,10 +480,13 @@ void AiSystem::Update(double delta_seconds, const glm::vec3& player_pos, bool pl
             // Chase the player directly (chase behaviour)
             glm::vec3 to_player = player_pos - guard.position;
             float pd = glm::length(glm::vec2(to_player.x, to_player.y));
-            if (pd > 60.0f) {
+            if (pd > kCombatStopDistance) {
                 glm::vec2 dir = glm::normalize(glm::vec2(to_player.x, to_player.y));
-                guard.position.x += dir.x * speed * static_cast<float>(delta_seconds);
-                guard.position.y += dir.y * speed * static_cast<float>(delta_seconds);
+                const float travel_distance = std::min(
+                    speed * static_cast<float>(delta_seconds),
+                    pd - kCombatStopDistance);
+                guard.position.x += dir.x * travel_distance;
+                guard.position.y += dir.y * travel_distance;
                 guard.yaw = glm::degrees(std::atan2(dir.x, dir.y));
             }
         } else if (guard.state == AiGuardState::Suspicious && !guard.waypoints.empty()) {
