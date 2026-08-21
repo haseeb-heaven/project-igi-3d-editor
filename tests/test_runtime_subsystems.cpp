@@ -27,6 +27,7 @@
 #include "../source/runtime/runtime_session.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
+#include "../source/runtime/gameplay_spawn.h"
 #include "../source/runtime/projectile_system.h"
 #include "../source/runtime/window_input_router.h"
 #include "../source/runtime/human_player_config.h"
@@ -3323,4 +3324,36 @@ TEST(RuntimeHostTest, FocusCommandsMoveInputOwnershipWithoutRestartingGameplay) 
 
     EditorSnapshot restored_snapshot;
     ASSERT_TRUE(host.CloseGameplay(restored_snapshot));
+}
+
+TEST(RuntimeSpawnTest, PrefersGameplayPlayerTaskOverEditorCameraFallback) {
+    std::vector<RuntimeSpawnCandidate> candidates = {
+        RuntimeSpawnCandidate{
+            true,
+            17,
+            RuntimeSpawnPoint{glm::vec3(100.0f, 200.0f, 300.0f), 45.0f, 0.0f}},
+        RuntimeSpawnCandidate{
+            true,
+            0,
+            RuntimeSpawnPoint{glm::vec3(400.0f, 500.0f, 600.0f), 90.0f, 5.0f}},
+    };
+
+    const std::optional<RuntimeSpawnPoint> selected_spawn =
+        SelectAuthoredPlayerSpawn(candidates);
+
+    ASSERT_TRUE(selected_spawn.has_value());
+    EXPECT_EQ(selected_spawn->position, glm::vec3(400.0f, 500.0f, 600.0f));
+    EXPECT_FLOAT_EQ(selected_spawn->yaw, 90.0f);
+    EXPECT_FLOAT_EQ(selected_spawn->pitch, 5.0f);
+}
+
+TEST(RuntimeSpawnTest, ReturnsNoSpawnWhenLevelHasNoHumanPlayerTask) {
+    const std::vector<RuntimeSpawnCandidate> candidates = {
+        RuntimeSpawnCandidate{
+            false,
+            -1,
+            RuntimeSpawnPoint{glm::vec3(100.0f), 0.0f, 0.0f}},
+    };
+
+    EXPECT_FALSE(SelectAuthoredPlayerSpawn(candidates).has_value());
 }

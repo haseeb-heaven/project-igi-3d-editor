@@ -334,6 +334,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/window_input_router.cpp
     source/runtime/simulation_scheduler.cpp
     source/runtime/gameplay_host.cpp
+    source/runtime/gameplay_spawn.cpp
     source/runtime/runtime_renderer.cpp
     source/runtime/projectile_system.cpp
     source/runtime/door_state.cpp

@@ -2,6 +2,7 @@
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
+#include "runtime/gameplay_spawn.h"
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
@@ -1449,42 +1450,71 @@ void App::ToggleGamePlayMode() {
 		}
 		gameplay_host_.GetWorld().SetPlayerWeaponCycle(configured_weapon_cycle);
 
-		// 3. Spawn exactly at the editor camera position (primary), falling back to
-		//    HumanPlayer level object / level start pos when the camera is at origin
+		// 3. Resolve the authored HumanPlayer spawn first. OpenIGI's gameplay
+		//    PlayerSpawn contract selects task id zero, then the first HumanPlayer;
+		//    editor-camera and level-start positions are incomplete-level fallbacks.
 		glm::vec3 spawn_pos(0.0f);
 		float spawn_yaw = 0.0f;
 		float spawn_pitch = 0.0f;
 		bool found_spawn = false;
 		bool spawned_from_camera = false;
 
-		const float kSpawnSnapEps = 1.0f;
-		if (glm::length(viewer_.pos_) > kSpawnSnapEps ||
-		    fabsf(viewer_.yaw_) > kSpawnSnapEps) {
-			spawn_pos = viewer_.pos_;
-			spawn_yaw = viewer_.yaw_;
-			spawn_pitch = viewer_.pitch_;
+		std::vector<igi::RuntimeSpawnCandidate> authored_spawn_candidates;
+		const auto& spawn_objects = runtime_level_objects_->GetObjects();
+		authored_spawn_candidates.reserve(spawn_objects.size());
+		for (const LevelObject& object : spawn_objects) {
+			if (object.deleted || object.type != "HumanPlayer") {
+				continue;
+			}
+
+			int task_id = -1;
+			const char* task_id_begin = object.taskId.data();
+			const char* task_id_end = task_id_begin + object.taskId.size();
+			const auto parse_result = std::from_chars(
+				task_id_begin,
+				task_id_end,
+				task_id);
+			if (parse_result.ec != std::errc() || parse_result.ptr != task_id_end) {
+				task_id = -1;
+			}
+
+			float authored_yaw = glm::degrees(static_cast<float>(object.rot.z));
+			while (authored_yaw < 0.0f) authored_yaw += 360.0f;
+			while (authored_yaw >= 360.0f) authored_yaw -= 360.0f;
+			authored_spawn_candidates.push_back({
+				true,
+				task_id,
+				{
+					glm::vec3(object.pos),
+					authored_yaw,
+					0.0f,
+				},
+			});
+		}
+
+		if (const std::optional<igi::RuntimeSpawnPoint> authored_spawn =
+				igi::SelectAuthoredPlayerSpawn(authored_spawn_candidates)) {
+			spawn_pos = authored_spawn->position;
+			spawn_yaw = authored_spawn->yaw;
+			spawn_pitch = authored_spawn->pitch;
 			found_spawn = true;
-			spawned_from_camera = true;
-			Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera: pos=(" +
+			Logger::Get().Log(LogLevel::INFO, "[App] Authored HumanPlayer spawn: pos=(" +
 				std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
 				"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
 		}
 
 		if (!found_spawn) {
-			const auto& objects = level_.GetLevelObjects().GetObjects();
-			for (const auto& obj : objects) {
-				if (!obj.deleted && obj.type == "HumanPlayer") {
-					spawn_pos = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
-					spawn_yaw = glm::degrees((float)obj.rot.z);
-					while (spawn_yaw < 0.0f) spawn_yaw += 360.0f;
-					while (spawn_yaw >= 360.0f) spawn_yaw -= 360.0f;
-					found_spawn = true;
-					Logger::Get().Log(LogLevel::INFO, "[App] HumanPlayer spawn: pos=(" +
-						std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
-						"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw) +
-						" type=" + obj.type + " name=" + obj.name);
-					break;
-				}
+			const float kSpawnSnapEps = 1.0f;
+			if (glm::length(viewer_.pos_) > kSpawnSnapEps ||
+				fabsf(viewer_.yaw_) > kSpawnSnapEps) {
+				spawn_pos = viewer_.pos_;
+				spawn_yaw = viewer_.yaw_;
+				spawn_pitch = viewer_.pitch_;
+				found_spawn = true;
+				spawned_from_camera = true;
+				Logger::Get().Log(LogLevel::INFO, "[App] Spawn at editor camera fallback: pos=(" +
+					std::to_string(spawn_pos.x) + "," + std::to_string(spawn_pos.y) +
+					"," + std::to_string(spawn_pos.z) + ") yaw=" + std::to_string(spawn_yaw));
 			}
 		}
 
