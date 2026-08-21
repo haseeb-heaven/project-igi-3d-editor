@@ -18,6 +18,8 @@ struct MissionStateTaskSource {
 struct AuthoredMissionStateDefinitions {
     std::vector<AuthoredMissionAreaActivation> area_activations;
     std::vector<AuthoredMissionEditVariable> edit_variables;
+    std::vector<AuthoredMissionLevelTimer> level_timers;
+    std::vector<AuthoredMissionStatusMessage> status_messages;
 };
 
 // Loads the small authored task subset needed to advance vanilla objective

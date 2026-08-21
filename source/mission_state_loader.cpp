@@ -1,5 +1,6 @@
 #include "mission_state_loader.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <string>
@@ -15,6 +16,15 @@ constexpr size_t kAreaCriteriaArgumentIndex = 12;
 constexpr size_t kEditInitialValueArgumentIndex = 6;
 constexpr size_t kEditAddArgumentIndex = 7;
 constexpr size_t kEditSubtractArgumentIndex = 8;
+constexpr size_t kLevelTimerOnArgumentIndex = 9;
+constexpr size_t kLevelTimerResetArgumentIndex = 10;
+constexpr size_t kLevelTimerInitialRunArgumentIndex = 11;
+constexpr size_t kStatusMessageSendArgumentIndex = 9;
+constexpr size_t kStatusMessageTextArgumentIndex = 10;
+constexpr size_t kStatusMessageSoundArgumentIndex = 12;
+constexpr size_t kStatusMessageSendOnceArgumentIndex = 13;
+constexpr size_t kStatusMessageCutsceneArgumentIndex = 14;
+constexpr size_t kStatusMessageDurationArgumentIndex = 15;
 
 std::string UnquoteToken(std::string token) {
     if (token.size() < 2 || token.front() != '"' || token.back() != '"') {
@@ -58,6 +68,21 @@ bool TryParseInteger(const std::string& token, int& value) {
     const char* end = begin + unquoted_token.size();
     const auto result = std::from_chars(begin, end, value);
     return result.ec == std::errc() && result.ptr == end;
+}
+
+bool TryParseBoolean(const std::string& token, bool& value) {
+    const std::string unquoted_token = UnquoteToken(token);
+    if (unquoted_token == "TRUE" || unquoted_token == "true" ||
+        unquoted_token == "1") {
+        value = true;
+        return true;
+    }
+    if (unquoted_token == "FALSE" || unquoted_token == "false" ||
+        unquoted_token == "0") {
+        value = false;
+        return true;
+    }
+    return false;
 }
 
 std::string TokenAt(
@@ -132,6 +157,64 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 task_source.argument_tokens,
                 kEditSubtractArgumentIndex);
             definitions.edit_variables.push_back(std::move(edit_variable));
+            continue;
+        }
+
+        if (task_source.task_type == "LevelTimer") {
+            if (task_source.argument_tokens.size() <=
+                    kLevelTimerInitialRunArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionLevelTimer level_timer;
+            level_timer.task_id = task_source.task_id;
+            level_timer.on_expression = TokenAt(
+                task_source.argument_tokens,
+                kLevelTimerOnArgumentIndex);
+            level_timer.reset_expression = TokenAt(
+                task_source.argument_tokens,
+                kLevelTimerResetArgumentIndex);
+            if (!TryParseBoolean(
+                    task_source.argument_tokens[kLevelTimerInitialRunArgumentIndex],
+                    level_timer.initial_run)) {
+                continue;
+            }
+            definitions.level_timers.push_back(std::move(level_timer));
+            continue;
+        }
+
+        if (task_source.task_type == "StatusMessage") {
+            if (task_source.argument_tokens.size() <=
+                    kStatusMessageDurationArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionStatusMessage status_message;
+            status_message.task_id = task_source.task_id;
+            status_message.send_expression = TokenAt(
+                task_source.argument_tokens,
+                kStatusMessageSendArgumentIndex);
+            status_message.text_resource = TokenAt(
+                task_source.argument_tokens,
+                kStatusMessageTextArgumentIndex);
+            status_message.sound_name = TokenAt(
+                task_source.argument_tokens,
+                kStatusMessageSoundArgumentIndex);
+            if (!TryParseBoolean(
+                    task_source.argument_tokens[kStatusMessageSendOnceArgumentIndex],
+                    status_message.send_once) ||
+                !TryParseBoolean(
+                    task_source.argument_tokens[kStatusMessageCutsceneArgumentIndex],
+                    status_message.cutscene_message) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kStatusMessageDurationArgumentIndex],
+                    status_message.duration_seconds)) {
+                continue;
+            }
+            status_message.duration_seconds = std::max(
+                0.0f,
+                status_message.duration_seconds);
+            definitions.status_messages.push_back(std::move(status_message));
         }
     }
 

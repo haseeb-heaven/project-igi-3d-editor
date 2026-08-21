@@ -27,4 +27,26 @@ struct AuthoredMissionEditVariable {
     std::string subtract_expression;
 };
 
+// Authored LevelTimer state published to the mission expression namespace.
+// Tick advancement is owned by RuntimeWorld and reset per gameplay session.
+struct AuthoredMissionLevelTimer {
+    std::string task_id;
+    std::string on_expression;
+    std::string reset_expression;
+    bool initial_run = false;
+};
+
+// Authored StatusMessage definition. display_text is resolved from the
+// localized resource by the Windows application before entering the runtime.
+struct AuthoredMissionStatusMessage {
+    std::string task_id;
+    std::string send_expression;
+    std::string text_resource;
+    std::string display_text;
+    std::string sound_name;
+    bool send_once = false;
+    bool cutscene_message = false;
+    float duration_seconds = 2.0f;
+};
+
 } // namespace igi
