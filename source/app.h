@@ -11,6 +11,7 @@
 #include "renderer/model.h"
 #include "animation.h"
 #include "debug_command_manager.h"
+#include "player_ladder.h"
 #include "runtime/gameplay_host.h"
 #include "runtime/render_target.h"
 #include <atomic>
@@ -637,6 +638,20 @@ private:
   // using its AIGraph waypoints. Runtime transforms are rendered through the
   // session-owned LevelObjects copy.
   void SetupLevelAiGuards();
+  void SetupRuntimeLadders();
+  void CollectAttachedRuntimeLadders(
+      const std::string& model_id,
+      bool is_building,
+      const glm::mat4& draw_world_matrix,
+      const glm::mat3& task_orientation,
+      std::unordered_set<std::string>& ancestry,
+      std::vector<igi::LadderPlacement>& ladder_placements);
+  void AddRuntimeLadderIfPresent(
+      const std::string& model_id,
+      bool is_building,
+      const glm::mat4& draw_world_matrix,
+      const glm::mat3& task_orientation,
+      std::vector<igi::LadderPlacement>& ladder_placements);
   LevelObjects& GetActiveRenderLevelObjects();
   void PushTaskEditorUndoState();
   void UndoTaskEditorChange();

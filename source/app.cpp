@@ -1352,6 +1352,7 @@ void App::ToggleGamePlayMode() {
 		// Register in-level enemies into the runtime AI system (patrol waypoints
 		// come from each enemy's AIGraph). Runtime transforms stay in the render copy.
 		SetupLevelAiGuards();
+		SetupRuntimeLadders();
 
 		// Initialize mission objectives for this specific level
 		int current_lvl = level_.GetLevelNo();
@@ -1445,6 +1446,7 @@ void App::ApplyAndRestartGameplay() {
 	}
 
 	SetupLevelAiGuards();
+	SetupRuntimeLadders();
 	int current_level = level_.GetLevelNo();
 	if (current_level <= 0) current_level = 1;
 	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(
@@ -1735,6 +1737,143 @@ void App::SetupLevelAiGuards() {
 	}
 	Logger::Get().Log(LogLevel::INFO, "[App] Registered " +
 		std::to_string(ai.GetGuards().size()) + " enemy guards for Game Play");
+}
+
+void App::AddRuntimeLadderIfPresent(
+    const std::string& model_id,
+    bool is_building,
+    const glm::mat4& draw_world_matrix,
+    const glm::mat3& task_orientation,
+    std::vector<igi::LadderPlacement>& ladder_placements) {
+    if (!renderer_.IsLadderMagicObject(model_id)) {
+        return;
+    }
+
+    const std::vector<glm::vec3> magic_vertices =
+        renderer_.GetModelMagicVertices(model_id, is_building);
+    if (magic_vertices.size() <= 3U) {
+        Logger::Get().Log(LogLevel::WARNING,
+            "[Gameplay] Ladder model " + model_id +
+            " has no complete magic-vertex climb line");
+        return;
+    }
+
+    // Mesh magic vertices are imported through the same 40.96 model-unit
+    // conversion used by the renderer. The ladder contract consumes gameplay
+    // units, so apply the renderer's leaf scale before world transformation.
+    constexpr float model_units_to_runtime_units = 40.96f;
+    const glm::mat4 magic_world_matrix = draw_world_matrix * glm::scale(
+        glm::mat4(1.0f),
+        glm::vec3(model_units_to_runtime_units));
+    const auto transform_magic_vertex = [
+        &magic_world_matrix,
+        &magic_vertices](size_t index) {
+        return glm::vec3(magic_world_matrix * glm::vec4(
+            magic_vertices[index],
+            1.0f));
+    };
+
+    ladder_placements.emplace_back(
+        glm::vec3(draw_world_matrix[3]),
+        transform_magic_vertex(1),
+        transform_magic_vertex(2),
+        transform_magic_vertex(3),
+        task_orientation);
+}
+
+void App::CollectAttachedRuntimeLadders(
+    const std::string& model_id,
+    bool is_building,
+    const glm::mat4& draw_world_matrix,
+    const glm::mat3& task_orientation,
+    std::unordered_set<std::string>& ancestry,
+    std::vector<igi::LadderPlacement>& ladder_placements) {
+    if (model_id.empty() || !ancestry.insert(model_id).second) {
+        return;
+    }
+
+    AddRuntimeLadderIfPresent(
+        model_id,
+        is_building,
+        draw_world_matrix,
+        task_orientation,
+        ladder_placements);
+
+    glm::mat4 parent_rotation = draw_world_matrix;
+    parent_rotation[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    for (const AttachInfo& attachment : renderer_.GetModelAttachments(model_id, is_building)) {
+        const glm::mat4 attachment_rotation(
+            attachment.r[0], attachment.r[1], attachment.r[2], 0.0f,
+            attachment.r[3], attachment.r[4], attachment.r[5], 0.0f,
+            attachment.r[6], attachment.r[7], attachment.r[8], 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f);
+        const glm::vec3 local_offset(
+            attachment.px,
+            attachment.py,
+            attachment.pz);
+        const glm::vec3 world_position = glm::vec3(
+            draw_world_matrix * glm::vec4(local_offset, 1.0f));
+        const glm::mat4 child_world_matrix = glm::translate(
+            glm::mat4(1.0f),
+            world_position) * parent_rotation * attachment_rotation;
+
+        // The task frame uses the attachment transpose, while magic vertices
+        // use the draw frame. This follows the reference's separate
+        // childDrawOrientation/childTaskOrientation paths.
+        const glm::mat3 child_task_orientation = task_orientation *
+            glm::transpose(glm::mat3(attachment_rotation));
+        CollectAttachedRuntimeLadders(
+            attachment.modelId,
+            is_building,
+            child_world_matrix,
+            child_task_orientation,
+            ancestry,
+            ladder_placements);
+    }
+
+    ancestry.erase(model_id);
+}
+
+void App::SetupRuntimeLadders() {
+    std::vector<igi::LadderPlacement> ladder_placements;
+    const auto& objects = GetActiveRenderLevelObjects().GetObjects();
+    for (const LevelObject& object : objects) {
+        if (object.deleted || object.modelId.empty()) {
+            continue;
+        }
+
+        glm::mat4 object_rotation(1.0f);
+        object_rotation = glm::rotate(
+            object_rotation,
+            static_cast<float>(object.rot.z),
+            glm::vec3(0.0f, 0.0f, 1.0f));
+        object_rotation = glm::rotate(
+            object_rotation,
+            static_cast<float>(object.rot.x),
+            glm::vec3(1.0f, 0.0f, 0.0f));
+        object_rotation = glm::rotate(
+            object_rotation,
+            static_cast<float>(object.rot.y),
+            glm::vec3(0.0f, 1.0f, 0.0f));
+
+        const glm::mat4 object_world_matrix = glm::translate(
+            glm::mat4(1.0f),
+            glm::vec3(object.pos)) * object_rotation;
+        std::unordered_set<std::string> ancestry;
+        CollectAttachedRuntimeLadders(
+            object.modelId,
+            object.isBuilding,
+            object_world_matrix,
+            glm::mat3(object_rotation),
+            ancestry,
+            ladder_placements);
+    }
+
+    gameplay_host_.GetWorld().SetLadderPlacements(std::move(ladder_placements));
+    Logger::Get().Log(LogLevel::INFO,
+        "[Gameplay] Registered " + std::to_string(
+            gameplay_host_.GetWorld().GetLadderPlacements().size()) +
+        " authored ladder placements");
 }
 
 void App::SetEditBrush(int brush) {

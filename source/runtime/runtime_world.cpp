@@ -378,6 +378,7 @@ void RuntimeWorld::Reset() {
     weapons_ = WeaponSystem();
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
     weapons_.SelectWeaponSlot(0);
+    ladder_placements_.clear();
     projectiles_.Clear();
     ai_.Clear();
     ClearGuardScripts();
@@ -443,6 +444,10 @@ void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
 void RuntimeWorld::SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle) {
     player_weapon_cycle_ = weapon_cycle;
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
+}
+
+void RuntimeWorld::SetLadderPlacements(std::vector<LadderPlacement> ladder_placements) {
+    ladder_placements_ = std::move(ladder_placements);
 }
 
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {

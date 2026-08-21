@@ -105,6 +105,7 @@ public:
     float GetMeshZOffset(const std::string& modelId, bool isBuilding);
     Mesh GetOrLoadMesh(const std::string& modelId, bool isBuilding);
     std::vector<AttachInfo> GetModelAttachments(const std::string& modelId, bool isBuilding);
+    std::vector<glm::vec3> GetModelMagicVertices(const std::string& modelId, bool isBuilding);
     bool IsLadderMagicObject(const std::string& modelId);
     // Render one model centered in a viewport rectangle, auto-rotated by (rotX,rotY)
     // radians, for the model-picker preview. Uploads its own preview camera into the

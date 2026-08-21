@@ -1316,6 +1316,26 @@ TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     EXPECT_LT(world.GetAi().GetGuards()[0].health, 100.0f);
 }
 
+TEST(RuntimeWorldTest, OwnsLadderPlacementsAsRuntimeAssetState) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    std::vector<LadderPlacement> ladder_placements;
+    ladder_placements.emplace_back(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 10000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f));
+    world.SetLadderPlacements(std::move(ladder_placements));
+
+    ASSERT_EQ(world.GetLadderPlacements().size(), 1U);
+    EXPECT_EQ(world.GetLadderPlacements()[0].GetClimbLine().GetStepCount(), 10);
+
+    world.Reset();
+    EXPECT_TRUE(world.GetLadderPlacements().empty());
+}
+
 TEST(RuntimeWorldTest, ProjectileDetonationAppliesBlastDamageToNearbyGuard) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

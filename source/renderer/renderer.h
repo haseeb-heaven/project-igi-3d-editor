@@ -713,6 +713,9 @@ public:
 	std::vector<AttachInfo> GetModelAttachments(const std::string& modelId, bool isBuilding) {
 		return objects_.GetModelAttachments(modelId, isBuilding);
 	}
+	std::vector<glm::vec3> GetModelMagicVertices(const std::string& modelId, bool isBuilding) {
+		return objects_.GetModelMagicVertices(modelId, isBuilding);
+	}
 	bool IsLadderMagicObject(const std::string& modelId) {
 		return objects_.IsLadderMagicObject(modelId);
 	}

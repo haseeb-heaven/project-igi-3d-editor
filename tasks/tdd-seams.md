@@ -13,6 +13,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `TaskTree` | Registration, parent ownership, lifecycle order, targeted messages, and safe destruction. |
 | `QvmInterpreter` | Malformed-program rejection, bounded execution, native calls, stack safety, and deterministic reset. |
 | `GameplayHost` / `RuntimeWorld` | Isolated session start/tick/restart/close, mission state, and no mutation of editor snapshots. |
+| `RuntimeWorld` ladder asset boundary | Gameplay setup owns a transformed placement copy; reset clears it so editor/source objects cannot become mutable runtime ladders. |
 | `GameplayHost` / `WindowInputRouter` | F6/F7 focus handoff changes input ownership without restarting or resetting the active runtime session. |
 | `RenderTarget` | Gameplay-window presentation remains distinct from render-only editor repaints. |
 

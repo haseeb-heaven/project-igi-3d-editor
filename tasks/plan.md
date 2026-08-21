@@ -114,8 +114,11 @@ parity claims remain gated on IGI1 evidence.
   rung discretization, and traversal state transitions as a headless seam.
 - [x] Parse the runtime-allocated `magicobj.qvm` definitions through a shared
   registry and expose named ladder attachment lookup to the renderer bridge.
-- [ ] Bind ladder discovery to runtime attachment transforms, animation events,
-  and player input in the selected fixture.
+- [x] Discover attached ladder models at gameplay setup, transform their magic
+  vertices into runtime units, and store the immutable placement list in the
+  session-owned world.
+- [ ] Bind ladder traversal to animation events and player input in the
+  selected fixture.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,

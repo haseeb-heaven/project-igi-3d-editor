@@ -706,6 +706,12 @@ std::vector<AttachInfo> Renderer_Objects::GetModelAttachments(
     return attachment_iterator->second;
 }
 
+std::vector<glm::vec3> Renderer_Objects::GetModelMagicVertices(
+    const std::string& modelId,
+    bool isBuilding) {
+    return GetOrLoadMesh(modelId, isBuilding).magicVertices;
+}
+
 void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool isBuilding,
                                                  std::unordered_set<std::string>& visited) {
     if (!visited.insert(modelId).second) return; // cycle guard
@@ -1213,7 +1219,6 @@ void Renderer_Objects::DrawAttachmentsForSpline(
     glDisable(GL_POLYGON_OFFSET_FILL);
     glUseProgram(0);
 }
-
 
 
 

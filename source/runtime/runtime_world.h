@@ -9,6 +9,7 @@
 #include <string>
 #include "../game_clock.h"
 #include "../player_controller.h"
+#include "../player_ladder.h"
 #include "../weapon_system.h"
 #include "../ai_system.h"
 #include "../ai_script_host.h"
@@ -34,6 +35,7 @@ public:
     void Reset();
     void SetPlayerTuning(const PlayerController::Tuning& tuning);
     void SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycle);
+    void SetLadderPlacements(std::vector<LadderPlacement> ladder_placements);
     void SetExtractionZone(const glm::vec3& center, float radius);
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
@@ -61,6 +63,10 @@ public:
 
     ProjectileSystem& GetProjectiles() { return projectiles_; }
     const ProjectileSystem& GetProjectiles() const { return projectiles_; }
+
+    const std::vector<LadderPlacement>& GetLadderPlacements() const {
+        return ladder_placements_;
+    }
 
     AiSystem& GetAi() { return ai_; }
     const AiSystem& GetAi() const { return ai_; }
@@ -117,6 +123,7 @@ private:
     PlayerController player_;
     PlayerController::Tuning player_tuning_;
     std::vector<uint32_t> player_weapon_cycle_;
+    std::vector<LadderPlacement> ladder_placements_;
     WeaponSystem weapons_;
     ProjectileSystem projectiles_;
     AiSystem ai_;
