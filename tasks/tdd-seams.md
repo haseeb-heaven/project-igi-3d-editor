@@ -14,6 +14,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `RuntimeWorld` / `RuntimeRenderer` | Fixed-step firearm muzzle cue after a successful player shot, deterministic two-tick decay, and snapshot isolation. |
 | `WeaponViewRecoil` / `RuntimeWorld` | Inferred three-tick visual recoil recovery, firearm classification, and render-snapshot transfer of the weapon kick. |
 | `MissionObjectiveLoader` / `LevelFlow` | Vanilla six-slot objective parsing, resource-key/expression preservation, localized text fallback, last-valid-definition selection, and authored definition progression. |
+| `LevelFlow` / `RuntimeRenderer` | Authored objective `LinkTaskId` resolution to copied task positions and immutable presentation transfer for the active primary objective. |
 | `App` interaction bridge / `RuntimeWorld` | Interactable events publish stable authored state keys and fixed-step objective evaluation consumes them without coupling mission expressions to renderer objects. |
 | `MissionStateLoader` / `RuntimeWorld` | Authored AreaActivate geometry and EditVariable expressions are copied into runtime-owned state; area occupancy and add-before-sub latching occur before objective evaluation. |
 | `RuntimeWorld` actor mission state | Authored player/guard death variables update after simulation actors tick; switch and terminal edge fields remain true only for their fixed simulation tick. |
