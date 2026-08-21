@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include <string>
+
 namespace igi {
 
 // Authored Door parameters are kept in the units used by the renderer and the
@@ -9,9 +11,36 @@ namespace igi {
 // are already converted to world units.
 struct RuntimeDoorDefinition {
     int object_index = -1;
+    std::string task_id;
+    glm::dvec3 closed_position_units = glm::dvec3(0.0);
+    float closed_rotation_radians = 0.0f;
     float maximum_angle_degrees = 0.0f;
     float open_time_seconds = 1.0f;
     glm::vec3 slide_offset_units = glm::vec3(0.0f);
+    std::string open_expression;
+    std::string close_expression;
+    std::string locked_expression;
+    std::string open_sound;
+    std::string close_sound;
+    std::string move_sound;
+    bool pickable = false;
+};
+
+struct RuntimeDoorSnapshot {
+    int object_index = -1;
+    std::string task_id;
+    glm::dvec3 closed_position_units = glm::dvec3(0.0);
+    float closed_rotation_radians = 0.0f;
+    float angle_radians = 0.0f;
+    float slide_fraction = 0.0f;
+    glm::vec3 slide_offset_units = glm::vec3(0.0f);
+    bool is_fully_open = false;
+    bool is_fully_closed = true;
+    bool was_fully_open = false;
+    bool was_fully_closed = true;
+    bool is_locked = false;
+    bool is_picked = false;
+    int ticks_open = 0;
 };
 
 enum class RuntimeDoorUseState {

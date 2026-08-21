@@ -1737,6 +1737,69 @@ TEST(RuntimeDoorStateTest, SwingAndSlideReturnToClosedStateWithoutOvershoot) {
     EXPECT_EQ(door.GetTicksOpen(), 0);
 }
 
+TEST(RuntimeWorldTest, AuthoredDoorPublishesMotionAndMissionState) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionObjectiveSet objective_set;
+    objective_set.objectives.push_back({
+        "DOOR_OPEN",
+        100,
+        "Door_408.isOpen",
+        "HumanPlayer_0.isDead",
+    });
+    world.GetLevelFlow().InitializeMission(1, {objective_set});
+
+    RuntimeDoorDefinition definition;
+    definition.object_index = 12;
+    definition.task_id = "408";
+    definition.slide_offset_units = glm::vec3(-PlayerController::WORLD_METER, 0.0f, 0.0f);
+    definition.open_time_seconds = 1.0f;
+    world.SetAuthoredDoors({definition});
+
+    ASSERT_TRUE(world.ToggleDoor(12));
+    EXPECT_FALSE(world.IsDoorFullyOpen(12));
+
+    for (uint64_t tick = 0; tick < 30; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    ASSERT_EQ(world.GetDoorSnapshots().size(), 1U);
+    const RuntimeDoorSnapshot& snapshot = world.GetDoorSnapshots().front();
+    EXPECT_TRUE(snapshot.is_fully_open);
+    EXPECT_TRUE(snapshot.is_picked);
+    EXPECT_EQ(snapshot.ticks_open, 1);
+    EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
+TEST(RuntimeWorldTest, AuthoredDoorConditionsDriveOpenAndLockedStates) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    RuntimeDoorDefinition definition;
+    definition.object_index = 19;
+    definition.task_id = "419";
+    definition.open_expression = "GatePower";
+    definition.locked_expression = "GateLocked";
+    definition.slide_offset_units = glm::vec3(-PlayerController::WORLD_METER, 0.0f, 0.0f);
+    definition.open_time_seconds = 1.0f;
+    world.SetAuthoredDoors({definition});
+
+    world.SetMissionStateBoolean("GateLocked", true);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    EXPECT_FALSE(world.ToggleDoor(19));
+
+    world.SetMissionStateBoolean("GateLocked", false);
+    world.SetMissionStateBoolean("GatePower", true);
+    for (uint64_t tick = 1; tick < 31; ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    ASSERT_EQ(world.GetDoorSnapshots().size(), 1U);
+    EXPECT_TRUE(world.GetDoorSnapshots()[0].is_fully_open);
+    EXPECT_FALSE(world.GetDoorSnapshots()[0].is_locked);
+}
+
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

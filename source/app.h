@@ -169,7 +169,6 @@ private:
   glm::vec3 gameplay_spawn_position_ = glm::vec3(0.0f);
   float gameplay_spawn_yaw_ = 0.0f;
   float gameplay_spawn_pitch_ = 0.0f;
-  std::unordered_set<int> opened_door_indices_;
   bool edit_mode_;
   bool terrain_edit_enabled_;
   bool pause_mode_;
@@ -643,6 +642,9 @@ private:
   void SetupLevelAiGuards();
   void InitializeGameplayMissionObjectives();
   void SetupRuntimeMissionState();
+  void SetupRuntimeInteractionState();
+  void SetupRuntimeDoors();
+  void ApplyRuntimeDoorStates();
   void SetupRuntimeLadders();
   void CollectAttachedRuntimeLadders(
       const std::string& model_id,

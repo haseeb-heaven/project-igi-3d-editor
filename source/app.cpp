@@ -724,6 +724,7 @@ void App::Frame(float delta_seconds) {
 		// OnIdle owns the simulation update. Display callbacks may run once per
 		// window, so a zero render delta must never advance gameplay a second time.
 		if (delta_seconds > 0.0f) gameplay_host_.Update(now_ms);
+		ApplyRuntimeDoorStates();
 
 		const auto& player = gameplay_host_.GetWorld().GetPlayer();
 		gameplay_viewer_.pos_ = player.GetEyePosition();
@@ -1308,7 +1309,6 @@ void App::ToggleGamePlayMode() {
 		snap.selected_object_id = selected_object_index_;
 		gameplay_editor_snapshot_ = snap;
 		runtime_level_objects_ = level_.GetLevelObjects();
-		opened_door_indices_.clear();
 	noclip_mode_ = false;
 
 		// 1. Read config.qvm profile for controls, sensitivity, sound volume
@@ -1414,6 +1414,8 @@ void App::ToggleGamePlayMode() {
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
 		SetupRuntimeMissionState();
+		SetupRuntimeDoors();
+		SetupRuntimeInteractionState();
 
 		// Initialize authored mission objectives for this specific level.
 		InitializeGameplayMissionObjectives();
@@ -1465,7 +1467,6 @@ void App::ToggleGamePlayMode() {
 		in_game_mode_ = false;
 		gameplay_editor_snapshot_.reset();
 		runtime_level_objects_.reset();
-		opened_door_indices_.clear();
 		runtime_animation_request_serials_.clear();
 		player_animation_driver_.ClearAnimationClips();
 		viewer_.pos_ = snap.camera_pos;
@@ -1496,10 +1497,9 @@ void App::ApplyAndRestartGameplay() {
 	}
 
 	// Rebuild every mutable adapter from the current authoring level copy. The
-	// source LevelObjects remain untouched; runtime deaths, opened doors, and
+	// source LevelObjects remain untouched; runtime deaths, door motion, and
 	// animation requests are discarded as part of the explicit restart.
 	runtime_level_objects_ = level_.GetLevelObjects();
-	opened_door_indices_.clear();
 	runtime_animation_request_serials_.clear();
 
 	if (!gameplay_host_.ApplyAndRestartGameplay(*gameplay_editor_snapshot_)) {
@@ -1511,6 +1511,8 @@ void App::ApplyAndRestartGameplay() {
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
 	SetupRuntimeMissionState();
+	SetupRuntimeDoors();
+	SetupRuntimeInteractionState();
 	InitializeGameplayMissionObjectives();
 
 	// RuntimeWorld::Reset intentionally starts at the neutral origin. Restore
@@ -1597,6 +1599,147 @@ void App::SetupRuntimeMissionState() {
 		" LevelTimer task(s), " +
 		std::to_string(status_message_count) +
 		" StatusMessage task(s)");
+}
+
+void App::SetupRuntimeDoors() {
+	const auto& authored_objects = runtime_level_objects_.has_value()
+		? runtime_level_objects_->GetObjects()
+		: level_.GetLevelObjects().GetObjects();
+
+	const auto read_token = [](const LevelObject& object, size_t index) {
+		if (index >= object.argTokens.size()) {
+			return std::string();
+		}
+		return App::StripQuotes(object.argTokens[index]);
+	};
+	const auto read_float = [&read_token](const LevelObject& object, size_t index, float fallback) {
+		const std::string token = read_token(object, index);
+		if (token.empty()) {
+			return fallback;
+		}
+		try {
+			return std::stof(token);
+		} catch (...) {
+			return fallback;
+		}
+	};
+	const auto read_bool = [&read_token](const LevelObject& object, size_t index) {
+		const std::string token = read_token(object, index);
+		return token == "1" || token == "TRUE" || token == "true";
+	};
+
+	std::vector<igi::RuntimeDoorDefinition> door_definitions;
+	door_definitions.reserve(authored_objects.size());
+	for (int object_index = 0;
+		 object_index < static_cast<int>(authored_objects.size());
+		 ++object_index) {
+		const LevelObject& authored_object = authored_objects[object_index];
+		if (authored_object.deleted || authored_object.type != "Door") {
+			continue;
+		}
+
+		igi::RuntimeDoorDefinition definition;
+		definition.object_index = object_index;
+		definition.task_id = authored_object.taskId;
+		definition.closed_position_units = authored_object.pos;
+		definition.closed_rotation_radians = static_cast<float>(authored_object.rot.z);
+		definition.slide_offset_units = glm::vec3(
+			read_float(authored_object, 6, 0.0f) * igi::PlayerController::WORLD_METER,
+			read_float(authored_object, 7, 0.0f) * igi::PlayerController::WORLD_METER,
+			read_float(authored_object, 8, 0.0f) * igi::PlayerController::WORLD_METER);
+		definition.maximum_angle_degrees = read_float(authored_object, 13, 0.0f);
+		definition.open_time_seconds = read_float(authored_object, 14, 1.0f);
+		definition.pickable = read_bool(authored_object, 15);
+		definition.open_expression = read_token(authored_object, 17);
+		definition.close_expression = read_token(authored_object, 18);
+		definition.locked_expression = read_token(authored_object, 19);
+		definition.open_sound = read_token(authored_object, 20);
+		definition.close_sound = read_token(authored_object, 21);
+		definition.move_sound = read_token(authored_object, 22);
+		door_definitions.push_back(std::move(definition));
+	}
+
+	gameplay_host_.GetWorld().SetAuthoredDoors(std::move(door_definitions));
+}
+
+void App::SetupRuntimeInteractionState() {
+	const auto& authored_objects = runtime_level_objects_.has_value()
+		? runtime_level_objects_->GetObjects()
+		: level_.GetLevelObjects().GetObjects();
+	const auto set_boolean = [this](
+		const std::string& task_type,
+		const std::string& task_id,
+		const std::string& field,
+		bool value) {
+		if (task_id.empty() || task_id == "-1") {
+			return;
+		}
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			task_type + "_" + task_id + "." + field,
+			value);
+	};
+
+	for (const LevelObject& authored_object : authored_objects) {
+		if (authored_object.deleted) {
+			continue;
+		}
+		if (authored_object.type == "Terminal") {
+			set_boolean(authored_object.type, authored_object.taskId, "isHacked", false);
+			set_boolean(authored_object.type, authored_object.taskId, "isExploded", false);
+		} else if (authored_object.type == "Switch") {
+			set_boolean(authored_object.type, authored_object.taskId, "isPressed", false);
+			set_boolean(authored_object.type, authored_object.taskId, "isLastPressed", false);
+		} else if (authored_object.type == "Generator") {
+			set_boolean(authored_object.type, authored_object.taskId, "isOn", false);
+		} else if (authored_object.type == "Car") {
+			set_boolean(authored_object.type, authored_object.taskId, "isUsed", false);
+		} else if (authored_object.type == "GunPickup" ||
+				authored_object.type == "AmmoPickup" ||
+				authored_object.type == "GenericPickup") {
+			set_boolean(authored_object.type, authored_object.taskId, "isPickedUp", false);
+			set_boolean("GenericPickup", authored_object.taskId, "isPickedUp", false);
+		} else if (authored_object.type == "GenericTBA") {
+			set_boolean(authored_object.type, authored_object.taskId, "isFinished", false);
+			set_boolean(authored_object.type, authored_object.taskId, "isFinishedThisTick", false);
+		}
+	}
+}
+
+void App::ApplyRuntimeDoorStates() {
+	if (!runtime_level_objects_.has_value()) {
+		return;
+	}
+
+	auto& objects = runtime_level_objects_->GetObjects();
+	for (const igi::RuntimeDoorSnapshot& snapshot :
+		gameplay_host_.GetWorld().GetDoorSnapshots()) {
+		if (snapshot.object_index < 0 ||
+			snapshot.object_index >= static_cast<int>(objects.size())) {
+			continue;
+		}
+
+		LevelObject& object = objects[static_cast<size_t>(snapshot.object_index)];
+		glm::mat4 orientation(1.0f);
+		orientation = glm::rotate(
+			orientation,
+			snapshot.closed_rotation_radians,
+			glm::vec3(0.0f, 0.0f, 1.0f));
+		orientation = glm::rotate(
+			orientation,
+			static_cast<float>(object.rot.x),
+			glm::vec3(1.0f, 0.0f, 0.0f));
+		orientation = glm::rotate(
+			orientation,
+			static_cast<float>(object.rot.y),
+			glm::vec3(0.0f, 1.0f, 0.0f));
+		const glm::vec3 world_slide_offset = glm::vec3(
+			orientation * glm::vec4(snapshot.slide_offset_units, 0.0f));
+
+		object.pos = snapshot.closed_position_units +
+			glm::dvec3(world_slide_offset);
+		object.rot.z = static_cast<double>(snapshot.closed_rotation_radians) +
+			snapshot.angle_radians;
+	}
 }
 
 void App::InitializeGameplayMissionObjectives() {
@@ -1703,7 +1846,8 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 			object.type == "Door" || object.type == "Terminal" ||
 			object.type == "Switch" || object.type == "Generator" ||
 			object.type == "GunPickup" || object.type == "AmmoPickup" ||
-			object.type == "GenericPickup" || object.type == "Car";
+			object.type == "GenericPickup" || object.type == "GenericTBA" ||
+			object.type == "Car";
 		if (object.deleted || !is_interactable) {
 			continue;
 		}
@@ -1743,11 +1887,10 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 	};
 
 	if (target.type == "Door") {
-		opened_door_indices_.insert(nearest_index);
-		target.rot.z += glm::radians(90.0f);
-		gameplay_host_.GetWorld().SetMissionStateBoolean(
-			"Door_" + target.taskId + ".isOpen",
-			true);
+		if (!gameplay_host_.GetWorld().ToggleDoor(nearest_index)) {
+			status_message_ = "Door locked";
+			return {};
+		}
 		status_message_ = "Door opened";
 		return {true, !current_objective_requires_authored_state()};
 	}
@@ -1826,6 +1969,18 @@ igi::RuntimeInteractionResult App::HandleGameplayInteraction(
 			true);
 		target.deleted = true;
 		status_message_ = "Item acquired";
+		return {true, !current_objective_requires_authored_state()};
+	}
+
+	if (target.type == "GenericTBA") {
+		const std::string generic_prefix = "GenericTBA_" + target.taskId;
+		gameplay_host_.GetWorld().SetMissionStateBoolean(
+			generic_prefix + ".isFinished",
+			true);
+		gameplay_host_.GetWorld().SetMissionStatePulse(
+			generic_prefix + ".isFinishedThisTick");
+		target.deleted = true;
+		status_message_ = "Objective item placed";
 		return {true, !current_objective_requires_authored_state()};
 	}
 

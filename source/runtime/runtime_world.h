@@ -19,6 +19,7 @@
 #include "../level/task_tree.h"
 #include "../level/qvm_interpreter.h"
 #include "projectile_system.h"
+#include "door_state.h"
 #include "../mission_expression.h"
 #include "../mission_state.h"
 #include "../weapon_view_sway.h"
@@ -46,6 +47,12 @@ public:
     void SetMissionStateBoolean(const std::string& variable_name, bool value);
     void SetMissionStateNumber(const std::string& variable_name, double value);
     void SetMissionStatePulse(const std::string& variable_name);
+    void SetAuthoredDoors(std::vector<RuntimeDoorDefinition> door_definitions);
+    bool ToggleDoor(int object_index);
+    const std::vector<RuntimeDoorSnapshot>& GetDoorSnapshots() const {
+        return authored_door_snapshots_;
+    }
+    bool IsDoorFullyOpen(int object_index) const;
     void SetAuthoredMissionState(
         std::vector<AuthoredMissionAreaActivation> area_activations,
         std::vector<AuthoredMissionEditVariable> edit_variables,
@@ -143,6 +150,13 @@ private:
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
+    void UpdateAuthoredDoors();
+    void PublishAuthoredDoorState(
+        const RuntimeDoorDefinition& definition,
+        const RuntimeDoorState& door_state,
+        bool is_locked,
+        bool is_picked);
+    void RefreshAuthoredDoorSnapshots();
     void UpdateAuthoredMissionStatusMessages(uint64_t tick_number);
     void PublishMissionStatusMessageState(
         const AuthoredMissionStatusMessage& definition,
@@ -193,6 +207,14 @@ private:
     std::vector<AuthoredMissionLevelTimer> mission_level_timers_;
     std::vector<int> mission_level_timer_ticks_;
     std::vector<uint8_t> mission_level_timer_running_;
+    struct AuthoredDoorRuntime {
+        RuntimeDoorDefinition definition;
+        RuntimeDoorState state;
+        bool is_locked = false;
+        bool is_picked = false;
+    };
+    std::vector<AuthoredDoorRuntime> authored_doors_;
+    std::vector<RuntimeDoorSnapshot> authored_door_snapshots_;
     struct MissionStatusMessageRuntime {
         AuthoredMissionStatusMessage definition;
         bool is_sent = false;

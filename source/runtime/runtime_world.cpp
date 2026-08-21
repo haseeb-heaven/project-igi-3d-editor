@@ -487,6 +487,12 @@ void RuntimeWorld::Reset() {
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
     mission_state_pulse_names_.clear();
+    for (AuthoredDoorRuntime& authored_door : authored_doors_) {
+        authored_door.state = RuntimeDoorState(authored_door.definition);
+        authored_door.is_locked = false;
+        authored_door.is_picked = false;
+    }
+    authored_door_snapshots_.clear();
     guard_combat_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
@@ -690,6 +696,173 @@ void RuntimeWorld::SetMissionStatePulse(const std::string& variable_name) {
         mission_state_pulse_names_.push_back(variable_name);
     }
     mission_expression_state_.SetBoolean(variable_name, true);
+}
+
+void RuntimeWorld::SetAuthoredDoors(
+    std::vector<RuntimeDoorDefinition> door_definitions) {
+    authored_doors_.clear();
+    authored_doors_.reserve(door_definitions.size());
+
+    for (RuntimeDoorDefinition& definition : door_definitions) {
+        AuthoredDoorRuntime authored_door;
+        authored_door.definition = std::move(definition);
+        authored_door.state = RuntimeDoorState(authored_door.definition);
+        bool locked = false;
+        if (!authored_door.definition.locked_expression.empty()) {
+            mission_expression_state_.TryEvaluate(
+                authored_door.definition.locked_expression,
+                locked);
+        }
+        authored_door.is_locked = locked;
+        authored_doors_.push_back(std::move(authored_door));
+    }
+
+    for (const AuthoredDoorRuntime& authored_door : authored_doors_) {
+        PublishAuthoredDoorState(
+            authored_door.definition,
+            authored_door.state,
+            authored_door.is_locked,
+            authored_door.is_picked);
+    }
+    RefreshAuthoredDoorSnapshots();
+}
+
+bool RuntimeWorld::ToggleDoor(int object_index) {
+    for (AuthoredDoorRuntime& authored_door : authored_doors_) {
+        if (authored_door.definition.object_index != object_index) {
+            continue;
+        }
+
+        if (authored_door.is_locked && !authored_door.definition.pickable) {
+            return false;
+        }
+
+        authored_door.state.Toggle();
+        authored_door.is_picked = true;
+        PublishAuthoredDoorState(
+            authored_door.definition,
+            authored_door.state,
+            authored_door.is_locked,
+            authored_door.is_picked);
+        return true;
+    }
+    return false;
+}
+
+bool RuntimeWorld::IsDoorFullyOpen(int object_index) const {
+    for (const AuthoredDoorRuntime& authored_door : authored_doors_) {
+        if (authored_door.definition.object_index == object_index) {
+            return authored_door.state.IsFullyOpen();
+        }
+    }
+    return false;
+}
+
+void RuntimeWorld::PublishAuthoredDoorState(
+    const RuntimeDoorDefinition& definition,
+    const RuntimeDoorState& door_state,
+    bool is_locked,
+    bool is_picked) {
+    if (definition.task_id.empty() || definition.task_id == "-1") {
+        return;
+    }
+
+    const std::string prefix = "Door_" + definition.task_id;
+    mission_expression_state_.SetBoolean(
+        prefix + ".isOpen",
+        door_state.IsFullyOpen());
+    mission_expression_state_.SetBoolean(
+        prefix + ".isClosed",
+        door_state.IsFullyClosed());
+    mission_expression_state_.SetBoolean(
+        prefix + ".isLastOpen",
+        door_state.WasFullyOpen());
+    mission_expression_state_.SetBoolean(
+        prefix + ".isLastClosed",
+        door_state.WasFullyClosed());
+    mission_expression_state_.SetBoolean(prefix + ".isLocked", is_locked);
+    mission_expression_state_.SetBoolean(prefix + ".isPicked", is_picked);
+    mission_expression_state_.SetNumber(
+        prefix + ".nDoorOpenTicks",
+        door_state.GetTicksOpen());
+}
+
+void RuntimeWorld::RefreshAuthoredDoorSnapshots() {
+    authored_door_snapshots_.clear();
+    authored_door_snapshots_.reserve(authored_doors_.size());
+    for (const AuthoredDoorRuntime& authored_door : authored_doors_) {
+        RuntimeDoorSnapshot snapshot;
+        snapshot.object_index = authored_door.definition.object_index;
+        snapshot.task_id = authored_door.definition.task_id;
+        snapshot.closed_position_units = authored_door.definition.closed_position_units;
+        snapshot.closed_rotation_radians = authored_door.definition.closed_rotation_radians;
+        snapshot.angle_radians = authored_door.state.GetAngleRadians();
+        snapshot.slide_fraction = authored_door.state.GetSlideFraction();
+        snapshot.slide_offset_units = authored_door.state.GetSlideOffsetUnits();
+        snapshot.is_fully_open = authored_door.state.IsFullyOpen();
+        snapshot.is_fully_closed = authored_door.state.IsFullyClosed();
+        snapshot.was_fully_open = authored_door.state.WasFullyOpen();
+        snapshot.was_fully_closed = authored_door.state.WasFullyClosed();
+        snapshot.is_locked = authored_door.is_locked;
+        snapshot.is_picked = authored_door.is_picked;
+        snapshot.ticks_open = authored_door.state.GetTicksOpen();
+        authored_door_snapshots_.push_back(std::move(snapshot));
+    }
+}
+
+void RuntimeWorld::UpdateAuthoredDoors() {
+    const auto evaluate_expression = [this](const std::string& expression) {
+        bool result = false;
+        return !expression.empty() &&
+            mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+
+    for (AuthoredDoorRuntime& authored_door : authored_doors_) {
+        const RuntimeDoorDefinition& definition = authored_door.definition;
+        authored_door.is_locked = !authored_door.is_picked &&
+            evaluate_expression(definition.locked_expression);
+
+        if (authored_door.state.IsFullyClosed() &&
+            evaluate_expression(definition.open_expression)) {
+            authored_door.state.CommandOpen();
+        }
+        if (authored_door.state.IsFullyOpen() &&
+            evaluate_expression(definition.close_expression)) {
+            authored_door.state.CommandClosed();
+        }
+
+        const bool was_moving = authored_door.state.IsMoving();
+        authored_door.state.Tick();
+
+        if (authored_door.state.IsFullyOpen() &&
+            !authored_door.state.WasFullyOpen() &&
+            !definition.open_sound.empty()) {
+            AudioSystem::PlayWeaponFire(
+                definition.open_sound,
+                SoundEffect::ObjectiveComplete);
+        }
+        if (authored_door.state.IsFullyClosed() &&
+            !authored_door.state.WasFullyClosed() &&
+            !definition.close_sound.empty()) {
+            AudioSystem::PlayWeaponFire(
+                definition.close_sound,
+                SoundEffect::ObjectiveComplete);
+        }
+        if (!was_moving && authored_door.state.IsMoving() &&
+            !definition.move_sound.empty()) {
+            AudioSystem::PlayWeaponFire(
+                definition.move_sound,
+                SoundEffect::ObjectiveComplete);
+        }
+
+        PublishAuthoredDoorState(
+            definition,
+            authored_door.state,
+            authored_door.is_locked,
+            authored_door.is_picked);
+    }
+
+    RefreshAuthoredDoorSnapshots();
 }
 
 void RuntimeWorld::PublishMissionStatusMessageState(
@@ -918,6 +1091,15 @@ void RuntimeWorld::SetAuthoredMissionState(
             -1,
             0);
     }
+
+    for (const AuthoredDoorRuntime& authored_door : authored_doors_) {
+        PublishAuthoredDoorState(
+            authored_door.definition,
+            authored_door.state,
+            authored_door.is_locked,
+            authored_door.is_picked);
+    }
+    RefreshAuthoredDoorSnapshots();
 }
 
 void RuntimeWorld::SetPlayerTuning(const PlayerController::Tuning& tuning) {
@@ -1230,6 +1412,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // Vanilla updates AreaActivate and EditVariable before dependent mission
     // expressions are evaluated at the end of this fixed simulation tick.
     UpdateAuthoredMissionState();
+    UpdateAuthoredDoors();
     UpdateMissionActorState();
 
     // 2. Weapon switching, firing & cooldowns. The vanilla first-person rig

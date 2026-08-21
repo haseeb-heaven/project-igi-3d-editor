@@ -429,7 +429,10 @@ bool App::CheckCollision(const glm::vec3& nextPos) {
 	for (int object_index = 0; object_index < static_cast<int>(objects.size()); ++object_index) {
 		const auto& obj = objects[object_index];
 		if (obj.deleted) continue;
-		if (in_game_mode_ && opened_door_indices_.contains(object_index)) continue;
+		if (in_game_mode_ && obj.type == "Door" &&
+			gameplay_host_.GetWorld().IsDoorFullyOpen(object_index)) {
+			continue;
+		}
         if (in_game_mode_ &&
             (obj.type == "HumanSoldier" || obj.type == "HumanSoldierFemale" ||
              obj.type == "HumanSoldierRPG" || obj.type == "HumanPlayer" ||
