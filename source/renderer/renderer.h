@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <set>
 #include <unordered_map>
@@ -14,6 +15,7 @@
 #include "renderer_splines.h"
 #include "renderer_rain.h"
 #include "../level/task_schema.h"
+#include "../mission_state.h"
 #include "graph_writer.h"
 #include <functional>
 
@@ -484,6 +486,8 @@ public:
 		uint32_t clip_capacity_ = 30;
 		uint32_t reserve_ammo_ = 120;
 		std::string objective_text_ = "";
+		int64_t mission_timer_remaining_ticks_ = -1;
+		std::vector<igi::MissionStatusMessageDisplay> mission_status_messages_;
 
 		// Help panel (keybindings from qedkeybindings.qsc)
 		int  help_scroll_offset_    = 0;

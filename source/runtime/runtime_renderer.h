@@ -6,6 +6,7 @@
 
 #include <glm/glm.hpp>
 
+#include "../mission_state.h"
 #include "projectile_types.h"
 
 namespace igi {
@@ -54,6 +55,8 @@ struct RuntimeRenderSnapshot {
     uint32_t clip_capacity = 0;
     uint32_t reserve_ammo = 0;
     std::string objective_text;
+    int64_t mission_timer_remaining_ticks = -1;
+    std::vector<MissionStatusMessageDisplay> mission_status_messages;
     float flash_effect_strength = 0.0f;
     float muzzle_flash_strength = 0.0f;
     std::vector<RuntimeProjectileRenderState> projectiles;

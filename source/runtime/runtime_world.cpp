@@ -14,6 +14,8 @@ namespace igi {
 namespace {
 
 constexpr float kMuzzleFlashStrengthDecayPerTick = 0.5f;
+constexpr int kStatusMessageSendCooldownTicks = 210;
+constexpr int kStatusMessageRevealWarmupTicks = 9;
 
 bool MissionCriteriaAcceptsPlayer(const std::string& criteria) {
     std::string normalized_criteria;
@@ -478,6 +480,12 @@ void RuntimeWorld::Reset() {
     mission_area_activations_.clear();
     mission_edit_variables_.clear();
     mission_edit_variable_values_.clear();
+    mission_level_timers_.clear();
+    mission_level_timer_ticks_.clear();
+    mission_level_timer_running_.clear();
+    mission_status_messages_.clear();
+    mission_status_message_slots_.fill(-1);
+    displayed_mission_status_messages_.clear();
     mission_state_pulse_names_.clear();
     guard_combat_states_.clear();
     fire_was_held_ = false;
@@ -575,6 +583,34 @@ void RuntimeWorld::UpdateAuthoredMissionState() {
         }
         mission_expression_state_.SetNumber(variable_name, current_value);
     }
+
+    const auto evaluate_expression = [this](const std::string& expression) {
+        bool result = false;
+        return !expression.empty() &&
+            mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+    for (size_t timer_index = 0;
+         timer_index < mission_level_timers_.size();
+         ++timer_index) {
+        const AuthoredMissionLevelTimer& timer = mission_level_timers_[timer_index];
+        int& tick_count = mission_level_timer_ticks_[timer_index];
+        bool is_running = mission_level_timer_running_[timer_index] != 0;
+
+        if (evaluate_expression(timer.reset_expression)) {
+            tick_count = 0;
+        }
+        is_running = timer.on_expression.empty()
+            ? timer.initial_run
+            : evaluate_expression(timer.on_expression);
+        mission_level_timer_running_[timer_index] = is_running ? 1 : 0;
+        if (is_running && tick_count < std::numeric_limits<int>::max()) {
+            ++tick_count;
+        }
+
+        const std::string prefix = "LevelTimer_" + timer.task_id;
+        mission_expression_state_.SetBoolean(prefix + ".isRun", is_running);
+        mission_expression_state_.SetNumber(prefix + ".nTick", tick_count);
+    }
 }
 
 void RuntimeWorld::UpdateMissionActorState() {
@@ -656,12 +692,161 @@ void RuntimeWorld::SetMissionStatePulse(const std::string& variable_name) {
     mission_expression_state_.SetBoolean(variable_name, true);
 }
 
+void RuntimeWorld::PublishMissionStatusMessageState(
+    const AuthoredMissionStatusMessage& definition,
+    bool is_sent,
+    int64_t sent_tick,
+    bool is_finished_display,
+    int64_t finished_display_tick,
+    int64_t ticks_since_finished_display) {
+    const std::string prefix = "StatusMessage_" + definition.task_id;
+    mission_expression_state_.SetBoolean(prefix + ".isSendt", is_sent);
+    mission_expression_state_.SetNumber(prefix + ".nTickSendt", sent_tick);
+    mission_expression_state_.SetBoolean(
+        prefix + ".isFinishedDisplay",
+        is_finished_display);
+    mission_expression_state_.SetNumber(
+        prefix + ".nFinishedDisplay",
+        finished_display_tick);
+    mission_expression_state_.SetNumber(
+        prefix + ".nTicksSinceFinishedDisplay",
+        ticks_since_finished_display);
+}
+
+void RuntimeWorld::UpdateAuthoredMissionStatusMessages(uint64_t tick_number) {
+    const int64_t current_tick = tick_number >
+            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+        ? std::numeric_limits<int64_t>::max()
+        : static_cast<int64_t>(tick_number);
+    const auto evaluate_expression = [this](const std::string& expression) {
+        bool result = false;
+        return !expression.empty() &&
+            mission_expression_state_.TryEvaluate(expression, result) && result;
+    };
+
+    for (size_t message_index = 0;
+         message_index < mission_status_messages_.size();
+         ++message_index) {
+        MissionStatusMessageRuntime& message = mission_status_messages_[message_index];
+        const AuthoredMissionStatusMessage& definition = message.definition;
+
+        if ((!definition.send_once || !message.is_sent) &&
+            current_tick > message.sent_tick + kStatusMessageSendCooldownTicks &&
+            evaluate_expression(definition.send_expression)) {
+            message.is_sent = true;
+            message.sent_tick = current_tick;
+
+            if (message.slot_index < 0 && !definition.display_text.empty()) {
+                for (size_t slot_index = 0;
+                     slot_index < mission_status_message_slots_.size();
+                     ++slot_index) {
+                    if (mission_status_message_slots_[slot_index] < 0) {
+                        message.slot_index = static_cast<int>(slot_index);
+                        mission_status_message_slots_[slot_index] =
+                            static_cast<int>(message_index);
+                        break;
+                    }
+                }
+            }
+
+            if (message.slot_index >= 0) {
+                message.is_displaying = true;
+                message.display_frame = 0;
+                message.characters_remaining = definition.cutscene_message
+                    ? 0
+                    : static_cast<int>(definition.display_text.size());
+                message.hold_ticks = 0;
+                message.is_finished_display = false;
+                message.ticks_since_finished_display = 0;
+                if (!definition.sound_name.empty()) {
+                    AudioSystem::PlayWeaponFire(
+                        definition.sound_name,
+                        SoundEffect::ObjectiveComplete);
+                }
+            }
+        }
+
+        if (message.is_finished_display) {
+            ++message.ticks_since_finished_display;
+        } else if (message.is_displaying) {
+            const int hold_ticks = static_cast<int>(
+                std::max(0.0f, definition.duration_seconds) *
+                static_cast<float>(GameClock::TICK_RATE_HZ));
+            bool display_finished = false;
+            if (definition.cutscene_message) {
+                display_finished = message.hold_ticks++ > hold_ticks;
+            } else if (message.display_frame >= kStatusMessageRevealWarmupTicks) {
+                if (message.characters_remaining > 0) {
+                    if (((message.display_frame - kStatusMessageRevealWarmupTicks) & 1) == 0) {
+                        --message.characters_remaining;
+                    }
+                } else {
+                    display_finished = ++message.hold_ticks > hold_ticks;
+                }
+            }
+            ++message.display_frame;
+
+            if (display_finished) {
+                message.is_displaying = false;
+                message.is_finished_display = true;
+                message.finished_display_tick = current_tick;
+                message.ticks_since_finished_display = 0;
+                if (message.slot_index >= 0 &&
+                    mission_status_message_slots_[static_cast<size_t>(message.slot_index)] ==
+                        static_cast<int>(message_index)) {
+                    mission_status_message_slots_[static_cast<size_t>(message.slot_index)] = -1;
+                }
+                message.slot_index = -1;
+            }
+        }
+
+        PublishMissionStatusMessageState(
+            definition,
+            message.is_sent,
+            message.sent_tick,
+            message.is_finished_display,
+            message.finished_display_tick,
+            message.ticks_since_finished_display);
+    }
+
+    displayed_mission_status_messages_.clear();
+    for (const int slot_message_index : mission_status_message_slots_) {
+        if (slot_message_index < 0 ||
+            slot_message_index >= static_cast<int>(mission_status_messages_.size())) {
+            continue;
+        }
+        const MissionStatusMessageRuntime& message =
+            mission_status_messages_[static_cast<size_t>(slot_message_index)];
+        if (!message.is_displaying) {
+            continue;
+        }
+
+        MissionStatusMessageDisplay display;
+        display.text = message.definition.display_text;
+        display.revealed_characters = static_cast<uint32_t>(std::max(
+            0,
+            static_cast<int>(display.text.size()) - message.characters_remaining));
+        display.display_frame = static_cast<uint32_t>(std::max(0, message.display_frame));
+        display.cutscene_message = message.definition.cutscene_message;
+        displayed_mission_status_messages_.push_back(std::move(display));
+    }
+}
+
 void RuntimeWorld::SetAuthoredMissionState(
     std::vector<AuthoredMissionAreaActivation> area_activations,
-    std::vector<AuthoredMissionEditVariable> edit_variables) {
+    std::vector<AuthoredMissionEditVariable> edit_variables,
+    std::vector<AuthoredMissionLevelTimer> level_timers,
+    std::vector<AuthoredMissionStatusMessage> status_messages) {
     mission_expression_state_.Clear();
     mission_area_activations_.clear();
     mission_edit_variables_ = std::move(edit_variables);
+    mission_level_timers_ = std::move(level_timers);
+    mission_level_timer_ticks_.assign(mission_level_timers_.size(), 0);
+    mission_level_timer_running_.assign(mission_level_timers_.size(), false);
+    mission_status_messages_.clear();
+    mission_status_messages_.reserve(status_messages.size());
+    mission_status_message_slots_.fill(-1);
+    displayed_mission_status_messages_.clear();
     mission_edit_variable_values_.clear();
     mission_edit_variable_values_.reserve(mission_edit_variables_.size());
 
@@ -704,6 +889,34 @@ void RuntimeWorld::SetAuthoredMissionState(
         mission_expression_state_.SetNumber(
             "AreaActivate_" + area.task_id + ".nActive",
             0.0);
+    }
+
+    for (size_t timer_index = 0;
+         timer_index < mission_level_timers_.size();
+         ++timer_index) {
+        const AuthoredMissionLevelTimer& timer = mission_level_timers_[timer_index];
+        mission_level_timer_running_[timer_index] = timer.initial_run;
+        const std::string prefix = "LevelTimer_" + timer.task_id;
+        mission_expression_state_.SetBoolean(
+            prefix + ".isRun",
+            timer.initial_run);
+        mission_expression_state_.SetNumber(prefix + ".nTick", 0.0);
+    }
+
+    for (AuthoredMissionStatusMessage& status_message : status_messages) {
+        if (status_message.display_text.empty()) {
+            status_message.display_text = status_message.text_resource;
+        }
+        MissionStatusMessageRuntime runtime_message;
+        runtime_message.definition = std::move(status_message);
+        mission_status_messages_.push_back(std::move(runtime_message));
+        PublishMissionStatusMessageState(
+            mission_status_messages_.back().definition,
+            false,
+            -100000,
+            false,
+            -1,
+            0);
     }
 }
 
@@ -1137,7 +1350,12 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
     // 4. Tick runtime task tree
     task_tree_.Update(dt);
 
-    // 5. Evaluate mission flow & objectives
+    // 5. Status messages run after live actor/task state and before LevelFlow;
+    // authored completion/failure expressions can therefore observe a message
+    // sent by this same fixed tick.
+    UpdateAuthoredMissionStatusMessages(tick_number);
+
+    // 6. Evaluate mission flow & objectives
     bool in_extraction = (glm::distance(
         player_.GetPosition(),
         glm::vec3(

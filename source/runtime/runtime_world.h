@@ -2,6 +2,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <array>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -46,7 +48,9 @@ public:
     void SetMissionStatePulse(const std::string& variable_name);
     void SetAuthoredMissionState(
         std::vector<AuthoredMissionAreaActivation> area_activations,
-        std::vector<AuthoredMissionEditVariable> edit_variables);
+        std::vector<AuthoredMissionEditVariable> edit_variables,
+        std::vector<AuthoredMissionLevelTimer> level_timers = {},
+        std::vector<AuthoredMissionStatusMessage> status_messages = {});
     using InteractionQuery = std::function<RuntimeInteractionResult(
         const glm::vec3& interaction_origin,
         const glm::vec3& interaction_direction)>;
@@ -110,6 +114,10 @@ public:
     const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
 
     bool IsMissionActive() const { return level_flow_.GetStatus() == MissionStatus::InProgress; }
+    const std::vector<MissionStatusMessageDisplay>&
+    GetDisplayedMissionStatusMessages() const {
+        return displayed_mission_status_messages_;
+    }
 
 private:
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
@@ -135,6 +143,14 @@ private:
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
+    void UpdateAuthoredMissionStatusMessages(uint64_t tick_number);
+    void PublishMissionStatusMessageState(
+        const AuthoredMissionStatusMessage& definition,
+        bool is_sent,
+        int64_t sent_tick,
+        bool is_finished_display,
+        int64_t finished_display_tick,
+        int64_t ticks_since_finished_display);
     void UpdateMissionActorState();
     bool TryMountNearestLadder();
     bool TickLadderTraversal(const PlayerInputCmd& input_command);
@@ -174,6 +190,26 @@ private:
     std::vector<MissionAreaActivationState> mission_area_activations_;
     std::vector<AuthoredMissionEditVariable> mission_edit_variables_;
     std::vector<int> mission_edit_variable_values_;
+    std::vector<AuthoredMissionLevelTimer> mission_level_timers_;
+    std::vector<int> mission_level_timer_ticks_;
+    std::vector<uint8_t> mission_level_timer_running_;
+    struct MissionStatusMessageRuntime {
+        AuthoredMissionStatusMessage definition;
+        bool is_sent = false;
+        int64_t sent_tick = -100000;
+        bool is_finished_display = false;
+        int64_t finished_display_tick = -1;
+        int64_t ticks_since_finished_display = 0;
+        bool is_displaying = false;
+        int display_frame = 0;
+        int characters_remaining = 0;
+        int hold_ticks = 0;
+        int slot_index = -1;
+    };
+    static constexpr size_t kMissionStatusMessageSlotCount = 24;
+    std::vector<MissionStatusMessageRuntime> mission_status_messages_;
+    std::array<int, kMissionStatusMessageSlotCount> mission_status_message_slots_{};
+    std::vector<MissionStatusMessageDisplay> displayed_mission_status_messages_;
     std::vector<std::string> mission_state_pulse_names_;
     AiScriptHost ai_script_host_;
     std::unordered_map<uint32_t, GuardScriptState> guard_scripts_;

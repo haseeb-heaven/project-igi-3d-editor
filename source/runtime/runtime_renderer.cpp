@@ -3,6 +3,9 @@
 #include "runtime_world.h"
 #include <utility>
 
+#include <algorithm>
+#include <cmath>
+
 namespace igi {
 
 void RuntimeRenderer::Capture(
@@ -42,6 +45,19 @@ void RuntimeRenderer::Capture(
 
     next_snapshot.zoom_active = world.IsZoomActive();
     next_snapshot.objective_text = world.GetLevelFlow().GetObjectiveDisplayText();
+    if (world.GetLevelFlow().HasAuthoredMissionFlow() &&
+        world.GetLevelFlow().IsInterfaceTimerEnabled() &&
+        world.GetLevelFlow().GetMaximumLevelPlayTimeSeconds() > 0.0) {
+        const int64_t maximum_ticks = static_cast<int64_t>(std::llround(
+            world.GetLevelFlow().GetMaximumLevelPlayTimeSeconds() *
+            static_cast<double>(GameClock::TICK_RATE_HZ)));
+        next_snapshot.mission_timer_remaining_ticks = std::max<int64_t>(
+            0,
+            maximum_ticks - static_cast<int64_t>(
+                world.GetLevelFlow().GetMissionFlowTick()));
+    }
+    next_snapshot.mission_status_messages =
+        world.GetDisplayedMissionStatusMessages();
     next_snapshot.flash_effect_strength = world.GetFlashEffectStrength();
     next_snapshot.muzzle_flash_strength = world.GetMuzzleFlashStrength();
 

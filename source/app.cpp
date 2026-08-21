@@ -26,6 +26,29 @@ static LRESULT CALLBACK EditorSubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam
 	return CallWindowProc(g_origEditorWndProc, hwnd, msg, wParam, lParam);
 }
 
+static std::string ResolveMissionTextResource(
+	const std::array<std::string, 2>& archive_paths,
+	const std::string& resource_key) {
+	for (const std::string& archive_path : archive_paths) {
+		if (!std::filesystem::exists(archive_path)) {
+			continue;
+		}
+
+		const std::vector<uint8_t> resource_data =
+			RES_Extract(archive_path, resource_key);
+		if (resource_data.empty()) {
+			continue;
+		}
+
+		const auto terminator = std::find(
+			resource_data.begin(),
+			resource_data.end(),
+			static_cast<uint8_t>(0));
+		return std::string(resource_data.begin(), terminator);
+	}
+	return resource_key;
+}
+
 /*
 ================================================================================
  App
@@ -630,6 +653,8 @@ void App::Frame(float delta_seconds) {
 			.clip_capacity_        = render_snapshot.clip_capacity,
 			.reserve_ammo_         = render_snapshot.reserve_ammo,
 			.objective_text_       = render_snapshot.objective_text,
+			.mission_timer_remaining_ticks_ = render_snapshot.mission_timer_remaining_ticks,
+			.mission_status_messages_ = render_snapshot.mission_status_messages,
 			.help_scroll_offset_   = help_scroll_offset_,
 			.help_entries_         = &help_entries_,
 			.show_task_type_       = show_task_type_,
@@ -878,6 +903,8 @@ void App::Frame(float delta_seconds) {
 		.clip_capacity_        = render_snapshot.clip_capacity,
 		.reserve_ammo_         = render_snapshot.reserve_ammo,
 		.objective_text_       = render_snapshot.objective_text,
+		.mission_timer_remaining_ticks_ = render_snapshot.mission_timer_remaining_ticks,
+		.mission_status_messages_ = render_snapshot.mission_status_messages,
 		.help_scroll_offset_   = help_scroll_offset_,
 		.help_entries_         = &help_entries_,
 		.show_task_type_       = show_task_type_,
@@ -1524,7 +1551,9 @@ void App::SetupRuntimeMissionState() {
 	for (const LevelObject& authored_object : authored_objects) {
 		if (authored_object.deleted ||
 			(authored_object.type != "AreaActivate" &&
-			 authored_object.type != "EditVariable")) {
+				authored_object.type != "EditVariable" &&
+				authored_object.type != "LevelTimer" &&
+				authored_object.type != "StatusMessage")) {
 			continue;
 		}
 
@@ -1537,18 +1566,37 @@ void App::SetupRuntimeMissionState() {
 
 	igi::AuthoredMissionStateDefinitions definitions =
 		igi::LoadAuthoredMissionStateDefinitions(task_sources);
+	const std::string game_root = Utils::GetIGIRootPath();
+	const std::array<std::string, 2> mission_text_archive_paths = {
+		game_root + "\\language\\ENGLISH\\objectives.res",
+		game_root + "\\language\\USA\\objectives.res",
+	};
+	for (igi::AuthoredMissionStatusMessage& status_message :
+		definitions.status_messages) {
+		status_message.display_text = ResolveMissionTextResource(
+			mission_text_archive_paths,
+			status_message.text_resource);
+	}
 	const size_t area_count = definitions.area_activations.size();
 	const size_t edit_variable_count = definitions.edit_variables.size();
+	const size_t timer_count = definitions.level_timers.size();
+	const size_t status_message_count = definitions.status_messages.size();
 	gameplay_host_.GetWorld().SetAuthoredMissionState(
 		std::move(definitions.area_activations),
-		std::move(definitions.edit_variables));
+		std::move(definitions.edit_variables),
+		std::move(definitions.level_timers),
+		std::move(definitions.status_messages));
 
 	Logger::Get().Log(
 		LogLevel::INFO,
 		"[Gameplay] Loaded " + std::to_string(area_count) +
 		" authored AreaActivate task(s) and " +
 		std::to_string(edit_variable_count) +
-		" authored EditVariable task(s)");
+		" authored EditVariable task(s), " +
+		std::to_string(timer_count) +
+		" LevelTimer task(s), " +
+		std::to_string(status_message_count) +
+		" StatusMessage task(s)");
 }
 
 void App::InitializeGameplayMissionObjectives() {
@@ -1609,24 +1657,7 @@ void App::InitializeGameplayMissionObjectives() {
 	};
 	igi::MissionObjectiveTextResolver text_resolver =
 		[objective_archive_paths](const std::string& resource_key) {
-			for (const std::string& archive_path : objective_archive_paths) {
-				if (!std::filesystem::exists(archive_path)) {
-					continue;
-				}
-
-				const std::vector<uint8_t> resource_data =
-					RES_Extract(archive_path, resource_key);
-				if (resource_data.empty()) {
-					continue;
-				}
-
-				const auto terminator = std::find(
-					resource_data.begin(), resource_data.end(), static_cast<uint8_t>(0));
-				return std::string(
-					resource_data.begin(),
-					terminator);
-			}
-			return resource_key;
+			return ResolveMissionTextResource(objective_archive_paths, resource_key);
 		};
 
 	gameplay_host_.GetWorld().GetLevelFlow().InitializeMission(

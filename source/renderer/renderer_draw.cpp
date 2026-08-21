@@ -3131,6 +3131,63 @@ void Renderer::Draw(const draw_params_s &params,
         draw_text_sys(ox + 8, 22, task_tree_view.objective_text_.c_str(), 0.0f, 0.95f, 0.25f);
       }
 
+      // Authored StatusMessage tasks share the retail top-left message column.
+      // The runtime has already applied the fixed-step typewriter state; this
+      // pass only clips the immutable presentation text to the revealed count.
+      const int status_left = (int)(vw * 0.015625f);
+      const int status_top = 62;
+      for (size_t message_index = 0;
+           message_index < task_tree_view.mission_status_messages_.size();
+           ++message_index) {
+        const igi::MissionStatusMessageDisplay& message =
+            task_tree_view.mission_status_messages_[message_index];
+        const size_t visible_character_count = std::min<size_t>(
+            message.revealed_characters,
+            message.text.size());
+        const std::string visible_text = message.text.substr(
+            0,
+            visible_character_count);
+        const int card_top = status_top + static_cast<int>(message_index) * 28;
+        const int card_bottom = card_top + 24;
+        const int card_width = std::min(420, std::max(220,
+            16 + static_cast<int>(visible_text.size()) * 8));
+        glColor4f(0.02f, 0.10f, 0.03f, 0.82f);
+        glBegin(GL_QUADS);
+        glVertex2i(status_left, vh - card_bottom);
+        glVertex2i(status_left + card_width, vh - card_bottom);
+        glVertex2i(status_left + card_width, vh - card_top);
+        glVertex2i(status_left, vh - card_top);
+        glEnd();
+
+        glColor4f(0.0f, 0.8f, 0.2f, 0.85f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2i(status_left, vh - card_bottom);
+        glVertex2i(status_left + card_width, vh - card_bottom);
+        glVertex2i(status_left + card_width, vh - card_top);
+        glVertex2i(status_left, vh - card_top);
+        glEnd();
+        draw_text_sys(
+            status_left + 8,
+            card_top + 5,
+            visible_text.c_str(),
+            0.0f,
+            0.95f,
+            0.25f);
+      }
+
+      if (task_tree_view.mission_timer_remaining_ticks_ >= 0) {
+        const int total_seconds = static_cast<int>(
+            task_tree_view.mission_timer_remaining_ticks_ / 30);
+        char timer_text[32];
+        snprintf(
+            timer_text,
+            sizeof(timer_text),
+            "TIME %02d:%02d",
+            total_seconds / 60,
+            total_seconds % 60);
+        draw_text_sys(vw - 108, 16, timer_text, 1.0f, 0.9f, 0.2f);
+      }
+
       // The vanilla first-person muzzle cue is normally an authored weapon
       // sprite. Keep a small deterministic additive fallback so a firearm
       // still reads as firing when that sprite is not unpacked locally.

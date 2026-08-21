@@ -323,6 +323,40 @@ TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
     EXPECT_FLOAT_EQ(world.GetMuzzleFlashStrength(), 0.0f);
 }
 
+TEST(RuntimeRenderTest, CapturesAuthoredMissionStatusAndTimerPresentation) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionLevelTimer level_timer;
+    level_timer.task_id = "95";
+    level_timer.on_expression = "TimerEnable";
+
+    AuthoredMissionStatusMessage status_message;
+    status_message.task_id = "4010";
+    status_message.send_expression = "LevelTimer_95.nTick >= 1";
+    status_message.display_text = "MISSION COMPLETE";
+    status_message.send_once = true;
+
+    world.SetAuthoredMissionState({}, {}, {level_timer}, {status_message});
+    world.SetMissionStateBoolean("TimerEnable", true);
+    AuthoredMissionFlowDefinition authored_flow;
+    authored_flow.has_level_flow = true;
+    authored_flow.interface_timer_enabled = true;
+    authored_flow.maximum_level_play_time_seconds = 60.0;
+    authored_flow.complete_expression = "StatusMessage_4010.isSendt";
+    world.GetLevelFlow().InitializeMission(1, {}, {}, authored_flow);
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+
+    EXPECT_EQ(renderer.GetSnapshot().mission_timer_remaining_ticks, 1799);
+    ASSERT_EQ(renderer.GetSnapshot().mission_status_messages.size(), 1U);
+    EXPECT_EQ(
+        renderer.GetSnapshot().mission_status_messages[0].text,
+        "MISSION COMPLETE");
+}
+
 TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     ProjectileSystem projectiles;
     projectiles.SetCollisionQuery(
@@ -2219,6 +2253,46 @@ TEST(RuntimeWorldTest, DeadGuardPublishesAuthoredMissionState) {
 
     ASSERT_EQ(world.GetLevelFlow().GetObjectives().size(), 1U);
     EXPECT_EQ(world.GetLevelFlow().GetObjectives()[0].state, ObjectiveState::Completed);
+}
+
+TEST(RuntimeWorldTest, LevelTimerAndStatusMessageDriveAuthoredMissionFlow) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionLevelTimer level_timer;
+    level_timer.task_id = "95";
+    level_timer.on_expression = "TimerEnable";
+
+    AuthoredMissionStatusMessage status_message;
+    status_message.task_id = "4010";
+    status_message.send_expression = "LevelTimer_95.nTick >= 2";
+    status_message.text_resource = "MISSION_COMPLETE";
+    status_message.display_text = "MISSION COMPLETE";
+    status_message.send_once = true;
+    status_message.duration_seconds = 0.0f;
+
+    world.SetAuthoredMissionState(
+        {},
+        {},
+        {level_timer},
+        {status_message});
+    world.SetMissionStateBoolean("TimerEnable", true);
+
+    AuthoredMissionFlowDefinition authored_flow;
+    authored_flow.has_level_flow = true;
+    authored_flow.complete_expression = "StatusMessage_4010.isSendt";
+    world.GetLevelFlow().InitializeMission(1, {}, {}, authored_flow);
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::InProgress);
+    EXPECT_TRUE(world.GetDisplayedMissionStatusMessages().empty());
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
+    ASSERT_EQ(world.GetDisplayedMissionStatusMessages().size(), 1U);
+    EXPECT_EQ(
+        world.GetDisplayedMissionStatusMessages()[0].text,
+        "MISSION COMPLETE");
 }
 
 // 8. Twin-Window & Editor Snapshot Tests
