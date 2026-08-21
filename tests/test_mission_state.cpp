@@ -78,3 +78,42 @@ TEST(MissionStateLoaderTest, LoadsTimersAndStatusMessagePresentationFields) {
     EXPECT_FALSE(definitions.status_messages[0].cutscene_message);
     EXPECT_FLOAT_EQ(definitions.status_messages[0].duration_seconds, 2.0f);
 }
+
+TEST(MissionStateLoaderTest, LoadsCutSceneExpressionsAndAuthoredDuration) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "CutScene";
+    source.task_id = "1204";
+    source.authored_duration_seconds = 15.0f;
+    source.argument_tokens = {
+        "1204", "CutScene", "", "0", "0", "0", "0", "0", "0",
+        "!CutScene_1204.isFinished", "", "", "0", "FALSE", "0.7",
+        "0", "0", "0", "", "", "",
+    };
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    ASSERT_EQ(definitions.cut_scenes.size(), 1U);
+    const igi::AuthoredMissionCutScene& cut_scene = definitions.cut_scenes.front();
+    EXPECT_EQ(cut_scene.task_id, "1204");
+    EXPECT_EQ(cut_scene.run_expression, "!CutScene_1204.isFinished");
+    EXPECT_FALSE(cut_scene.initial_run);
+    EXPECT_FLOAT_EQ(cut_scene.time_scale, 0.7f);
+    EXPECT_FLOAT_EQ(cut_scene.duration_seconds, 15.0f);
+}
+
+TEST(MissionStateLoaderTest, RejectsNonFiniteCutSceneTiming) {
+    igi::MissionStateTaskSource source;
+    source.task_type = "CutScene";
+    source.task_id = "1204";
+    source.authored_duration_seconds = 1.0f;
+    source.argument_tokens = {
+        "1204", "CutScene", "", "0", "0", "0", "0", "0", "0",
+        "", "", "", "nan", "FALSE", "1.0", "0", "0", "0", "", "", "",
+    };
+
+    const igi::AuthoredMissionStateDefinitions definitions =
+        igi::LoadAuthoredMissionStateDefinitions({source});
+
+    EXPECT_TRUE(definitions.cut_scenes.empty());
+}

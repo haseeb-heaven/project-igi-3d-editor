@@ -13,12 +13,14 @@ struct MissionStateTaskSource {
     std::string task_type;
     std::string task_id;
     std::vector<std::string> argument_tokens;
+    float authored_duration_seconds = 0.0f;
 };
 
 struct AuthoredMissionStateDefinitions {
     std::vector<AuthoredMissionAreaActivation> area_activations;
     std::vector<AuthoredMissionEditVariable> edit_variables;
     std::vector<AuthoredMissionLevelTimer> level_timers;
+    std::vector<AuthoredMissionCutScene> cut_scenes;
     std::vector<AuthoredMissionStatusMessage> status_messages;
 };
 

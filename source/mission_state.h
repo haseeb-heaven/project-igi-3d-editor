@@ -37,6 +37,22 @@ struct AuthoredMissionLevelTimer {
     bool initial_run = false;
 };
 
+// Authored CutScene timing and expression state. Camera presentation remains
+// outside the gameplay vertical slice, but these fields keep mission gates and
+// scripted door/vehicle tasks advancing on the same fixed 30 Hz clock.
+struct AuthoredMissionCutScene {
+    std::string task_id;
+    std::string run_expression;
+    std::string reset_expression;
+    std::string time_delta_expression;
+    std::string start_expression;
+    std::string stop_expression;
+    float start_time_seconds = 0.0f;
+    bool initial_run = false;
+    float time_scale = 1.0f;
+    float duration_seconds = 0.0f;
+};
+
 // Authored StatusMessage definition. display_text is resolved from the
 // localized resource by the Windows application before entering the runtime.
 struct AuthoredMissionStatusMessage {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -19,6 +20,14 @@ constexpr size_t kEditSubtractArgumentIndex = 8;
 constexpr size_t kLevelTimerOnArgumentIndex = 9;
 constexpr size_t kLevelTimerResetArgumentIndex = 10;
 constexpr size_t kLevelTimerInitialRunArgumentIndex = 11;
+constexpr size_t kCutSceneRunArgumentIndex = 9;
+constexpr size_t kCutSceneResetArgumentIndex = 10;
+constexpr size_t kCutSceneTimeDeltaArgumentIndex = 11;
+constexpr size_t kCutSceneStartTimeArgumentIndex = 12;
+constexpr size_t kCutSceneInitialRunArgumentIndex = 13;
+constexpr size_t kCutSceneTimeScaleArgumentIndex = 14;
+constexpr size_t kCutSceneStartExpressionArgumentIndex = 19;
+constexpr size_t kCutSceneStopExpressionArgumentIndex = 20;
 constexpr size_t kStatusMessageSendArgumentIndex = 9;
 constexpr size_t kStatusMessageTextArgumentIndex = 10;
 constexpr size_t kStatusMessageSoundArgumentIndex = 12;
@@ -59,7 +68,7 @@ bool TryParseNumber(const std::string& token, float& value) {
     } catch (...) {
         return false;
     }
-    return parsed_characters == unquoted_token.size();
+    return parsed_characters == unquoted_token.size() && std::isfinite(value);
 }
 
 bool TryParseInteger(const std::string& token, int& value) {
@@ -180,6 +189,51 @@ AuthoredMissionStateDefinitions LoadAuthoredMissionStateDefinitions(
                 continue;
             }
             definitions.level_timers.push_back(std::move(level_timer));
+            continue;
+        }
+
+        if (task_source.task_type == "CutScene") {
+            if (task_source.argument_tokens.size() <=
+                    kCutSceneStopExpressionArgumentIndex) {
+                continue;
+            }
+
+            AuthoredMissionCutScene cut_scene;
+            cut_scene.task_id = task_source.task_id;
+            cut_scene.run_expression = TokenAt(
+                task_source.argument_tokens,
+                kCutSceneRunArgumentIndex);
+            cut_scene.reset_expression = TokenAt(
+                task_source.argument_tokens,
+                kCutSceneResetArgumentIndex);
+            cut_scene.time_delta_expression = TokenAt(
+                task_source.argument_tokens,
+                kCutSceneTimeDeltaArgumentIndex);
+            cut_scene.start_expression = TokenAt(
+                task_source.argument_tokens,
+                kCutSceneStartExpressionArgumentIndex);
+            cut_scene.stop_expression = TokenAt(
+                task_source.argument_tokens,
+                kCutSceneStopExpressionArgumentIndex);
+            if (!TryParseNumber(
+                    task_source.argument_tokens[kCutSceneStartTimeArgumentIndex],
+                    cut_scene.start_time_seconds) ||
+                !TryParseBoolean(
+                    task_source.argument_tokens[kCutSceneInitialRunArgumentIndex],
+                    cut_scene.initial_run) ||
+                !TryParseNumber(
+                    task_source.argument_tokens[kCutSceneTimeScaleArgumentIndex],
+                    cut_scene.time_scale)) {
+                continue;
+            }
+            cut_scene.start_time_seconds = std::max(
+                0.0f,
+                cut_scene.start_time_seconds);
+            cut_scene.time_scale = std::max(0.0f, cut_scene.time_scale);
+            cut_scene.duration_seconds = std::max(
+                0.0f,
+                task_source.authored_duration_seconds);
+            definitions.cut_scenes.push_back(std::move(cut_scene));
             continue;
         }
 
