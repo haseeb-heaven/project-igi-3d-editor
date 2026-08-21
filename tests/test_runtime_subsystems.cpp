@@ -1016,6 +1016,22 @@ TEST(RuntimeInputTest, OpposingMovementKeysRemainIndependent) {
     EXPECT_FLOAT_EQ(router.ConsumeGameplayInput().forward, 0.0f);
 }
 
+TEST(RuntimeInputTest, FocusLossClearsHeldGameplayState) {
+    WindowInputRouter router;
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    router.OnKeyboardKey('W', true);
+    router.OnMouseMove(12.0f, -4.0f);
+
+    router.SetFocus(WindowFocusTarget::EditorWindow);
+    const PlayerInputCmd editor_focused_input = router.ConsumeGameplayInput();
+    EXPECT_FLOAT_EQ(editor_focused_input.forward, 0.0f);
+    EXPECT_FLOAT_EQ(editor_focused_input.yaw_delta, 0.0f);
+    EXPECT_FLOAT_EQ(editor_focused_input.pitch_delta, 0.0f);
+
+    router.SetFocus(WindowFocusTarget::GameplayWindow);
+    EXPECT_FLOAT_EQ(router.ConsumeGameplayInput().forward, 0.0f);
+}
+
 TEST(RuntimeWorldTest, PlayerFireDamagesGuardUsingWorldUnits) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

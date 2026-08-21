@@ -7,12 +7,13 @@
 #include "renderer/object_lightmap.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
+	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
 	if (in_game_mode_ && !pause_mode_) {
-		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		if (direction > 0) gameplay_host_.GetWorld().GetWeapons().SelectNextWeapon();
 		else gameplay_host_.GetWorld().GetWeapons().SelectPreviousWeapon();
 		return;
 	}
+	if (in_game_mode_ && pause_mode_) return;
 	if (show_help_) {
 		// Scroll keybindings help panel
 		if (direction > 0) { if (help_scroll_offset_ > 0) help_scroll_offset_--; }
@@ -38,12 +39,12 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 }
 
 void App::Input_OnMouse(int button, int state, int x, int y) {
+	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
 	// Update mouse position first so EditorProcessClick uses correct coords
 	mouse_state_.prior_x_ = x;
 	mouse_state_.prior_y_ = y;
 
 	if (in_game_mode_ && !pause_mode_) {
-		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		if (button == GLUT_LEFT_BUTTON) {
 			gameplay_host_.GetInputRouter().OnMouseButton(0, state == GLUT_DOWN);
 		} else if (button == GLUT_RIGHT_BUTTON) {
@@ -70,7 +71,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 
 			// Graph node properties panel (left side): handle button clicks first.
-			if (renderer_.IsGraphOverlayVisible() && renderer_.GraphSelected() >= 0 &&
+			if (!in_game_mode_ && renderer_.IsGraphOverlayVisible() && renderer_.GraphSelected() >= 0 &&
 			    !enableCameraMode && GraphNodePanel::InPanel(x, y)) {
 				const double POS = 256.0; const float GAM = 0.1f, RAD = 0.25f;
 				if (GraphNodePanel::HitTest(x, y) >= 0) {
@@ -104,7 +105,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			// drag; clicking empty space deselects. Only intercepts the click when
 			// the overlay is visible and a node is actually under the cursor, so
 			// normal object/terrain selection is unaffected.
-			if (renderer_.IsGraphOverlayVisible() && !enableCameraMode) {
+			if (!in_game_mode_ && renderer_.IsGraphOverlayVisible() && !enableCameraMode) {
 				int picked = renderer_.PickGraphNodeAtScreen(
 					x, y, window_state_.viewport_width_, window_state_.viewport_height_);
 				if (picked >= 0) {
@@ -151,7 +152,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 			
 			// C2: Property editor click handling (IGI2-style left panel)
-			if (prop_editor_open_ && selected_object_index_ >= 0) {
+			if (!in_game_mode_ && prop_editor_open_ && selected_object_index_ >= 0) {
 				auto& objects = level_.GetLevelObjects().GetObjects();
 				if (selected_object_index_ < (int)objects.size()) {
 					LevelObject& obj = objects[selected_object_index_];
@@ -625,16 +626,17 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 }
 
 void App::Input_OnMotion(int x, int y) {
+	if (in_game_mode_ && !gameplay_host_.IsGameplayWindowCurrent()) return;
 	int dx = x - mouse_state_.prior_x_;
 	int dy = y - mouse_state_.prior_y_;
 
 	if (in_game_mode_ && !pause_mode_) {
-		if (!gameplay_host_.IsGameplayWindowCurrent()) return;
 		gameplay_host_.GetInputRouter().OnMouseMove(static_cast<float>(dx), static_cast<float>(dy));
 		mouse_state_.prior_x_ = x;
 		mouse_state_.prior_y_ = y;
 		return;
 	}
+	if (in_game_mode_ && pause_mode_) return;
 
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 	if (enableCameraMode && (dx != 0 || dy != 0))
