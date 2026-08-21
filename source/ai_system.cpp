@@ -557,13 +557,16 @@ void AiSystem::Update(
         // rejected nav nodes inside buildings and froze patrols permanently.
         guard.blocked_move_ticks = 0;
 
-        // Locomotion clip request (AiCombatChannels.StanceRows, retail
-        // 0x5415A4+): patrol/guard rows animate walking with clip 35, running
-        // with 36, standing with 0. Scripted Animation commands keep their
-        // explicit request; locomotion only fills the gap on change.
+        // Locomotion clip request from the soldier state table (retail
+        // 0x53ED10): walking is state 1 → animation 34 (looping), running is
+        // state 17 → animation 48 (looping), and stopping returns to the
+        // task's declared Stand Animation. Scripted Animation commands keep
+        // their explicit clips; locomotion only fills the gap on change.
         if (guard.requested_animation < 0) {
             const bool moved = guard.position != previous_position;
-            const int desired = !moved ? 0 : (guard.walking ? 35 : 36);
+            const int desired = !moved
+                ? guard.stand_animation
+                : (guard.walking ? 34 : 48);
             if (desired != guard.locomotion_anim) {
                 guard.locomotion_anim = desired;
                 guard.requested_animation = desired;

@@ -1322,6 +1322,9 @@ void App::CaptureGameplayRenderSnapshot() {
 
 void App::DrawGameplayPlayerWeapon() {
 	if (!IsGameplayRenderTarget()) return;
+	// The first-person weapon mesh is part of the deferred HUD presentation:
+	// keep it hidden unless the overlay is explicitly shown with Alt+H.
+	if (!hud_overlay_visible_) return;
 	if (gameplay_host_.GetWorld().GetActiveCutSceneCamera().active ||
 		gameplay_host_.GetWorld().IsMapComputerOpen() ||
 		gameplay_map_computer_camera_.IsRunning()) {
@@ -2669,19 +2672,10 @@ void App::SetupLevelAiGuards() {
 		                obj.type == "HumanSoldierRPG");
 		if (!isEnemy) continue;
 
-		// Reject only the authored "no position" sentinel (~1.75e8 on z).
-		// Level worlds legitimately span several 1e7 units per axis, so a
-		// small plausibility bound would reject every real soldier.
-		{
-			constexpr double kSentinelZ = 1.749e8;
-			if (obj.pos.z >= kSentinelZ) {
-				Logger::Get().Log(LogLevel::WARNING,
-					"[AI] Skipping soldier '" + obj.name + "' with unresolved spawn (" +
-					std::to_string(obj.pos.x) + "," + std::to_string(obj.pos.y) + "," +
-					std::to_string(obj.pos.z) + ")");
-				continue;
-			}
-		}
+		// No position filtering: each of the fourteen levels owns a different
+		// world origin (observed z spans ~1.61e8-1.75e8), so no magnitude
+		// heuristic can separate "unresolved" from "authored". A guard whose
+		// task truly lacks a position simply stands still in play.
 
 		igi::AiGuardEntity guard;
 		guard.id = (uint32_t)i;
@@ -2693,6 +2687,9 @@ void App::SetupLevelAiGuards() {
 			: obj.primaryWeapon;
 		guard.position = glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z);
 		guard.yaw = glm::degrees((float)obj.rot.z);
+		// Declared idle clip (HumanSoldier arg@10); vanilla falls back to 2
+		// when the task declares none or the set does not hold it.
+		guard.stand_animation = (obj.standAnimation >= 0) ? obj.standAnimation : 2;
 
 		// Resolve the AIGraph this enemy patrols (from its HumanAI child) and the
 		// AI behavior script task id (ai/<taskId>.qvm).

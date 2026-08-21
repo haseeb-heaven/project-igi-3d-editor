@@ -122,6 +122,7 @@ struct AiGuardEntity {
     float yaw_clamp = glm::pi<float>();  // TurnTowards per-tick rotation limit
     uint32_t blocked_move_ticks = 0;     // consecutive collision-rejected moves
     int locomotion_anim = -1;       // last requested locomotion clip id
+    int stand_animation = 2;        // declared Stand Animation (fallback 2)
 };
 
 class AiSystem {
