@@ -494,17 +494,12 @@ void AiSystem::Update(
         }
 
         if (guard.state == AiGuardState::Combat && player_alive) {
-            // Chase the player directly (chase behaviour)
+            // Vanilla guard detection: take a SHOOTING POSITION — hold ground,
+            // track the player with yaw. Guards never chase-run at the player;
+            // running is the civilian panic reaction only.
             glm::vec3 to_player = player_pos - guard.position;
-            float pd = glm::length(glm::vec2(to_player.x, to_player.y));
-            if (pd > kCombatStopDistance) {
-                glm::vec2 dir = glm::normalize(glm::vec2(to_player.x, to_player.y));
-                const float travel_distance = std::min(
-                    speed * static_cast<float>(delta_seconds),
-                    pd - kCombatStopDistance);
-                guard.position.x += dir.x * travel_distance;
-                guard.position.y += dir.y * travel_distance;
-                guard.yaw = glm::degrees(std::atan2(dir.x, dir.y));
+            if (glm::length(glm::vec2(to_player.x, to_player.y)) > 1.0f) {
+                guard.yaw = glm::degrees(std::atan2(to_player.x, to_player.y));
             }
         } else if (guard.state == AiGuardState::Suspicious && !guard.waypoints.empty()) {
             // Slowly advance toward the nearest waypoint while investigating
