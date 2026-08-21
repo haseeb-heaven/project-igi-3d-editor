@@ -189,9 +189,21 @@ TEST(VanillaFixtureParityTest, RetailAiScriptDrivesPatrolAndAlarmBindings) {
         << script_host.GetLastError();
 
     igi::AiGuardEntity guard;
+    guard.patrol_routes[2405] = {
+        igi::AiPatrolCommand{igi::AiPatrolCommandKind::Delay, 3},
+    };
     ASSERT_TRUE(script_host.Run(program, guard, 4))
         << script_host.GetLastError();
     EXPECT_EQ(guard.script_patrol_path_id, 2405);
+    EXPECT_EQ(guard.active_patrol_path_id, 2405);
+    ASSERT_EQ(guard.patrol_commands.size(), 1U);
+    EXPECT_EQ(guard.patrol_commands[0].kind, igi::AiPatrolCommandKind::Delay);
+
+    guard.patrol_started = true;
+    guard.command_index = 0;
+    ASSERT_TRUE(script_host.Run(program, guard, 4))
+        << script_host.GetLastError();
+    EXPECT_EQ(guard.command_index, 0);
 
     ASSERT_TRUE(script_host.Run(program, guard, 0))
         << script_host.GetLastError();

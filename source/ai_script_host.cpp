@@ -15,6 +15,18 @@ struct NamedIntegerConstant {
     int32_t value;
 };
 
+void ResetPatrolCursorForScriptedRoute(AiGuardEntity& guard) {
+    guard.command_index = -1;
+    guard.loop_start_index = -1;
+    guard.last_move_index = -1;
+    guard.prev_move_index = -1;
+    guard.end_index = -1;
+    guard.deadline_tick = -1;
+    guard.patrol_started = false;
+    guard.patrol_stopped = false;
+    guard.route.clear();
+}
+
 constexpr std::array<NamedIntegerConstant, 24> kEventConstants = {{
     {"AIEVENT_CREATE", 0},
     {"AIEVENT_DELETE", 1},
@@ -370,7 +382,17 @@ void AiScriptHost::RegisterNatives() {
         "AIAction_Patrol",
         [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
             if (AiGuardEntity* guard = GetCurrentGuard()) {
-                guard->script_patrol_path_id = arguments.GetInt(0);
+                const int requested_path_id = arguments.GetInt(0);
+                if (guard->script_patrol_path_id != requested_path_id) {
+                    const auto route_iterator = guard->patrol_routes.find(
+                        requested_path_id);
+                    if (route_iterator != guard->patrol_routes.end()) {
+                        guard->patrol_commands = route_iterator->second;
+                        guard->active_patrol_path_id = requested_path_id;
+                        ResetPatrolCursorForScriptedRoute(*guard);
+                    }
+                    guard->script_patrol_path_id = requested_path_id;
+                }
                 guard->script_action_flags = arguments.GetInt(2);
             }
             return QvmRuntimeValue::FromInt(0);
