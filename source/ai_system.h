@@ -99,6 +99,9 @@ struct AiGuardEntity {
     int script_last_event_type = -1;
     int script_patrol_path_id = -1;
     int script_action_flags = 0;
+    int script_alarm_trigger_id = -1;
+    int script_alarm_control_id = -1;
+    int script_gunner_id = -1;
     int script_alarm_access = 0;
     bool script_invulnerable = false;
     bool script_instant_death_disabled = false;

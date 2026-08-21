@@ -309,6 +309,51 @@ void AiScriptHost::RegisterNatives() {
             return QvmRuntimeValue::FromInt(0);
         });
     registry_.RegisterDeferredFunctionByName(
+        "AIFunction_SetAlarmTriggerID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
+            if (AiGuardEntity* guard = GetCurrentGuard()) {
+                guard->script_alarm_trigger_id = arguments.GetInt(0);
+            }
+            return QvmRuntimeValue::FromInt(0);
+        });
+    registry_.RegisterDeferredFunctionByName(
+        "AIFunction_SetAlarmControlID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
+            if (AiGuardEntity* guard = GetCurrentGuard()) {
+                guard->script_alarm_control_id = arguments.GetInt(0);
+            }
+            return QvmRuntimeValue::FromInt(0);
+        });
+    registry_.RegisterDeferredFunctionByName(
+        "AIFunction_SetGunnerID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
+            if (AiGuardEntity* guard = GetCurrentGuard()) {
+                guard->script_gunner_id = arguments.GetInt(0);
+            }
+            return QvmRuntimeValue::FromInt(0);
+        });
+    registry_.RegisterDeferredFunctionByName(
+        "AIFunction_GetAlarmTriggerID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments&) {
+            const AiGuardEntity* guard = GetCurrentGuard();
+            return QvmRuntimeValue::FromInt(
+                guard == nullptr ? -1 : guard->script_alarm_trigger_id);
+        });
+    registry_.RegisterDeferredFunctionByName(
+        "AIFunction_GetAlarmControlID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments&) {
+            const AiGuardEntity* guard = GetCurrentGuard();
+            return QvmRuntimeValue::FromInt(
+                guard == nullptr ? -1 : guard->script_alarm_control_id);
+        });
+    registry_.RegisterDeferredFunctionByName(
+        "AIFunction_GetGunnerID",
+        [this](QvmExecutionContext&, const QvmNativeCallArguments&) {
+            const AiGuardEntity* guard = GetCurrentGuard();
+            return QvmRuntimeValue::FromInt(
+                guard == nullptr ? -1 : guard->script_gunner_id);
+        });
+    registry_.RegisterDeferredFunctionByName(
         "AIFunction_GetAlarmAccess",
         [this](QvmExecutionContext&, const QvmNativeCallArguments&) {
             const AiGuardEntity* guard = GetCurrentGuard();

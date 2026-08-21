@@ -178,9 +178,11 @@ parity claims remain gated on IGI1 evidence.
   gate its pre-authored soldier children in the fixed-step AI/render seam, and
   evaluate door-dependent conditions after authored doors publish state;
   dynamic soldier allocation remains an explicit follow-up.
-- [ ] Replace fallback patrol/extraction behavior with authored mission data in
-  the selected fixture; evaluate the preserved expressions and replace the
-  synthetic extraction zone after scanning level/Common/Weapons QVMs.
+- [ ] Replace remaining fallback patrol behavior with authored mission data in
+  the selected fixture and add repeatable traversal/combat captures. Authored
+  LevelFlow extraction is now authoritative; the synthetic zone is retained
+  only for levels without that task. The selected retail AI 2205 QVM now runs
+  through the bounded interpreter and verifies its patrol/alarm bindings.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
   weapon/projectile timing, objective progression, audio, and restart.
 - [ ] Run the authoritative Windows configure/build/test/play checks and record

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "../source/ai_script_host.h"
 #include "../source/level/qvm_decompiler.h"
 #include "../source/level/qvm_parser.h"
 #include "../source/renderer/graph_writer.h"
@@ -167,4 +168,32 @@ TEST(VanillaFixtureParityTest, LevelOneGraphProvidesNavigableAuthoredData) {
         EXPECT_TRUE(std::isfinite(node.y));
         EXPECT_TRUE(std::isfinite(node.z));
     }
+}
+
+TEST(VanillaFixtureParityTest, RetailAiScriptDrivesPatrolAndAlarmBindings) {
+    const std::filesystem::path ai_script_path = VanillaFile("ai/2205.qvm");
+    if (VanillaRoot().empty()) {
+        GTEST_SKIP() << "Set IGI_VANILLA_ROOT to the vanilla Project IGI install "
+                        "to run this fixture parity test";
+    }
+    ASSERT_FALSE(ai_script_path.empty()) << "Vanilla AI 2205 QVM is missing below "
+                                            "IGI_VANILLA_ROOT";
+
+    const QVMFile ai_script = QVM_Parse(ai_script_path.string());
+    ASSERT_TRUE(ai_script.valid) << ai_script.error;
+
+    igi::QvmNativeRegistry registry;
+    igi::AiScriptHost script_host(registry);
+    igi::QvmProgram program;
+    ASSERT_TRUE(script_host.LoadProgram(ai_script, program))
+        << script_host.GetLastError();
+
+    igi::AiGuardEntity guard;
+    ASSERT_TRUE(script_host.Run(program, guard, 4))
+        << script_host.GetLastError();
+    EXPECT_EQ(guard.script_patrol_path_id, 2405);
+
+    ASSERT_TRUE(script_host.Run(program, guard, 0))
+        << script_host.GetLastError();
+    EXPECT_EQ(guard.script_alarm_control_id, 98);
 }

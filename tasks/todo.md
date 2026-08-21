@@ -133,7 +133,8 @@
       player input), authored mission patrol routes, and non-demo extraction
       conditions from OpenIGI/retail evidence. Authored LevelFlow now disables
       the synthetic extraction fallback; the fallback remains only for levels
-      without a LevelFlow task.
+      without a LevelFlow task. The fixture parity suite now executes retail AI
+      2205 and verifies its authored patrol-path and alarm-control bindings.
 - [ ] Final Windows verification and evidence/limitations report.
 
 ## Current evidence boundary
