@@ -80,6 +80,11 @@ void RuntimeDoorState::Tick() {
         } else {
             angle_degrees_ = std::max(angle_degrees_ - step, angle_target);
         }
+        // A step can land within epsilon of the target; store the exact target
+        // immediately so reported motion and stored state agree on this tick.
+        if (NearlyEqual(angle_degrees_, angle_target, kAngleEpsilon)) {
+            angle_degrees_ = angle_target;
+        }
     } else {
         angle_degrees_ = angle_target;
     }
@@ -93,6 +98,10 @@ void RuntimeDoorState::Tick() {
             slide_fraction_ = std::min(slide_fraction_ + step, slide_target);
         } else {
             slide_fraction_ = std::max(slide_fraction_ - step, slide_target);
+        }
+        // Same-tick snap so a fully-closed/open report never carries residue.
+        if (NearlyEqual(slide_fraction_, slide_target, kSlideEpsilon)) {
+            slide_fraction_ = slide_target;
         }
     } else {
         slide_fraction_ = slide_target;
