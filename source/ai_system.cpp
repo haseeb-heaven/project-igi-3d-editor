@@ -556,6 +556,20 @@ void AiSystem::Update(
         // handled by the separation pass above. The previous AABB probe here
         // rejected nav nodes inside buildings and froze patrols permanently.
         guard.blocked_move_ticks = 0;
+
+        // Locomotion clip request (AiCombatChannels.StanceRows, retail
+        // 0x5415A4+): patrol/guard rows animate walking with clip 35, running
+        // with 36, standing with 0. Scripted Animation commands keep their
+        // explicit request; locomotion only fills the gap on change.
+        if (guard.requested_animation < 0) {
+            const bool moved = guard.position != previous_position;
+            const int desired = !moved ? 0 : (guard.walking ? 35 : 36);
+            if (desired != guard.locomotion_anim) {
+                guard.locomotion_anim = desired;
+                guard.requested_animation = desired;
+                ++guard.animation_request_serial;
+            }
+        }
     }
 
     // 4. Advance the 30 Hz simulation tick.
