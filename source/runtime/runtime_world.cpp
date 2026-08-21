@@ -432,6 +432,10 @@ void RuntimeWorld::ApplyProjectileDetonations() {
             detonation.damage_factor,
             detonation.owner_entity_id);
     }
+
+    // Projectile resolution can trigger authored props after the mission
+    // update has already published its regular snapshot.
+    RefreshAuthoredExplodeObjectSnapshots();
 }
 
 void RuntimeWorld::ApplyExplosionDamage(
@@ -471,6 +475,30 @@ void RuntimeWorld::ApplyExplosionDamage(
         const float dose = (safe_falloff - effective_distance) / safe_falloff;
         return safe_damage * safe_damage_factor * dose;
     };
+
+    // Explosive props are part of the blast graph: a grenade can start a
+    // barrel chain, and a barrel can start the next authored prop. Mark the
+    // target before applying its own blast so a prop cannot trigger itself
+    // recursively.
+    for (AuthoredExplodeObjectRuntime& runtime_object : mission_explode_objects_) {
+        if (runtime_object.is_exploded) {
+            continue;
+        }
+
+        const float object_distance = glm::distance(
+            explosion_position,
+            runtime_object.definition.position);
+        if (object_distance > maximum_damage_distance ||
+            IsWorldLineBlocked(
+                explosion_position,
+                runtime_object.definition.position)) {
+            continue;
+        }
+
+        if (calculate_damage(object_distance) > 0.0f) {
+            TriggerAuthoredExplodeObject(runtime_object);
+        }
+    }
 
     if (player_.IsAlive()) {
         const float player_distance = glm::distance(

@@ -2673,6 +2673,35 @@ TEST(RuntimeWorldTest, AuthoredExplodeObjectAppliesBlastDamageToNearbyActors) {
     EXPECT_EQ(world.GetAi().GetGuards()[0].state, AiGuardState::Dead);
 }
 
+TEST(RuntimeWorldTest, ProjectileBlastTriggersNearbyAuthoredExplodeObject) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionExplodeObject explode_object;
+    explode_object.object_index = 94;
+    explode_object.task_id = "-1";
+    explode_object.position = glm::vec3(0.0f);
+    explode_object.destroyed_model_name = "300_02_1";
+    explode_object.explosion_radius_meters = 2.0f;
+    explode_object.explosion_falloff_radius_meters = 1.5f;
+    explode_object.explosion_damage_scale = 0.0f;
+    world.SetAuthoredMissionState(
+        {}, {}, {}, {}, {}, {}, {explode_object});
+
+    ProjectileLaunch launch;
+    launch.position = glm::vec3(0.0f);
+    launch.type = ProjectileType::FragGrenade;
+    launch.fuse_ticks = 1;
+    launch.damage = 100.0f;
+    launch.explosion_radius_units = 5.0f * PlayerController::WORLD_METER;
+    ASSERT_TRUE(world.GetProjectiles().Spawn(launch));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    ASSERT_EQ(world.GetExplodeObjectSnapshots().size(), 1U);
+    EXPECT_TRUE(world.GetExplodeObjectSnapshots()[0].is_exploded);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;
