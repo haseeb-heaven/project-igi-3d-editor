@@ -65,8 +65,12 @@
       six-row objective snapshot, phosphor-style gameplay HUD fallback, and
       player movement/look/interaction input freeze while it is open;
       default input now matches OpenIGI's Right Ctrl crouch / C map binding;
-      keep the OpenIGI animated map-camera flight and tactical map interaction
-      pending for a later presentation slice.
+- [x] Port the OpenIGI map-computer camera transition as a renderer-free seam:
+      authored ascend/boot/open and shutdown/descend timing, live eye/vantage
+      hand-off, geometric FOV zoom, and display envelopes are fixed-step tested.
+- [ ] Attach the map-camera snapshot to the Windows gameplay scene and add
+      tactical map pan/zoom/marker interaction; the current phosphor HUD remains
+      the safe fallback until that presentation boundary is verified.
 - [x] Publish moving guard transforms and animation-request metadata through
       `RuntimeRenderSnapshot`; gameplay scene synchronization consumes that
       immutable copy instead of iterating the mutable AI vector directly.

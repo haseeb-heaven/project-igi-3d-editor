@@ -32,6 +32,7 @@ inspect private fields or couple themselves to the chosen data structure.
 | `RuntimeWorld` ladder interaction | Nearest authored mount, deterministic rung input, top transition, slide-to-ground, dismount, and authored root-motion event completion. |
 | `GameplayHost` / `WindowInputRouter` | F6/F7 focus handoff changes input ownership without restarting or resetting the active runtime session. |
 | `RenderTarget` | Gameplay-window presentation remains distinct from render-only editor repaints. |
+| `RuntimeMapComputerCamera` | Vanilla open/boot/open and close/shutdown/descend phases, live vantage/eye hand-off, geometric FOV zoom, and deterministic display envelopes. |
 
 The user-requested TDD workflow is applied as a vertical slice: each new test
 is added before the smallest production change that makes that behavior pass.
