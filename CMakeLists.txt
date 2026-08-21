@@ -279,7 +279,19 @@ target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/runtim
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_link_libraries(igi_tests PRIVATE gtest_main winmm)
+# gameplay_window.cpp uses FreeGLUT directly, so the test target needs the same
+# GL library path and libs as the editor target.
+if (WIN32)
+  if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(TESTS_GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x64")
+  else()
+    set(TESTS_GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x86")
+  endif()
+  target_link_directories(igi_tests PRIVATE ${TESTS_GL_LIB_DIR})
+  target_link_libraries(igi_tests PRIVATE gtest_main winmm freeglut glew32 OpenGL32)
+else()
+  target_link_libraries(igi_tests PRIVATE gtest_main winmm)
+endif()
 target_sources(igi_tests PRIVATE
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
