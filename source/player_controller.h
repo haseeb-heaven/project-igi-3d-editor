@@ -8,6 +8,7 @@
 
 #include "player_collision.h"
 #include "player_fall_impact.h"
+#include "player_motion.h"
 
 namespace igi {
 
@@ -24,6 +25,13 @@ struct PlayerInputCmd {
     bool reload = false;
     bool interact = false;
     int switch_weapon = -1;
+
+    // Animation-local translation sampled for this fixed simulation tick.
+    // Keyboard movement remains the fallback until the player animation
+    // runtime supplies a non-zero root-motion delta.
+    glm::vec3 root_motion_delta = glm::vec3(0.0f);
+    float root_motion_scale = PlayerMotion::DefaultDeltaTranslationScale;
+    bool suppress_root_motion_scale = false;
 };
 
 enum class PlayerStanceState {
@@ -38,7 +46,7 @@ public:
     static constexpr float WORLD_METER = 4096.0f;
 
     // Verified-reference values from OpenIGI HumanMotion and HumanWallProbe.
-    static constexpr float GRAVITY = 84.741692f;
+    static constexpr float GRAVITY = PlayerMotion::GravityPerTick;
     static constexpr float JUMP_SPEED = 1024.0f;
     static constexpr float STANDING_EYE_HEIGHT = 7372.8f;
     static constexpr float CROUCHING_EYE_HEIGHT = 5324.8f;
@@ -112,7 +120,7 @@ private:
     glm::vec3 CalculateMovementDirection(const PlayerInputCmd& input_command) const;
     bool ResolveRequestedStance(bool requested_crouch) const;
     void IntegrateGroundMovement(const PlayerInputCmd& input_command, const glm::vec3& movement_direction);
-    void IntegrateAirMovement(const PlayerInputCmd& input_command, const glm::vec3& movement_direction, bool took_off);
+    void IntegrateAirMovement(const PlayerInputCmd& input_command, bool took_off);
     void UpdateEyeHeight(bool crouching);
     void ApplyLandingImpactDamage(float maximum_downward_velocity);
     void ApplyDirectHealthDamage(float damage_amount);

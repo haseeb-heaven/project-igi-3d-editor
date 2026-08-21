@@ -160,18 +160,18 @@ void PlayerController::IntegrateGroundMovement(
 
 void PlayerController::IntegrateAirMovement(
     const PlayerInputCmd& input_command,
-    const glm::vec3& movement_direction,
     bool took_off) {
     if (!took_off) {
-        velocity_.z -= gravity_units_per_tick_;
+        velocity_ = PlayerMotion::IntegrateAirborneVelocity(
+            velocity_,
+            gravity_units_per_tick_);
     }
 
-    const float input_magnitude = std::clamp(
-        std::abs(input_command.forward) + std::abs(input_command.strafe),
-        0.0f,
-        1.0f);
-    velocity_.x += movement_direction.x * air_control_speed_units_per_tick_ * input_magnitude;
-    velocity_.y += movement_direction.y * air_control_speed_units_per_tick_ * input_magnitude;
+    velocity_ += PlayerMotion::CalculateAirControl(
+        input_command.forward,
+        input_command.strafe,
+        yaw_,
+        air_control_speed_units_per_tick_);
 }
 
 void PlayerController::UpdateEyeHeight(bool crouching) {
@@ -228,6 +228,15 @@ void PlayerController::Tick(
     const bool should_crouch = ResolveRequestedStance(input_command.crouch);
     UpdateEyeHeight(should_crouch);
 
+    const glm::vec3 root_motion_step = PlayerMotion::ApplyRootMotion(
+        input_command.root_motion_delta,
+        yaw_,
+        input_command.root_motion_scale,
+        input_command.suppress_root_motion_scale);
+    const bool has_root_motion = glm::dot(
+        input_command.root_motion_delta,
+        input_command.root_motion_delta) > kMinimumInputMagnitude * kMinimumInputMagnitude;
+
     const PlayerGroundQuery ground_query = collision_.QueryGround(
         position_,
         current_eye_height_,
@@ -241,6 +250,13 @@ void PlayerController::Tick(
         stance_ = should_crouch ? PlayerStanceState::Crouching : PlayerStanceState::Standing;
         position_.z = ground_query.ground_height;
         IntegrateGroundMovement(input_command, movement_direction);
+        if (has_root_motion) {
+            // OpenIGI's grounded human velocity is zero; the animation delta
+            // carries the actual step. Preserve the keyboard-speed fallback
+            // when no animation sample has reached this controller yet.
+            velocity_.x = 0.0f;
+            velocity_.y = 0.0f;
+        }
 
         if (input_command.jump && !should_crouch) {
             velocity_.z = jump_speed_units_per_tick_;
@@ -249,11 +265,11 @@ void PlayerController::Tick(
         }
     } else {
         stance_ = PlayerStanceState::Airborne;
-        IntegrateAirMovement(input_command, movement_direction, false);
+        IntegrateAirMovement(input_command, false);
     }
 
     const glm::vec3 requested_position = position_ + velocity_ +
-        slope_slide_velocity_;
+        root_motion_step + slope_slide_velocity_;
     const PlayerWallSweepResult wall_sweep_result = collision_.SweepWalls(
         position_,
         requested_position,

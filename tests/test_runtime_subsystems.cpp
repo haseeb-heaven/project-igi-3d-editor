@@ -13,6 +13,7 @@
 #include "../source/player_controller.h"
 #include "../source/player_fall_impact.h"
 #include "../source/player_collision.h"
+#include "../source/player_motion.h"
 #include "../source/weapon_system.h"
 #include "../source/ai_system.h"
 #include "../source/level_flow.h"
@@ -597,6 +598,64 @@ TEST(RuntimePlayerTest, GravityAndJumpIntegration) {
     collision.ResolveObstacles(test_pos, obstacles, 1638.4f);
     // Should resolve without NaN/Inf
     EXPECT_FALSE(std::isnan(test_pos.x) || std::isnan(test_pos.y));
+}
+
+TEST(PlayerMotionTest, MatchesOpenIgiReferenceIntegrators) {
+    const glm::vec3 airborne_velocity = PlayerMotion::IntegrateAirborneVelocity(
+        glm::vec3(11.0f, -7.0f, 100.0f));
+    EXPECT_FLOAT_EQ(airborne_velocity.x, 11.0f);
+    EXPECT_FLOAT_EQ(airborne_velocity.y, -7.0f);
+    EXPECT_NEAR(airborne_velocity.z, 15.258308f, 0.0001f);
+
+    const glm::vec3 ladder_slide_velocity = PlayerMotion::IntegrateLadderSlideVelocity(
+        glm::vec3(11.0f, -7.0f, 100.0f));
+    EXPECT_NEAR(ladder_slide_velocity.x, 10.890000f, 0.0001f);
+    EXPECT_NEAR(ladder_slide_velocity.y, -6.930000f, 0.0001f);
+    EXPECT_NEAR(ladder_slide_velocity.z, 54.845122f, 0.0001f);
+}
+
+TEST(PlayerMotionTest, AppliesRootMotionScaleBeforeYawRotation) {
+    const glm::vec3 scaled_step = PlayerMotion::ApplyRootMotion(
+        glm::vec3(2.0f, 3.0f, 4.0f),
+        90.0f);
+    EXPECT_NEAR(scaled_step.x, -5.25f, 0.0001f);
+    EXPECT_NEAR(scaled_step.y, 3.5f, 0.0001f);
+    EXPECT_NEAR(scaled_step.z, 7.0f, 0.0001f);
+
+    const glm::vec3 scale_suppressed_step = PlayerMotion::ApplyRootMotion(
+        glm::vec3(2.0f, 3.0f, 4.0f),
+        90.0f,
+        PlayerMotion::DefaultDeltaTranslationScale,
+        true);
+    EXPECT_NEAR(scale_suppressed_step.x, -3.0f, 0.0001f);
+    EXPECT_NEAR(scale_suppressed_step.y, 2.0f, 0.0001f);
+    EXPECT_NEAR(scale_suppressed_step.z, 4.0f, 0.0001f);
+}
+
+TEST(PlayerMotionTest, PreservesReferenceAirControlMovementSlots) {
+    const glm::vec3 air_control_delta = PlayerMotion::CalculateAirControl(
+        1.0f,
+        1.0f,
+        90.0f,
+        10.0f);
+
+    EXPECT_NEAR(air_control_delta.x, -10.0f, 0.0001f);
+    EXPECT_NEAR(air_control_delta.y, 10.0f, 0.0001f);
+    EXPECT_FLOAT_EQ(air_control_delta.z, 0.0f);
+}
+
+TEST(RuntimePlayerTest, AppliesAnimationRootMotionOnTheFixedStepBoundary) {
+    PlayerController player;
+    player.Reset(glm::vec3(0.0f));
+    player.Tick(PlayerInputCmd(), FlatTerrain);
+
+    PlayerInputCmd animation_command;
+    animation_command.root_motion_delta = glm::vec3(0.0f, 100.0f, 0.0f);
+    player.Tick(animation_command, FlatTerrain);
+
+    EXPECT_NEAR(player.GetPosition().y, 175.0f, 0.0001f);
+    EXPECT_FLOAT_EQ(player.GetVelocity().x, 0.0f);
+    EXPECT_FLOAT_EQ(player.GetVelocity().y, 0.0f);
 }
 
 TEST(RuntimePlayerTest, VanillaFallImpactMatchesReferenceBoundaries) {

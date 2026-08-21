@@ -21,6 +21,9 @@
 - [x] Replace the inferred landing-impact rule with the verified OpenIGI
       vanilla speed-to-health formula, direct-health damage path, authored fall
       sound selection, guard hearing-radius event, and regression coverage.
+- [x] Port the verified-reference HumanMotion airborne gravity, ladder-slide
+      gravity/drag, air-control basis, and root-motion scale/rotation order;
+      expose animation-local deltas at the fixed-step player boundary.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.
@@ -41,8 +44,8 @@
       gameplay; switching focus does not restart simulation. Auto-save,
       terrain editing, and level switching stay gated during an active run
       until immutable terrain/asset snapshots are complete.
-- [ ] Port/verify remaining selected-vanilla-fixture traversal (ladder and
-      root-motion where exercised), authored mission patrol routes, and
+- [ ] Port/verify remaining selected-vanilla-fixture traversal (ladder state
+      machine and authored mount/dismount geometry), authored mission patrol routes, and
       non-demo extraction conditions from OpenIGI/retail evidence.
 - [ ] Final Windows verification and evidence/limitations report.
 
@@ -56,6 +59,10 @@
   world-occluded hits, guard patrol/perception/combat, authored weapon
   selection, projectile simulation, flash exposure, zoom, landing audio,
   health/armor HUD, and objective/extraction flow.
+- `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
+  ladder-slide integrator, movement-slot air control, and root-motion transform
+  are implemented and covered; no player animation stream currently feeds the
+  new command field, so keyboard movement remains the runtime fallback.
 - `architecture-gap`: a controlled gameplay window now owns gameplay focus,
   input callbacks, relative mouse recentering, viewport, and close recovery,
   and `GameplayHost` owns an OpenGL-free presentation snapshot. The actual
