@@ -36,6 +36,9 @@
       catalog's weapon sound names aligned with the vanilla QVM evidence.
 - [x] Expose fixed-step firearm muzzle flash state through the presentation
       snapshot and render a labeled fallback cue when authored sprites are absent.
+- [x] Expose fixed-step guard muzzle flashes and player incoming-damage feedback
+      through the render snapshot; render world-space guard cues and a readable
+      translucent hit overlay when authored effects are unavailable.
 - [x] Apply the weapon system's recoil result to the first-person rig through a
       deterministic three-tick presentation recovery.
 - [x] Parse vanilla `DefineComputerObjective` rows from the copied level task
@@ -107,9 +110,10 @@
   code.
 - `implemented-slice`: player movement/jump/crouch/health, weapon states,
   world-occluded hits, guard patrol/perception/combat, authored weapon
-  selection, projectile simulation, flash exposure, muzzle flash, recoil, zoom, landing audio and
-  lazy packed/loose vanilla sound resolution, authored objective text,
-  objective-set progression, and authored conditional-container visibility,
+  selection, projectile simulation, flash exposure, muzzle flash, guard muzzle
+  flashes, incoming-damage feedback, recoil, zoom, landing audio and lazy
+  packed/loose vanilla sound resolution, authored objective text,
+  objective-set progression, authored conditional-container visibility,
   health/armor HUD, and objective/extraction flow.
 - `verified-reference` motion seam: OpenIGI HumanMotion's airborne gravity,
   ladder-slide integrator, movement-slot air control, and root-motion transform

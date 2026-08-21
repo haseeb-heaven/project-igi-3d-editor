@@ -324,6 +324,37 @@ TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
     EXPECT_FLOAT_EQ(world.GetMuzzleFlashStrength(), 0.0f);
 }
 
+TEST(RuntimeRenderTest, CapturesGuardFireAndPlayerDamageFeedback) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 17;
+    guard.position = glm::vec3(0.0f, 2.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.yaw = 180.0f;
+    guard.vision_config.primary_fov_pitch = glm::radians(90.0f);
+    guard.state = AiGuardState::Combat;
+    guard.weapon_script_id = "WEAPON_ID_M16A2";
+    world.GetAi().RegisterGuard(guard);
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    EXPECT_GT(world.GetPlayerDamageEffectStrength(), 0.0f);
+    ASSERT_EQ(world.GetGuardMuzzleFlashStates().size(), 1U);
+    EXPECT_EQ(world.GetGuardMuzzleFlashStates()[0].guard_id, 17U);
+    EXPECT_GT(world.GetGuardMuzzleFlashStates()[0].strength, 0.0f);
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+    EXPECT_GT(renderer.GetSnapshot().player_damage_effect_strength, 0.0f);
+    ASSERT_EQ(renderer.GetSnapshot().guard_muzzle_flashes.size(), 1U);
+    EXPECT_EQ(renderer.GetSnapshot().guard_muzzle_flashes[0].guard_id, 17U);
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_LT(world.GetPlayerDamageEffectStrength(), 1.0f);
+    EXPECT_LT(world.GetGuardMuzzleFlashStates()[0].strength, 1.0f);
+}
+
 TEST(RuntimeRenderTest, CapturesTransientExplosionPresentationState) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

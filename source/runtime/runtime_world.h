@@ -73,6 +73,15 @@ struct RuntimeExplosionRenderState {
     bool is_flashbang = false;
 };
 
+// Immutable presentation cue for one guard firearm discharge. The simulation
+// owns the lifetime; the renderer only consumes the short-lived world-space
+// position and strength.
+struct RuntimeGuardMuzzleFlashState {
+    uint32_t guard_id = 0;
+    glm::vec3 position = glm::vec3(0.0f);
+    float strength = 0.0f;
+};
+
 // Immutable presentation state for one authored ConditionalContainer. The
 // descendant indices belong to the editor-owned runtime object copy; keeping
 // them in the snapshot lets rendering, collision, interaction, and AI setup
@@ -189,6 +198,15 @@ public:
     // Fixed-step first-person firearm cue, normalized to [0, 1]. This is a
     // presentation signal only; projectile and hit simulation remain separate.
     float GetMuzzleFlashStrength() const { return muzzle_flash_strength_; }
+    // Fixed-step incoming-hit cue, normalized to [0, 1]. Health and armor stay
+    // authoritative in PlayerController; this value is presentation only.
+    float GetPlayerDamageEffectStrength() const {
+        return player_damage_effect_strength_;
+    }
+    const std::vector<RuntimeGuardMuzzleFlashState>&
+    GetGuardMuzzleFlashStates() const {
+        return guard_muzzle_flash_states_;
+    }
     bool IsZoomActive() const { return zoom_active_; }
     bool IsPlayerOnLadder() const { return ladder_traversal_.IsOnLadder(); }
     const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
@@ -205,6 +223,7 @@ public:
 private:
     struct AuthoredExplodeObjectRuntime;
     bool ApplyPlayerShotDamage(BulletTrace& bullet_trace);
+    void ApplyPlayerDamage(float damage_amount);
     bool ApplyPlayerExplodeObjectDamage(BulletTrace& bullet_trace);
     bool ApplyGuardShotDamage(BulletTrace& bullet_trace);
     bool FindWorldShotImpact(const BulletTrace& bullet_trace, float& impact_distance) const;
@@ -237,6 +256,10 @@ private:
     void DispatchGuardScripts();
     void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
+    void AdvanceGuardMuzzleFlashStates();
+    void QueueGuardMuzzleFlash(
+        uint32_t guard_id,
+        const glm::vec3& muzzle_position);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
@@ -396,6 +419,8 @@ private:
     float flash_effect_decay_per_second_ = 0.0f;
     float flash_effect_remaining_seconds_ = 0.0f;
     float muzzle_flash_strength_ = 0.0f;
+    float player_damage_effect_strength_ = 0.0f;
+    std::vector<RuntimeGuardMuzzleFlashState> guard_muzzle_flash_states_;
     double footstep_timer_seconds_ = 0.0;
     glm::vec3 extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     float extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;

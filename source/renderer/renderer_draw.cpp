@@ -3225,6 +3225,22 @@ void Renderer::Draw(const draw_params_s &params,
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       }
 
+      // Incoming fire needs an immediate readable cue even when the authored
+      // damage sprite is unavailable. Keep it brief and translucent so the
+      // health bar remains visible and the scene is not hidden behind a full
+      // opaque flash.
+      const float damage_alpha = std::clamp(
+          task_tree_view.player_damage_effect_strength_, 0.0f, 1.0f);
+      if (damage_alpha > 0.0f) {
+        glColor4f(0.85f, 0.03f, 0.02f, 0.28f * damage_alpha);
+        glBegin(GL_QUADS);
+        glVertex2i(0, 0);
+        glVertex2i(vw, 0);
+        glVertex2i(vw, vh);
+        glVertex2i(0, vh);
+        glEnd();
+      }
+
       // Flashbang exposure is drawn last so it washes out the weapon, HUD, and
       // scene together, matching the player-facing effect instead of merely
       // playing an audio cue.

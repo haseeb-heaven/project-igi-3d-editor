@@ -954,11 +954,15 @@ void App::Frame(float delta_seconds) {
 		.muzzle_flash_strength_ = render_gameplay
 			? render_snapshot.muzzle_flash_strength
 			: 0.0f,
+		.player_damage_effect_strength_ = render_gameplay
+			? render_snapshot.player_damage_effect_strength
+			: 0.0f,
 	};
 
 	renderer_.Draw(draw_params_, task_tree_view);
 	DrawGameplayProjectiles();
 	DrawGameplayExplosions();
+	DrawGameplayGuardMuzzleFlashes();
 	DrawGameplayPlayerWeapon();
 
     // Find the "right hand" bone index in modelId's parsed bone list (REIH+MANB
@@ -1264,6 +1268,26 @@ void App::DrawGameplayExplosions() {
 			explosion_model,
 			glm::vec3(40.96f * radius_meters * expansion));
 		renderer_.DrawAttachedMesh("1009_01_1", false, explosion_model);
+	}
+}
+
+void App::DrawGameplayGuardMuzzleFlashes() {
+	if (!IsGameplayRenderTarget()) return;
+
+	const igi::RuntimeRenderSnapshot& render_snapshot =
+		gameplay_host_.GetRenderSnapshot();
+	for (const igi::RuntimeGuardMuzzleFlashState& flash :
+		render_snapshot.guard_muzzle_flashes) {
+		const float radius_meters = std::max(
+			0.04f,
+			0.12f * std::clamp(flash.strength, 0.0f, 1.0f));
+		glm::mat4 flash_model = glm::translate(
+			glm::mat4(1.0f),
+			flash.position);
+		flash_model = glm::scale(
+			flash_model,
+			glm::vec3(40.96f * radius_meters));
+		renderer_.DrawAttachedMesh("1009_01_1", false, flash_model);
 	}
 }
 

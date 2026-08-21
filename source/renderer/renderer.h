@@ -547,6 +547,7 @@ public:
 		bool             prop_anim_is_playing_ = false;
 		float            flash_effect_strength_ = 0.0f;
 		float            muzzle_flash_strength_ = 0.0f;
+		float            player_damage_effect_strength_ = 0.0f;
 	};
 
 

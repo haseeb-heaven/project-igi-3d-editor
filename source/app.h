@@ -532,6 +532,7 @@ private:
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
   void DrawGameplayExplosions();
+  void DrawGameplayGuardMuzzleFlashes();
   void UpdateGameplayFieldOfView();
   void ApplyRuntimeCutSceneCamera();
   void CaptureGameplayRenderSnapshot();

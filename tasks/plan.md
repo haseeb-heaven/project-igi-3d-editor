@@ -135,6 +135,9 @@ parity claims remain gated on IGI1 evidence.
 - [x] Carry a fixed-step firearm muzzle cue through `RuntimeRenderSnapshot` and
   draw a deterministic screen-space fallback when the authored muzzle sprite is
   unavailable.
+- [x] Carry fixed-step guard muzzle flashes and incoming player damage feedback
+  through the presentation snapshot, with translucent HUD fallback cues when
+  authored combat sprites are unavailable.
 - [x] Carry weapon-system recoil into a short fixed-step first-person rig kick
   and recovery, without changing the simulation-owned aim or ballistics path.
 - [x] Load authored `DefineComputerObjective` rows from the runtime level

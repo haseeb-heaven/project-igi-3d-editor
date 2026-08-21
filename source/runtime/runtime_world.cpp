@@ -13,7 +13,7 @@ namespace igi {
 
 namespace {
 
-constexpr float kMuzzleFlashStrengthDecayPerTick = 0.5f;
+constexpr float kTransientPresentationStrengthDecayPerTick = 0.5f;
 constexpr int kStatusMessageSendCooldownTicks = 210;
 constexpr int kStatusMessageRevealWarmupTicks = 9;
 
@@ -527,6 +527,52 @@ void RuntimeWorld::QueueExplosionRenderState(
     explosion_render_states_.push_back(render_state);
 }
 
+void RuntimeWorld::AdvanceGuardMuzzleFlashStates() {
+    for (RuntimeGuardMuzzleFlashState& flash : guard_muzzle_flash_states_) {
+        flash.strength = std::max(
+            0.0f,
+            flash.strength - kTransientPresentationStrengthDecayPerTick);
+    }
+
+    guard_muzzle_flash_states_.erase(
+        std::remove_if(
+            guard_muzzle_flash_states_.begin(),
+            guard_muzzle_flash_states_.end(),
+            [](const RuntimeGuardMuzzleFlashState& flash) {
+                return flash.strength <= 0.0f;
+            }),
+        guard_muzzle_flash_states_.end());
+}
+
+void RuntimeWorld::QueueGuardMuzzleFlash(
+    uint32_t guard_id,
+    const glm::vec3& muzzle_position) {
+    for (RuntimeGuardMuzzleFlashState& flash : guard_muzzle_flash_states_) {
+        if (flash.guard_id != guard_id) {
+            continue;
+        }
+        flash.position = muzzle_position;
+        flash.strength = 1.0f;
+        return;
+    }
+
+    guard_muzzle_flash_states_.push_back({guard_id, muzzle_position, 1.0f});
+}
+
+void RuntimeWorld::ApplyPlayerDamage(float damage_amount) {
+    if (damage_amount <= 0.0f || !player_.IsAlive()) {
+        return;
+    }
+
+    const float health_before = player_.GetHealth();
+    const float armor_before = player_.GetArmor();
+    player_.ApplyDamage(damage_amount);
+    if (player_.GetHealth() < health_before ||
+        player_.GetArmor() < armor_before) {
+        player_damage_effect_strength_ = 1.0f;
+    }
+}
+
 void RuntimeWorld::ApplyExplosionDamage(
     const glm::vec3& explosion_position,
     float explosion_radius_units,
@@ -597,7 +643,7 @@ void RuntimeWorld::ApplyExplosionDamage(
             !IsWorldLineBlocked(
                 explosion_position,
                 player_.GetEyePosition())) {
-            player_.ApplyDamage(calculate_damage(player_distance));
+            ApplyPlayerDamage(calculate_damage(player_distance));
         }
     }
 
@@ -679,12 +725,14 @@ void RuntimeWorld::Reset() {
     }
     authored_door_snapshots_.clear();
     guard_combat_states_.clear();
+    guard_muzzle_flash_states_.clear();
     fire_was_held_ = false;
     zoom_active_ = false;
     flash_effect_strength_ = 0.0f;
     flash_effect_decay_per_second_ = 0.0f;
     flash_effect_remaining_seconds_ = 0.0f;
     muzzle_flash_strength_ = 0.0f;
+    player_damage_effect_strength_ = 0.0f;
     footstep_timer_seconds_ = 0.0;
     extraction_zone_center_ = glm::vec3(1000.0f, 1000.0f, 0.0f);
     extraction_zone_radius_ = 8.0f * PlayerController::WORLD_METER;
@@ -1994,11 +2042,15 @@ void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
 
 void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputCmd& input_cmd) {
     AdvanceExplosionRenderStates();
+    AdvanceGuardMuzzleFlashStates();
     constexpr double dt = GameClock::TICK_INTERVAL_SECONDS;
 
     muzzle_flash_strength_ = std::max(
         0.0f,
-        muzzle_flash_strength_ - kMuzzleFlashStrengthDecayPerTick);
+        muzzle_flash_strength_ - kTransientPresentationStrengthDecayPerTick);
+    player_damage_effect_strength_ = std::max(
+        0.0f,
+        player_damage_effect_strength_ - kTransientPresentationStrengthDecayPerTick);
     weapon_view_recoil_.Advance();
 
     if (flash_effect_remaining_seconds_ > 0.0f) {
@@ -2051,6 +2103,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
             ai_.GetEventQueue().Post(ground_impact);
         }
         if (landing_impact.damage > 0.0f) {
+            player_damage_effect_strength_ = 1.0f;
             AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
         }
         if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
@@ -2473,7 +2526,7 @@ bool RuntimeWorld::ApplyGuardShotDamage(BulletTrace& bullet_trace) {
     bullet_trace.hit_entity_id = 0;
     bullet_trace.hit_position = closest_point;
     bullet_trace.distance = projected_distance;
-    player_.ApplyDamage(bullet_trace.damage);
+    ApplyPlayerDamage(bullet_trace.damage);
     return true;
 }
 
@@ -2538,6 +2591,19 @@ void RuntimeWorld::ApplyGuardCombatDamage(uint64_t tick_number) {
         const glm::vec3 aim_direction = player_.GetEyePosition() - guard_eye_position;
         if (!combat_state.weapon.TryFire(guard_eye_position, aim_direction, trace)) {
             continue;
+        }
+
+        if (WeaponProducesMuzzleFlash(combat_state.weapon.GetActiveWeapon())) {
+            const glm::vec3 muzzle_direction = NormalizeOrFallback(
+                aim_direction,
+                glm::vec3(0.0f, 1.0f, 0.0f));
+            QueueGuardMuzzleFlash(
+                guard.id,
+                guard.position + glm::vec3(
+                    0.0f,
+                    0.0f,
+                    1.45f * PlayerController::WORLD_METER) +
+                    muzzle_direction * (0.45f * PlayerController::WORLD_METER));
         }
 
         const bool hit_player = ApplyGuardShotDamage(trace);

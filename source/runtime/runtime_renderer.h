@@ -57,6 +57,8 @@ struct RuntimeRenderSnapshot {
     std::vector<MissionStatusMessageDisplay> mission_status_messages;
     float flash_effect_strength = 0.0f;
     float muzzle_flash_strength = 0.0f;
+    float player_damage_effect_strength = 0.0f;
+    std::vector<RuntimeGuardMuzzleFlashState> guard_muzzle_flashes;
     std::vector<RuntimeProjectileRenderState> projectiles;
     std::vector<RuntimeExplosionRenderState> explosions;
 };
