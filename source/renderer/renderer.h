@@ -429,6 +429,9 @@ public:
 
 	struct task_tree_view_params_s {
 		bool show_hud_;
+		// Alt+H toggle: gameplay HUD overlay (crosshair, health bar, weapon
+		// readout). Off by default until the vanilla look is finished.
+		bool hud_overlay_visible_ = false;
 		std::string status_msg_;
 		bool pause_mode_;
 		int pause_active_input_ = -1;

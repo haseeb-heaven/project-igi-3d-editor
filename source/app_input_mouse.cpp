@@ -668,7 +668,13 @@ void App::Input_OnMotion(int x, int y) {
 		}
 		return;
 	}
-	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
+	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) {
+		// Paused with the pause menu up: gameplay look is frozen but the
+		// pointer drives the menu, so keep tracking its position for hover.
+		mouse_state_.prior_x_ = x;
+		mouse_state_.prior_y_ = y;
+		return;
+	}
 
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
 	if (enableCameraMode && (dx != 0 || dy != 0))

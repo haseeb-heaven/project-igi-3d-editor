@@ -560,6 +560,18 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 	bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
 	                 (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+	bool altDown = (glutGetModifiers() & GLUT_ACTIVE_ALT) != 0 ||
+	               (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+	// Alt+H: toggle the gameplay HUD overlay (crosshair, health bar, weapon
+	// readout). Hidden by default until the vanilla presentation is finished.
+	if (altDown && (key == 'h' || key == 'H')) {
+		hud_overlay_visible_ = !hud_overlay_visible_;
+		status_message_ = hud_overlay_visible_
+			? "HUD overlay shown (Alt+H to hide)"
+			: "HUD overlay hidden (Alt+H to show)";
+		return;
+	}
 
 	if (ctrlDown && (key == 8 || key == 'h' || key == 'H')) { // CTRL+H
 		ToggleOverlayWireframe();
@@ -587,8 +599,9 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					int lvl = std::atoi(pause_level_input_.c_str());
 					if (lvl >= 1 && lvl <= 14) {
 						if (in_game_mode_) {
-							status_message_ = "Close gameplay before loading a different level";
-							return;
+							// Switching levels is allowed mid-run: close the
+							// gameplay session cleanly first, then load.
+							ToggleGamePlayMode();
 						}
 						LoadLevel(lvl);
 						TogglePauseMenu();

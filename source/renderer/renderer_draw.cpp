@@ -2953,7 +2953,8 @@ void Renderer::Draw(const draw_params_s &params,
     }
 
     // ── In-Game HUD overlay (Authentic OpenIGI / Retail IGI StatusScreen) ──
-    if (task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_) {
+    if (task_tree_view.in_game_mode_ && !task_tree_view.pause_mode_ &&
+        task_tree_view.hud_overlay_visible_) {
       int vw = params.view_define_->viewport_width_;
       int vh = params.view_define_->viewport_height_;
       glEnable(GL_BLEND);

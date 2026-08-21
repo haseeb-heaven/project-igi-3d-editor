@@ -624,6 +624,7 @@ void App::Frame(float delta_seconds) {
 		ComputePropAnimUiState(propAnimBoneHierarchy, propAnimIds, propAnimActiveId, propAnimIsPlaying);
 		Renderer::task_tree_view_params_s task_tree_view = {
 			.show_hud_ = show_hud_,
+			.hud_overlay_visible_ = hud_overlay_visible_,
 			.status_msg_ = status_message_,
 			.pause_mode_ = true,
 			.pause_active_input_ = pause_active_input_,
@@ -916,6 +917,7 @@ void App::Frame(float delta_seconds) {
 
 	Renderer::task_tree_view_params_s task_tree_view = {
 		.show_hud_ = render_gameplay ? false : show_hud_,
+		.hud_overlay_visible_ = hud_overlay_visible_,
 		.status_msg_ = status_message_,
 		.pause_mode_ = render_gameplay ? pause_mode_ : false,
 		.pause_active_input_ = pause_active_input_,
@@ -1501,14 +1503,26 @@ void App::TogglePauseMenu() {
 		// Opening pause menu: seed level spinner with current level
 		int cur = level_.GetLevelNo();
 		if (cur > 0) pause_level_input_ = std::to_string(cur);
-		glutSetCursor(GLUT_CURSOR_NONE);
+		// The menu is mouse-driven: the pointer must be visible. Gameplay
+		// motion handlers return early while paused, so nothing else would
+		// restore the cursor here — an invisible pointer made the menu
+		// unusable in play mode.
+		glutSetCursor(GLUT_CURSOR_INHERIT);
 	} else {
 		// Closing pause menu: reset mouse state so no stale drag occurs
 		input_.mouse_delta_x_ = 0;
 		input_.mouse_delta_y_ = 0;
 		mouse_state_.left_button_down_ = false;
 		skip_input_on_motion_once_ = false;
-		glutSetCursor(GLUT_CURSOR_NONE);
+		if (in_game_mode_) {
+			// Resume first-person look: hide the OS cursor and re-center it.
+			glutSetCursor(GLUT_CURSOR_NONE);
+			mouse_state_.prior_x_ = gameplay_viewport_width_ >> 1;
+			mouse_state_.prior_y_ = gameplay_viewport_height_ >> 1;
+			glutWarpPointer(mouse_state_.prior_x_, mouse_state_.prior_y_);
+		} else {
+			glutSetCursor(GLUT_CURSOR_INHERIT);
+		}
 	}
 }
 

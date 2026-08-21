@@ -189,6 +189,9 @@ private:
   int last_pick_x_ = -9999;
   int last_pick_y_ = -9999;
   bool show_hud_;
+  // Alt+H: gameplay HUD overlay (crosshair/health/weapon readout). Hidden by
+  // default until the vanilla presentation is finished.
+  bool hud_overlay_visible_ = false;
   bool show_debug_;
   bool show_help_;
   int help_scroll_offset_ = 0;
