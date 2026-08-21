@@ -344,7 +344,10 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(6, FormatQscDouble(obj.rot.x));
             setToken(7, FormatQscDouble(obj.rot.y));
             setToken(8, FormatQscDouble(obj.rot.z));
-            if (!obj.modelId.empty() || obj.argTokens.size() > 15) setStringToken(15, obj.modelId);
+            // ExplodeObject follows its declared schema: Model is arg 9 and
+            // Destroyed model is arg 10. Writing the live model to arg 15
+            // overwrote Explosion delay and made saved vanilla tasks invalid.
+            if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
         } else if (obj.type == "AmbientArea") {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
@@ -525,4 +528,3 @@ std::string LevelObjects::SerializeObjectRecursive(const std::vector<LevelObject
 
     return serialize(idx);
 }
-
