@@ -2488,6 +2488,33 @@ TEST(RuntimeWorldTest, AuthoredCutSceneHonorsStartTimeAndTimeScale) {
     EXPECT_EQ(world.GetLevelFlow().GetStatus(), MissionStatus::Success);
 }
 
+TEST(RuntimeWorldTest, AuthoredCutScenePublishesCameraSnapshot) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AuthoredMissionCutScene cut_scene;
+    cut_scene.task_id = "1204";
+    cut_scene.initial_run = true;
+    cut_scene.duration_seconds = 1.0f;
+    cut_scene.camera_shots.push_back({
+        glm::vec3(100.0f, 200.0f, 300.0f),
+        glm::vec3(0.0f),
+        1.2f,
+        1.0f,
+        false,
+    });
+
+    world.SetAuthoredMissionState({}, {}, {}, {}, {cut_scene});
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+
+    const RuntimeCutSceneCamera& camera = world.GetActiveCutSceneCamera();
+    EXPECT_TRUE(camera.active);
+    EXPECT_EQ(camera.position, glm::vec3(100.0f, 200.0f, 300.0f));
+    EXPECT_EQ(camera.forward, glm::vec3(0.0f, 1.0f, 0.0f));
+    EXPECT_FLOAT_EQ(camera.field_of_view_y_radians, 1.2f);
+    EXPECT_EQ(camera.shot_index, 0);
+}
+
 // 8. Twin-Window & Editor Snapshot Tests
 TEST(RuntimeHostTest, GameplayInputModifierRunsBeforeEachFixedWorldTick) {
     GameplayHost host;

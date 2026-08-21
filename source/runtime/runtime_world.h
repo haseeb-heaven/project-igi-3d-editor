@@ -32,6 +32,21 @@ struct RuntimeInteractionResult {
     bool completed_objective = false;
 };
 
+// Immutable presentation snapshot for the currently running authored
+// CutScene. RuntimeWorld computes it on the fixed-step boundary; App consumes
+// the basis without reading mutable mission containers.
+struct RuntimeCutSceneCamera {
+    bool active = false;
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 forward = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 right = glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f);
+    float field_of_view_y_radians = 1.0f;
+    float viewport_height_factor = 1.0f;
+    float time_of_day = -1.0f;
+    int shot_index = -1;
+};
+
 class RuntimeWorld {
 public:
     RuntimeWorld();
@@ -122,6 +137,9 @@ public:
     const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
 
     bool IsMissionActive() const { return level_flow_.GetStatus() == MissionStatus::InProgress; }
+    const RuntimeCutSceneCamera& GetActiveCutSceneCamera() const {
+        return active_cut_scene_camera_;
+    }
     const std::vector<MissionStatusMessageDisplay>&
     GetDisplayedMissionStatusMessages() const {
         return displayed_mission_status_messages_;
@@ -152,6 +170,9 @@ private:
     bool UpdateWeaponSelection(const PlayerInputCmd& input_command);
     void UpdateAuthoredMissionState();
     void UpdateAuthoredCutScenes();
+    void UpdateAuthoredCutSceneCamera(
+        const AuthoredMissionCutScene& definition,
+        int tick_count);
     void PublishAuthoredCutSceneState(
         const AuthoredMissionCutScene& definition,
         bool is_running,
@@ -218,6 +239,7 @@ private:
     std::vector<int> mission_cut_scene_ticks_;
     std::vector<uint8_t> mission_cut_scene_running_;
     std::vector<uint8_t> mission_cut_scene_finished_;
+    RuntimeCutSceneCamera active_cut_scene_camera_;
     struct AuthoredDoorRuntime {
         RuntimeDoorDefinition definition;
         RuntimeDoorState state;

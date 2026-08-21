@@ -70,6 +70,22 @@ int SecondsToSimulationTicks(float seconds) {
     return static_cast<int>(tick_count);
 }
 
+double PositiveFiniteSeconds(float seconds) {
+    return std::isfinite(seconds) && seconds > 0.0f
+        ? static_cast<double>(seconds)
+        : 0.0;
+}
+
+glm::vec3 NormalizeOrFallback(
+    const glm::vec3& value,
+    const glm::vec3& fallback) {
+    const float length = glm::length(value);
+    if (!std::isfinite(length) || length <= 0.000001f) {
+        return fallback;
+    }
+    return value / length;
+}
+
 void ApplyMissionVariableDelta(int& value, double expression_value, int direction) {
     int delta = 0;
     if (!TryTruncateMissionExpressionValue(expression_value, delta)) {
@@ -500,6 +516,7 @@ void RuntimeWorld::Reset() {
     mission_cut_scene_ticks_.clear();
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
+    active_cut_scene_camera_ = RuntimeCutSceneCamera();
     mission_status_messages_.clear();
     mission_status_message_slots_.fill(-1);
     displayed_mission_status_messages_.clear();
@@ -1038,6 +1055,7 @@ void RuntimeWorld::SetAuthoredMissionState(
     mission_cut_scene_ticks_.clear();
     mission_cut_scene_running_.clear();
     mission_cut_scene_finished_.clear();
+    active_cut_scene_camera_ = RuntimeCutSceneCamera();
     mission_cut_scene_ticks_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_running_.reserve(mission_cut_scenes_.size());
     mission_cut_scene_finished_.reserve(mission_cut_scenes_.size());
@@ -1392,7 +1410,96 @@ void RuntimeWorld::PublishAuthoredCutSceneState(
     mission_expression_state_.SetNumber(prefix + ".nTick", tick_count);
 }
 
+void RuntimeWorld::UpdateAuthoredCutSceneCamera(
+    const AuthoredMissionCutScene& definition,
+    int tick_count) {
+    if (definition.camera_shots.empty()) {
+        return;
+    }
+
+    const double current_time_seconds = static_cast<double>(tick_count) /
+        static_cast<double>(GameClock::TICK_RATE_HZ);
+    const double time_scale = PositiveFiniteSeconds(definition.time_scale);
+    double shot_start_seconds = 0.0;
+
+    for (size_t shot_index = 0;
+         shot_index < definition.camera_shots.size();
+         ++shot_index) {
+        const AuthoredMissionCutSceneShot& shot =
+            definition.camera_shots[shot_index];
+        const double shot_duration_seconds =
+            PositiveFiniteSeconds(shot.duration_seconds) * time_scale;
+        const bool is_active_shot = current_time_seconds <
+                shot_start_seconds + shot_duration_seconds ||
+            shot_index + 1 == definition.camera_shots.size();
+        if (!is_active_shot) {
+            shot_start_seconds += shot_duration_seconds;
+            continue;
+        }
+
+        const double shot_progress = shot_duration_seconds > 0.0
+            ? (current_time_seconds - shot_start_seconds) / shot_duration_seconds
+            : 0.0;
+        const float interpolation = static_cast<float>(std::clamp(
+            shot_progress,
+            0.0,
+            1.0));
+        const glm::mat3 active_orientation = BuildEngineOrientation(
+            shot.orientation);
+        glm::vec3 position = shot.position;
+        glm::mat3 orientation = active_orientation;
+        float field_of_view = shot.field_of_view_radians;
+
+        if (shot.smooth_to_next && shot_index + 1 < definition.camera_shots.size()) {
+            const AuthoredMissionCutSceneShot& next_shot =
+                definition.camera_shots[shot_index + 1];
+            position = glm::mix(shot.position, next_shot.position, interpolation);
+            const glm::mat3 next_orientation = BuildEngineOrientation(
+                next_shot.orientation);
+            const glm::vec3 forward = NormalizeOrFallback(
+                glm::mix(active_orientation[1], next_orientation[1], interpolation),
+                active_orientation[1]);
+            glm::vec3 up = NormalizeOrFallback(
+                glm::mix(active_orientation[2], next_orientation[2], interpolation),
+                active_orientation[2]);
+            const glm::vec3 right = NormalizeOrFallback(
+                glm::cross(forward, up),
+                active_orientation[0]);
+            up = NormalizeOrFallback(glm::cross(right, forward), up);
+            orientation[0] = right;
+            orientation[1] = forward;
+            orientation[2] = up;
+            field_of_view = glm::mix(
+                shot.field_of_view_radians,
+                next_shot.field_of_view_radians,
+                interpolation);
+        }
+
+        active_cut_scene_camera_.active = true;
+        active_cut_scene_camera_.position = position;
+        active_cut_scene_camera_.right = orientation[0];
+        active_cut_scene_camera_.forward = orientation[1];
+        active_cut_scene_camera_.up = orientation[2];
+        active_cut_scene_camera_.field_of_view_y_radians =
+            std::isfinite(field_of_view) && field_of_view > 0.0f
+            ? field_of_view
+            : 1.0f;
+        active_cut_scene_camera_.viewport_height_factor =
+            std::isfinite(definition.viewport_height_factor)
+            ? std::max(0.0f, definition.viewport_height_factor)
+            : 1.0f;
+        active_cut_scene_camera_.time_of_day =
+            std::isfinite(definition.time_of_day)
+            ? definition.time_of_day
+            : -1.0f;
+        active_cut_scene_camera_.shot_index = static_cast<int>(shot_index);
+        return;
+    }
+}
+
 void RuntimeWorld::UpdateAuthoredCutScenes() {
+    active_cut_scene_camera_ = RuntimeCutSceneCamera();
+
     const auto evaluate_condition = [this](const std::string& expression) {
         bool result = false;
         return !expression.empty() &&
@@ -1457,6 +1564,9 @@ void RuntimeWorld::UpdateAuthoredCutScenes() {
 
         mission_cut_scene_running_[scene_index] = is_running ? 1 : 0;
         mission_cut_scene_finished_[scene_index] = is_finished ? 1 : 0;
+        if (is_running) {
+            UpdateAuthoredCutSceneCamera(definition, tick_count);
+        }
         PublishAuthoredCutSceneState(
             definition,
             is_running,
