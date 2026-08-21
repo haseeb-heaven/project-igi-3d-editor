@@ -308,6 +308,7 @@ target_sources(igi_tests PRIVATE
     source/player_fall_impact.cpp
     source/player_motion.cpp
     source/player_ladder.cpp
+    source/animation_motion.cpp
     source/player_controller.cpp
     source/weapon_system.cpp
     source/ai_events.cpp

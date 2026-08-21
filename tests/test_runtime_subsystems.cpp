@@ -17,6 +17,7 @@
 #include "../source/player_ladder.h"
 #include "../source/weapon_system.h"
 #include "../source/ai_system.h"
+#include "../source/animation_motion.h"
 #include "../source/level_flow.h"
 #include "../source/runtime/runtime_world.h"
 #include "../source/runtime/runtime_session.h"
@@ -60,6 +61,22 @@ bool WallAtOneMeter(float, float y, float) {
 
 bool LowRoofAtStandingHeight(float, float, float z) {
     return z >= 6000.0f;
+}
+
+AnimationClip BuildAnimationMotionFixture() {
+    AnimationClip animation_clip;
+    animation_clip.length_ms = 320;
+    animation_clip.translationKeys = {
+        AnimTranslationKey{0, 0, glm::vec3(0.0f, 0.0f, 0.0f)},
+        AnimTranslationKey{0, 160, glm::vec3(1.0f, 2.0f, 0.0f)},
+        AnimTranslationKey{0, 320, glm::vec3(2.0f, 4.0f, 0.0f)},
+    };
+    animation_clip.events = {
+        AnimEvent{0, 8, 160, -1, glm::vec3(0.0f)},
+        AnimEvent{1, 9, 0, -1, glm::vec3(0.0f)},
+        AnimEvent{2, 10, 320, -1, glm::vec3(0.0f)},
+    };
+    return animation_clip;
 }
 
 QVMFile BuildRetailAiPatrolScript() {
@@ -572,6 +589,89 @@ TEST(RuntimeTaskTreeTest, RejectsDuplicateOwnershipAndDestroysChildrenBeforePare
 
     tree.Clear();
     EXPECT_EQ(lifecycle_events.back(), "destroy:1");
+}
+
+TEST(AnimationMotionTest, SamplesRootTranslationAndPreservesReferenceWorldScale) {
+    const AnimationClip animation_clip = BuildAnimationMotionFixture();
+
+    const glm::vec3 sampled_position = AnimationMotionSampler::SampleRootTranslation(
+        animation_clip,
+        80.0f);
+
+    EXPECT_NEAR(sampled_position.x, 20.48f, 0.0001f);
+    EXPECT_NEAR(sampled_position.y, 40.96f, 0.0001f);
+    EXPECT_FLOAT_EQ(sampled_position.z, 0.0f);
+}
+
+TEST(AnimationMotionTest, AdvancesForwardAndDispatchesEventsOnClosedInterval) {
+    const AnimationClip animation_clip = BuildAnimationMotionFixture();
+
+    const AnimationMotionStep step = AnimationMotionSampler::Advance(
+        animation_clip,
+        0.0f,
+        160.0f,
+        false);
+
+    EXPECT_FLOAT_EQ(step.current_time_ms, 160.0f);
+    EXPECT_FALSE(step.wrapped);
+    EXPECT_FALSE(step.ended);
+    EXPECT_NEAR(step.root_motion_delta.x, 40.96f, 0.0001f);
+    EXPECT_NEAR(step.root_motion_delta.y, 81.92f, 0.0001f);
+    EXPECT_NE(std::find(step.crossed_event_ids.begin(), step.crossed_event_ids.end(), 8),
+        step.crossed_event_ids.end());
+    EXPECT_EQ(std::find(step.crossed_event_ids.begin(), step.crossed_event_ids.end(), 9),
+        step.crossed_event_ids.end());
+}
+
+TEST(AnimationMotionTest, WrapsForwardAndIncludesBothSidesOfTheAnimationSeam) {
+    const AnimationClip animation_clip = BuildAnimationMotionFixture();
+
+    const AnimationMotionStep step = AnimationMotionSampler::Advance(
+        animation_clip,
+        160.0f,
+        160.0f,
+        true);
+
+    EXPECT_FLOAT_EQ(step.current_time_ms, 0.0f);
+    EXPECT_TRUE(step.wrapped);
+    EXPECT_FALSE(step.ended);
+    EXPECT_NEAR(step.root_motion_delta.x, 40.96f, 0.0001f);
+    EXPECT_NEAR(step.root_motion_delta.y, 81.92f, 0.0001f);
+    EXPECT_NE(std::find(step.crossed_event_ids.begin(), step.crossed_event_ids.end(), 9),
+        step.crossed_event_ids.end());
+    EXPECT_NE(std::find(step.crossed_event_ids.begin(), step.crossed_event_ids.end(), 10),
+        step.crossed_event_ids.end());
+}
+
+TEST(AnimationMotionTest, SupportsReverseLadderPlaybackAndReverseSeams) {
+    const AnimationClip animation_clip = BuildAnimationMotionFixture();
+
+    const AnimationMotionStep reverse_step = AnimationMotionSampler::Advance(
+        animation_clip,
+        320.0f,
+        -160.0f,
+        false);
+    EXPECT_FLOAT_EQ(reverse_step.current_time_ms, 160.0f);
+    EXPECT_FALSE(reverse_step.ended);
+    EXPECT_NEAR(reverse_step.root_motion_delta.x, -40.96f, 0.0001f);
+    EXPECT_NEAR(reverse_step.root_motion_delta.y, -81.92f, 0.0001f);
+    EXPECT_NE(std::find(reverse_step.crossed_event_ids.begin(), reverse_step.crossed_event_ids.end(), 8),
+        reverse_step.crossed_event_ids.end());
+
+    const AnimationMotionStep wrapped_reverse_step = AnimationMotionSampler::Advance(
+        animation_clip,
+        0.0f,
+        -160.0f,
+        true);
+    EXPECT_FLOAT_EQ(wrapped_reverse_step.current_time_ms, 160.0f);
+    EXPECT_TRUE(wrapped_reverse_step.wrapped);
+    EXPECT_FALSE(wrapped_reverse_step.ended);
+    EXPECT_NEAR(wrapped_reverse_step.root_motion_delta.x, -40.96f, 0.0001f);
+    EXPECT_NEAR(wrapped_reverse_step.root_motion_delta.y, -81.92f, 0.0001f);
+    EXPECT_NE(std::find(wrapped_reverse_step.crossed_event_ids.begin(), wrapped_reverse_step.crossed_event_ids.end(), 10),
+        wrapped_reverse_step.crossed_event_ids.end());
+    EXPECT_NE(std::find(wrapped_reverse_step.crossed_event_ids.begin(), wrapped_reverse_step.crossed_event_ids.end(), 8),
+        wrapped_reverse_step.crossed_event_ids.end());
 }
 
 // 4. Player Locomotion, Physics & Obstacle Collision Integration Tests
