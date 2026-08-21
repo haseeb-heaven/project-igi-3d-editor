@@ -64,6 +64,7 @@
 - [x] Add the grounded vanilla map-computer action, held-key edge suppression,
       six-row objective snapshot, phosphor-style gameplay HUD fallback, and
       player movement/look/interaction input freeze while it is open;
+      default input now matches OpenIGI's Right Ctrl crouch / C map binding;
       keep the OpenIGI animated map-camera flight and tactical map interaction
       pending for a later presentation slice.
 - [x] Publish moving guard transforms and animation-request metadata through
