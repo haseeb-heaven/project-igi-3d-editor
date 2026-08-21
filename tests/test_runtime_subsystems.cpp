@@ -14,6 +14,7 @@
 #include "../source/player_fall_impact.h"
 #include "../source/player_collision.h"
 #include "../source/player_motion.h"
+#include "../source/player_ladder.h"
 #include "../source/weapon_system.h"
 #include "../source/ai_system.h"
 #include "../source/level_flow.h"
@@ -642,6 +643,78 @@ TEST(PlayerMotionTest, PreservesReferenceAirControlMovementSlots) {
     EXPECT_NEAR(air_control_delta.x, -10.0f, 0.0001f);
     EXPECT_NEAR(air_control_delta.y, 10.0f, 0.0001f);
     EXPECT_FLOAT_EQ(air_control_delta.z, 0.0f);
+}
+
+TEST(PlayerLadderTest, BuildsReferenceClimbLineAndMountOffsets) {
+    const LadderPlacement ladder(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 10000.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f));
+
+    EXPECT_EQ(ladder.GetClimbLine().GetStepCount(), 10);
+    EXPECT_EQ(ladder.GetClimbLine().GetTopStep(), 4);
+    EXPECT_NEAR(ladder.GetClimbLine().PositionAtStep(4).z, 4915.2f, 0.001f);
+    EXPECT_NEAR(ladder.GetBottomMount().y, 1515.52f, 0.001f);
+    EXPECT_NEAR(ladder.GetBottomMount().z, 3915.776f, 0.001f);
+    EXPECT_NEAR(ladder.GetTopMount().y, -1638.4f, 0.001f);
+    EXPECT_NEAR(ladder.GetTopMount().z, 15769.6f, 0.001f);
+}
+
+TEST(PlayerLadderTest, ResolvesBottomAndTopActivationGeometry) {
+    const LadderPlacement ladder(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 10000.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f));
+
+    bool at_top = true;
+    EXPECT_TRUE(ladder.CanActivate(
+        glm::vec3(0.0f, -2000.0f, 1000.0f),
+        0.0f,
+        at_top));
+    EXPECT_FALSE(at_top);
+
+    EXPECT_TRUE(ladder.CanActivate(
+        glm::vec3(0.0f, -1000.0f, 9000.0f),
+        0.0f,
+        at_top));
+    EXPECT_TRUE(at_top);
+}
+
+TEST(PlayerLadderTest, MatchesReferenceTraversalStateTransitions) {
+    const LadderPlacement ladder(
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 10000.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f));
+    LadderTraversal traversal;
+
+    traversal.Mount(ladder, false);
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::Climbing);
+    EXPECT_EQ(traversal.Decide(true, false, false), LadderStepResult::SteppingUp);
+    EXPECT_EQ(traversal.GetDirection(), 1);
+    EXPECT_EQ(traversal.Decide(false, false, true), LadderStepResult::Sliding);
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::SlidingDown);
+    EXPECT_TRUE(traversal.CompleteSlide());
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::Inactive);
+
+    traversal.Mount(ladder, false);
+    EXPECT_EQ(traversal.Decide(false, true, false), LadderStepResult::Dismounted);
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::Inactive);
+
+    traversal.Mount(ladder, true);
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::GettingOnTop);
+    traversal.Move(glm::vec3(0.0f, 0.0f, -500.0f));
+    EXPECT_NEAR(traversal.GetPosition().z, ladder.GetTopMount().z - 500.0f, 0.001f);
+    EXPECT_TRUE(traversal.CompleteTopTransition());
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::Climbing);
+    EXPECT_EQ(traversal.Decide(true, false, false), LadderStepResult::ReachedTop);
+    EXPECT_TRUE(traversal.CompleteTopTransition());
+    EXPECT_EQ(traversal.GetPhase(), LadderTraversalPhase::Inactive);
 }
 
 TEST(RuntimePlayerTest, AppliesAnimationRootMotionOnTheFixedStepBoundary) {

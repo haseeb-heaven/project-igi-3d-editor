@@ -110,8 +110,10 @@ parity claims remain gated on IGI1 evidence.
   sound selection, and regression coverage.
 - [x] Port the OpenIGI-referenced airborne and ladder-slide motion integrators,
   root-motion transform order, and the fixed-step player-controller seam.
-- [ ] Port remaining locomotion transitions and ladder/traversal state hooks
-  where the selected vanilla fixture exercises them.
+- [x] Port the OpenIGI-referenced ladder placement offsets, activation geometry,
+  rung discretization, and traversal state transitions as a headless seam.
+- [ ] Bind ladder discovery to the runtime magic-object registry, attachment
+  transforms, animation events, and player input in the selected fixture.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,
