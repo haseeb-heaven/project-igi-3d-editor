@@ -1336,6 +1336,107 @@ TEST(RuntimeWorldTest, OwnsLadderPlacementsAsRuntimeAssetState) {
     EXPECT_TRUE(world.GetLadderPlacements().empty());
 }
 
+TEST(RuntimeWorldTest, MountsAndTraversesLadderWithDeterministicFallback) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    world.SetLadderPlacements({LadderPlacement(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 20000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f))});
+    world.GetPlayer().Reset(glm::vec3(0.0f, -2000.0f, 1000.0f), 0.0f);
+
+    PlayerInputCmd interact_command;
+    interact_command.interact = true;
+    world.UpdateSimulationTick(0, interact_command);
+
+    ASSERT_TRUE(world.IsPlayerOnLadder());
+    ASSERT_EQ(
+        world.GetLadderTraversal().GetPhase(),
+        LadderTraversalPhase::Climbing);
+    EXPECT_NEAR(
+        world.GetPlayer().GetPosition().z,
+        world.GetLadderPlacements()[0].GetBottomMount().z,
+        0.001f);
+
+    PlayerInputCmd climb_command;
+    climb_command.forward = 1.0f;
+    world.UpdateSimulationTick(1, climb_command);
+
+    EXPECT_EQ(world.GetLadderTraversal().GetStep(), 1);
+    EXPECT_GT(
+        world.GetPlayer().GetPosition().z,
+        world.GetLadderPlacements()[0].GetBottomMount().z);
+
+    PlayerInputCmd slide_command;
+    slide_command.interact = true;
+    world.UpdateSimulationTick(2, slide_command);
+    EXPECT_EQ(
+        world.GetLadderTraversal().GetPhase(),
+        LadderTraversalPhase::SlidingDown);
+
+    for (uint64_t tick = 3; tick < 120 && world.IsPlayerOnLadder(); ++tick) {
+        world.UpdateSimulationTick(tick, PlayerInputCmd());
+    }
+
+    EXPECT_FALSE(world.IsPlayerOnLadder());
+    EXPECT_NEAR(world.GetPlayer().GetPosition().z, 0.0f, 0.001f);
+}
+
+TEST(RuntimeWorldTest, CompletesAuthoredLadderStepFromRootMotionEvent) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetLadderPlacements({LadderPlacement(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 20000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f))});
+    world.GetPlayer().Reset(glm::vec3(0.0f, -2000.0f, 1000.0f), 0.0f);
+
+    PlayerInputCmd mount_command;
+    mount_command.interact = true;
+    world.UpdateSimulationTick(0, mount_command);
+
+    PlayerInputCmd authored_step_command;
+    authored_step_command.forward = 1.0f;
+    authored_step_command.root_motion_delta = glm::vec3(0.0f, 0.0f, 600.0f);
+    authored_step_command.ladder_step_complete = true;
+    world.UpdateSimulationTick(1, authored_step_command);
+
+    EXPECT_EQ(world.GetLadderTraversal().GetStep(), 1);
+    EXPECT_NEAR(
+        world.GetPlayer().GetPosition().z,
+        world.GetLadderPlacements()[0].GetBottomMount().z + 600.0f,
+        0.001f);
+}
+
+TEST(RuntimeWorldTest, TopLadderMountCompletesFallbackTransition) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+    world.SetLadderPlacements({LadderPlacement(
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 20000.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 12288.0f),
+        glm::mat3(1.0f))});
+    world.GetPlayer().Reset(glm::vec3(0.0f, -1000.0f, 9000.0f), 0.0f);
+
+    PlayerInputCmd interact_command;
+    interact_command.interact = true;
+    world.UpdateSimulationTick(0, interact_command);
+    ASSERT_EQ(
+        world.GetLadderTraversal().GetPhase(),
+        LadderTraversalPhase::GettingOnTop);
+
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    EXPECT_EQ(
+        world.GetLadderTraversal().GetPhase(),
+        LadderTraversalPhase::Climbing);
+}
+
 TEST(RuntimeWorldTest, ProjectileDetonationAppliesBlastDamageToNearbyGuard) {
     RuntimeWorld world;
     world.Initialize(FlatTerrain);

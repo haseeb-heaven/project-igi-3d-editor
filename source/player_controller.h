@@ -32,6 +32,13 @@ struct PlayerInputCmd {
     glm::vec3 root_motion_delta = glm::vec3(0.0f);
     float root_motion_scale = PlayerMotion::DefaultDeltaTranslationScale;
     bool suppress_root_motion_scale = false;
+
+    // Animation event edges used by the ladder traversal state machine. The
+    // input router leaves these false; an animation presenter may supply them
+    // when authored clips are available.
+    bool ladder_step_complete = false;
+    bool ladder_top_transition_complete = false;
+    bool ladder_slide_complete = false;
 };
 
 enum class PlayerStanceState {

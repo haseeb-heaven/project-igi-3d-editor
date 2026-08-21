@@ -83,6 +83,8 @@ public:
     // consumes this value without coupling presentation to projectile state.
     float GetFlashEffectStrength() const { return flash_effect_strength_; }
     bool IsZoomActive() const { return zoom_active_; }
+    bool IsPlayerOnLadder() const { return ladder_traversal_.IsOnLadder(); }
+    const LadderTraversal& GetLadderTraversal() const { return ladder_traversal_; }
 
     bool IsMissionActive() const { return level_flow_.GetStatus() == MissionStatus::InProgress; }
 
@@ -108,6 +110,9 @@ private:
     void ApplyScriptPatrolRoute(AiGuardEntity& guard) const;
     void ApplyGuardCombatDamage(uint64_t tick_number);
     void PlayFootstepIfNeeded(const PlayerInputCmd& input_command, bool was_grounded);
+    bool TryMountNearestLadder();
+    bool TickLadderTraversal(const PlayerInputCmd& input_command);
+    void EndLadderTraversal();
 
     struct GuardScriptState {
         QvmProgram program;
@@ -124,6 +129,9 @@ private:
     PlayerController::Tuning player_tuning_;
     std::vector<uint32_t> player_weapon_cycle_;
     std::vector<LadderPlacement> ladder_placements_;
+    LadderTraversal ladder_traversal_;
+    int active_ladder_index_ = -1;
+    glm::vec3 ladder_slide_velocity_ = glm::vec3(0.0f);
     WeaponSystem weapons_;
     ProjectileSystem projectiles_;
     AiSystem ai_;

@@ -379,6 +379,9 @@ void RuntimeWorld::Reset() {
     weapons_.SetPlayerWeaponCycle(player_weapon_cycle_);
     weapons_.SelectWeaponSlot(0);
     ladder_placements_.clear();
+    ladder_traversal_ = LadderTraversal();
+    active_ladder_index_ = -1;
+    ladder_slide_velocity_ = glm::vec3(0.0f);
     projectiles_.Clear();
     ai_.Clear();
     ClearGuardScripts();
@@ -447,7 +450,219 @@ void RuntimeWorld::SetPlayerWeaponCycle(const std::vector<uint32_t>& weapon_cycl
 }
 
 void RuntimeWorld::SetLadderPlacements(std::vector<LadderPlacement> ladder_placements) {
+    if (ladder_traversal_.IsOnLadder()) {
+        EndLadderTraversal();
+    }
     ladder_placements_ = std::move(ladder_placements);
+    ladder_traversal_ = LadderTraversal();
+    active_ladder_index_ = -1;
+    ladder_slide_velocity_ = glm::vec3(0.0f);
+}
+
+bool RuntimeWorld::TryMountNearestLadder() {
+    if (!player_.IsAlive() || ladder_placements_.empty()) {
+        return false;
+    }
+
+    const glm::vec3 activation_position = player_.GetEyePosition();
+    const float player_yaw_degrees = player_.GetYaw();
+    int nearest_ladder_index = -1;
+    float nearest_distance_squared = std::numeric_limits<float>::max();
+    bool nearest_ladder_is_at_top = false;
+
+    for (size_t ladder_index = 0;
+         ladder_index < ladder_placements_.size();
+         ++ladder_index) {
+        bool at_top = false;
+        const LadderPlacement& ladder = ladder_placements_[ladder_index];
+        if (!ladder.CanActivate(activation_position, player_yaw_degrees, at_top)) {
+            continue;
+        }
+
+        const glm::vec3 distance = ladder.GetOrigin() - activation_position;
+        const float distance_squared = glm::dot(distance, distance);
+        if (nearest_ladder_index >= 0 &&
+            distance_squared >= nearest_distance_squared) {
+            continue;
+        }
+
+        nearest_ladder_index = static_cast<int>(ladder_index);
+        nearest_distance_squared = distance_squared;
+        nearest_ladder_is_at_top = at_top;
+    }
+
+    if (nearest_ladder_index < 0) {
+        return false;
+    }
+
+    active_ladder_index_ = nearest_ladder_index;
+    ladder_traversal_.Mount(
+        ladder_placements_[static_cast<size_t>(active_ladder_index_)],
+        nearest_ladder_is_at_top);
+    ladder_slide_velocity_ = glm::vec3(0.0f);
+
+    player_.SetPosition(ladder_traversal_.GetPosition());
+    player_.SetOrientation(
+        ladder_traversal_.GetFacingYawDegrees(),
+        player_.GetPitch());
+    return true;
+}
+
+bool RuntimeWorld::TickLadderTraversal(const PlayerInputCmd& input_command) {
+    if (!ladder_traversal_.IsOnLadder()) {
+        return false;
+    }
+
+    if (!player_.IsAlive() || active_ladder_index_ < 0 ||
+        active_ladder_index_ >= static_cast<int>(ladder_placements_.size())) {
+        EndLadderTraversal();
+        return true;
+    }
+
+    const LadderPlacement& ladder = ladder_placements_[
+        static_cast<size_t>(active_ladder_index_)];
+    const bool has_root_motion = glm::dot(
+        input_command.root_motion_delta,
+        input_command.root_motion_delta) > 0.00000001f;
+    const auto apply_root_motion = [this, &input_command]() {
+        const glm::vec3 world_delta = PlayerMotion::ApplyRootMotion(
+            input_command.root_motion_delta,
+            ladder_traversal_.GetFacingYawDegrees(),
+            input_command.root_motion_scale,
+            true);
+        ladder_traversal_.Move(world_delta);
+    };
+    const auto complete_inferred_step = [this, &ladder]() {
+        const int current_step = ladder_traversal_.GetStep();
+        const int next_step = current_step + ladder_traversal_.GetDirection();
+        const glm::vec3 current_position = ladder.GetClimbLine()
+            .PositionAtStep(current_step);
+        const glm::vec3 next_position = ladder.GetClimbLine()
+            .PositionAtStep(next_step);
+        ladder_traversal_.Move(next_position - current_position);
+        ladder_traversal_.CompleteStep();
+    };
+
+    switch (ladder_traversal_.GetPhase()) {
+        case LadderTraversalPhase::Climbing: {
+            if (input_command.interact) {
+                ladder_traversal_.Decide(false, false, true);
+                if (ladder_traversal_.GetPhase() ==
+                    LadderTraversalPhase::SlidingDown) {
+                    ladder_slide_velocity_ = glm::vec3(0.0f);
+                }
+                break;
+            }
+
+            if (ladder_traversal_.GetDirection() == 0) {
+                ladder_traversal_.Decide(
+                    input_command.forward > 0.01f,
+                    input_command.forward < -0.01f,
+                    false);
+            }
+
+            if (ladder_traversal_.GetPhase() != LadderTraversalPhase::Climbing) {
+                break;
+            }
+
+            if (ladder_traversal_.GetDirection() != 0) {
+                if (has_root_motion) {
+                    apply_root_motion();
+                    if (input_command.ladder_step_complete) {
+                        ladder_traversal_.CompleteStep();
+                    }
+                } else if (input_command.ladder_step_complete) {
+                    // Authored event streams may provide a completion edge
+                    // before a visible translation sample reaches the seam.
+                    ladder_traversal_.CompleteStep();
+                } else {
+                    // inferred fallback: keep Play mode usable until the
+                    // vanilla climb animation/root-motion stream is connected.
+                    complete_inferred_step();
+                }
+            }
+            break;
+        }
+        case LadderTraversalPhase::GettingOnTop:
+        case LadderTraversalPhase::GettingOffTop: {
+            if (has_root_motion) {
+                apply_root_motion();
+                if (input_command.ladder_top_transition_complete) {
+                    ladder_traversal_.CompleteTopTransition();
+                }
+            } else {
+                // inferred fallback: the authored top transition is an
+                // animation event; without that stream, preserve the mount
+                // point and complete the state on the next fixed tick.
+                if (ladder_traversal_.GetPhase() ==
+                    LadderTraversalPhase::GettingOffTop) {
+                    ladder_traversal_.Move(
+                        ladder.GetTopMount() - ladder_traversal_.GetPosition());
+                }
+                ladder_traversal_.CompleteTopTransition();
+            }
+            break;
+        }
+        case LadderTraversalPhase::SlidingDown: {
+            if (has_root_motion) {
+                const glm::vec3 world_delta = PlayerMotion::ApplyRootMotion(
+                    input_command.root_motion_delta,
+                    ladder_traversal_.GetFacingYawDegrees(),
+                    input_command.root_motion_scale,
+                    true);
+                ladder_traversal_.UpdateSlidePosition(
+                    ladder_traversal_.GetPosition() + world_delta);
+                if (input_command.ladder_slide_complete) {
+                    ladder_traversal_.CompleteSlide();
+                }
+            } else {
+                ladder_slide_velocity_ =
+                    PlayerMotion::IntegrateLadderSlideVelocity(
+                        ladder_slide_velocity_);
+                glm::vec3 next_position = ladder_traversal_.GetPosition() +
+                    ladder_slide_velocity_;
+                float slide_floor_height = ladder.GetBottom().z;
+                if (get_terrain_z_) {
+                    slide_floor_height = std::max(
+                        slide_floor_height,
+                        get_terrain_z_(next_position.x, next_position.y));
+                }
+                if (next_position.z <= slide_floor_height) {
+                    next_position.z = slide_floor_height;
+                    ladder_traversal_.UpdateSlidePosition(next_position);
+                    ladder_traversal_.CompleteSlide();
+                } else {
+                    ladder_traversal_.UpdateSlidePosition(next_position);
+                }
+            }
+            break;
+        }
+        case LadderTraversalPhase::Inactive:
+            break;
+    }
+
+    if (ladder_traversal_.IsOnLadder()) {
+        player_.SetPosition(ladder_traversal_.GetPosition());
+        player_.SetOrientation(
+            ladder_traversal_.GetFacingYawDegrees(),
+            player_.GetPitch());
+    } else {
+        EndLadderTraversal();
+    }
+    return true;
+}
+
+void RuntimeWorld::EndLadderTraversal() {
+    if (active_ladder_index_ >= 0 &&
+        active_ladder_index_ < static_cast<int>(ladder_placements_.size())) {
+        player_.SetPosition(ladder_traversal_.GetPosition());
+        player_.SetOrientation(
+            ladder_traversal_.GetFacingYawDegrees(),
+            player_.GetPitch());
+    }
+    active_ladder_index_ = -1;
+    ladder_slide_velocity_ = glm::vec3(0.0f);
+    ladder_traversal_ = LadderTraversal();
 }
 
 void RuntimeWorld::SetInteractionQuery(InteractionQuery interaction_query) {
@@ -484,26 +699,36 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         obstacles.push_back(obs);
     }
 
-    // 1. Tick player physics, obstacle & 3D building collision, and movement
+    // 1. Tick player physics, obstacle & 3D building collision, and movement.
+    // Ladder traversal owns the player transform while its authored or
+    // inferred fixed-step state machine is active.
     const bool was_grounded = player_.IsGrounded();
-    player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
-    const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
-    if (landing_impact.hearing_radius_units > 0.0f) {
-        AiStimulusEvent ground_impact;
-        ground_impact.type = AiEventType::GroundImpact;
-        ground_impact.position = player_.GetPosition();
-        ground_impact.hearing_radius_units = landing_impact.hearing_radius_units;
-        ground_impact.originator_id = 0;
-        ground_impact.tick_timestamp = tick_number;
-        ai_.GetEventQueue().Post(ground_impact);
+    bool ladder_tick_handled = ladder_traversal_.IsOnLadder() &&
+        TickLadderTraversal(input_cmd);
+    if (!ladder_tick_handled && input_cmd.interact) {
+        ladder_tick_handled = TryMountNearestLadder();
     }
-    if (landing_impact.damage > 0.0f) {
-        AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
+
+    if (!ladder_tick_handled) {
+        player_.Tick(input_cmd, get_terrain_z_, obstacles, check_collision_);
+        const PlayerFallImpact& landing_impact = player_.GetLastLandingImpact();
+        if (landing_impact.hearing_radius_units > 0.0f) {
+            AiStimulusEvent ground_impact;
+            ground_impact.type = AiEventType::GroundImpact;
+            ground_impact.position = player_.GetPosition();
+            ground_impact.hearing_radius_units = landing_impact.hearing_radius_units;
+            ground_impact.originator_id = 0;
+            ground_impact.tick_timestamp = tick_number;
+            ai_.GetEventQueue().Post(ground_impact);
+        }
+        if (landing_impact.damage > 0.0f) {
+            AudioSystem::PlayWeaponFire(landing_impact.sound_name, SoundEffect::Pain);
+        }
+        if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
+            AudioSystem::Play(SoundEffect::Jump);
+        }
+        PlayFootstepIfNeeded(input_cmd, was_grounded);
     }
-    if (input_cmd.jump && was_grounded && !player_.IsGrounded()) {
-        AudioSystem::Play(SoundEffect::Jump);
-    }
-    PlayFootstepIfNeeded(input_cmd, was_grounded);
 
     // 2. Weapon switching, firing & cooldowns
     if (input_cmd.switch_weapon >= 0 && input_cmd.switch_weapon <= 17) {
@@ -582,7 +807,7 @@ void RuntimeWorld::UpdateSimulationTick(uint64_t tick_number, const PlayerInputC
         AudioSystem::Play(SoundEffect::Reload);
     }
 
-    if (input_cmd.interact) {
+    if (input_cmd.interact && !ladder_tick_handled) {
         RuntimeInteractionResult interaction_result;
         if (interaction_query_) {
             const float yaw_radians = glm::radians(player_.GetYaw());

@@ -117,8 +117,11 @@ parity claims remain gated on IGI1 evidence.
 - [x] Discover attached ladder models at gameplay setup, transform their magic
   vertices into runtime units, and store the immutable placement list in the
   session-owned world.
-- [ ] Bind ladder traversal to animation events and player input in the
-  selected fixture.
+- [x] Bind ladder traversal to player input with a deterministic fixed-step
+  fallback so the selected fixture can mount, climb, slide, and dismount.
+- [ ] Feed the selected fixture's authored ladder animation root-motion and
+  completion events into the runtime command stream; the current event seam is
+  ready, but no animation presenter is connected yet.
 - [ ] Replace fallback patrol/extraction behavior with authored mission data in
   the selected fixture; scan level/Common/Weapons QVMs before adding natives.
 - [ ] Add repeatable vanilla fixture captures for player traversal, AI combat,

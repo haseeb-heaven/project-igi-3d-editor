@@ -30,6 +30,12 @@
       resolves `TASKTYPE_LADDER` by name rather than by a process-local integer.
 - [x] Discover attached ladder models during gameplay setup and copy their
       transformed magic-vertex placement data into RuntimeWorld.
+- [x] Bind ladder mount, climb, top transition, slide, and dismount input to
+      RuntimeWorld; the no-animation path uses a deterministic `inferred`
+      fixed-step fallback so Play mode remains traversable.
+- [ ] Connect authored ladder animation root-motion and completion events to
+      `PlayerInputCmd`; the production seam exists, but the animation presenter
+      still needs to supply the event edges.
 - [x] Gameplay host/input focus, pause, restart, and editor restore integration.
 - [x] Extract and test an explicit `RuntimeSession` state machine with
       editor-snapshot isolation and deterministic restart/close behavior.
@@ -69,6 +75,10 @@
   ladder-slide integrator, movement-slot air control, and root-motion transform
   are implemented and covered; no player animation stream currently feeds the
   new command field, so keyboard movement remains the runtime fallback.
+- `verified-reference` ladder seam: placement, activation, traversal phases,
+  ladder-slide integration, and mount geometry are covered; interactive
+  RuntimeWorld input is implemented, while no-animation rung/top movement is
+  explicitly labelled `inferred` until authored animation events are wired.
 - `architecture-gap`: a controlled gameplay window now owns gameplay focus,
   input callbacks, relative mouse recentering, viewport, and close recovery,
   and `GameplayHost` owns an OpenGL-free presentation snapshot. The actual
