@@ -209,8 +209,11 @@ bool ConfigQvmLoader::Load(const std::string& path, std::vector<ProfileConfig>& 
 ProfileConfig ConfigQvmLoader::GetActiveProfile(const std::string& custom_path) {
     std::vector<std::string> search_paths;
     if (!custom_path.empty()) search_paths.push_back(custom_path);
+    // The editor's own directory wins: a config.qvm shipped next to the exe
+    // (or run from) is the authoring copy the user edits.
     search_paths.push_back("config.qvm");
-    search_paths.push_back("D:\\IGI1\\config.qvm");
+    search_paths.push_back(Utils::GetExeDirectory() + "\\config.qvm");
+    search_paths.push_back(Utils::GetIGIRootPath() + "\\config.qvm");
 
     std::vector<ProfileConfig> profiles;
     int active_idx = 0;
