@@ -3147,6 +3147,13 @@ void App::ApplyRuntimeAiAnimationRequests() {
             object.boneHierarchy,
             guard.requested_animation);
         if (requested_clip == nullptr) {
+            static std::unordered_map<uint32_t, int> logged_missing;
+            if (logged_missing[guard.id]++ == 0) {
+                Logger::Get().Log(LogLevel::WARNING,
+                    "[AI-ANIM] Guard " + std::to_string(guard.id) +
+                    " rig " + std::to_string(object.boneHierarchy) +
+                    " missing clip " + std::to_string(guard.requested_animation));
+            }
             continue;
         }
 

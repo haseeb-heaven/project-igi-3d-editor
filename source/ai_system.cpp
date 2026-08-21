@@ -242,9 +242,22 @@ float HeightAlongLegTo(const AiGuardEntity& g, const glm::vec3& waypoint, float 
 
 // OpenIGI AiSoldier.GoTo: head for a graph node following the route table.
 bool GoTo(AiGuardEntity& g, int node) {
-    if (!g.graph || g.graph->route_table.empty()) return false;
-    if (GRAPH_FindNode(*g.graph, node) == nullptr) return false;
-    if (g.current_node < 0) return false;
+    if (!g.graph || g.graph->route_table.empty()) {
+        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
+            " no graph/route_table (graph=" + (g.graph ? "set" : "null") +
+            " rt=" + std::to_string(g.graph ? (int)g.graph->route_table.size() : -1) + ")");
+        return false;
+    }
+    if (GRAPH_FindNode(*g.graph, node) == nullptr) {
+        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
+            " dst node " + std::to_string(node) + " not in graph");
+        return false;
+    }
+    if (g.current_node < 0) {
+        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
+            " current_node invalid");
+        return false;
+    }
 
     if (g.current_node == node) {
         g.route.clear();
@@ -570,6 +583,25 @@ void AiSystem::Update(
     }
 
     // 4. Advance the 30 Hz simulation tick.
+    if (alarm_active_ || true) {
+        static uint64_t last_log_tick = 0;
+        if (tick_ - last_log_tick >= 150 && !guards_.empty()) {
+            last_log_tick = tick_;
+            for (const auto& g : guards_) {
+                Logger::Get().Log(LogLevel::INFO,
+                    "[AI-STATE] t=" + std::to_string(tick_) + " g" +
+                    std::to_string(g.id) + " st=" + std::to_string((int)g.state) +
+                    " cmd=" + std::to_string(g.command_index) + "/" +
+                    std::to_string(g.patrol_commands.size()) +
+                    " stop=" + std::to_string(g.patrol_stopped ? 1 : 0) +
+                    " started=" + std::to_string(g.patrol_started ? 1 : 0) +
+                    " cur=" + std::to_string(g.current_node) +
+                    " route=" + std::to_string(g.route.size()) +
+                    " pos=" + std::to_string((int)g.position.x) + "," +
+                    std::to_string((int)g.position.y));
+            }
+        }
+    }
     tick_ += static_cast<uint64_t>(std::max(1, (int)std::lround(delta_seconds * 30.0)));
 }
 
