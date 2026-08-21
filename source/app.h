@@ -529,6 +529,7 @@ private:
   void DrawGameplayPlayerWeapon();
   void DrawGameplayProjectiles();
   void UpdateGameplayFieldOfView();
+  void ApplyRuntimeCutSceneCamera();
   void CaptureGameplayRenderSnapshot();
   void DispatchEventBindings();
 

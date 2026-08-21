@@ -733,6 +733,7 @@ void App::Frame(float delta_seconds) {
 		gameplay_viewer_.yaw_ = player.GetYaw();
 		gameplay_viewer_.pitch_ = player.GetPitch();
 		UpdateGameplayViewerVectors();
+		ApplyRuntimeCutSceneCamera();
 
 		// Update the session-owned render copy. Authoring objects remain immutable
 		// while gameplay is running and are restored by dropping this copy.
@@ -1074,12 +1075,20 @@ void App::Frame(float delta_seconds) {
 void App::UpdateGameplayFieldOfView() {
     constexpr float default_field_of_view_degrees = FOVY_IN_DEGREE;
     constexpr float zoomed_field_of_view_degrees = 40.0f;
+    const igi::RuntimeCutSceneCamera& cut_scene_camera =
+        gameplay_host_.GetWorld().GetActiveCutSceneCamera();
+    const bool use_cut_scene_field_of_view = IsGameplayRenderTarget() &&
+        cut_scene_camera.active &&
+        std::isfinite(cut_scene_camera.field_of_view_y_radians) &&
+        cut_scene_camera.field_of_view_y_radians > 0.0f;
     const bool zoom_active = IsGameplayRenderTarget() &&
         gameplay_host_.GetWorld().IsZoomActive();
-    const float desired_field_of_view = glm::radians(
-        zoom_active
-            ? zoomed_field_of_view_degrees
-            : default_field_of_view_degrees);
+    const float desired_field_of_view = use_cut_scene_field_of_view
+        ? cut_scene_camera.field_of_view_y_radians
+        : glm::radians(
+            zoom_active
+                ? zoomed_field_of_view_degrees
+                : default_field_of_view_degrees);
     if (std::abs(view_define_.fovy_ - desired_field_of_view) <= 0.0001f) {
         return;
     }
@@ -1101,6 +1110,29 @@ void App::UpdateGameplayFieldOfView() {
         view_define_.tan_half_fovy_;
 }
 
+void App::ApplyRuntimeCutSceneCamera() {
+    if (!IsGameplayRenderTarget()) {
+        return;
+    }
+
+    const igi::RuntimeCutSceneCamera& cut_scene_camera =
+        gameplay_host_.GetWorld().GetActiveCutSceneCamera();
+    if (!cut_scene_camera.active) {
+        const igi::PlayerController& player =
+            gameplay_host_.GetWorld().GetPlayer();
+        gameplay_viewer_.pos_ = player.GetEyePosition();
+        gameplay_viewer_.yaw_ = player.GetYaw();
+        gameplay_viewer_.pitch_ = player.GetPitch();
+        UpdateGameplayViewerVectors();
+        return;
+    }
+
+    gameplay_viewer_.pos_ = cut_scene_camera.position;
+    gameplay_viewer_.forward_ = cut_scene_camera.forward;
+    gameplay_viewer_.right_ = cut_scene_camera.right;
+    gameplay_viewer_.up_ = cut_scene_camera.up;
+}
+
 void App::CaptureGameplayRenderSnapshot() {
     if (!IsGameplayRenderTarget()) {
         return;
@@ -1119,6 +1151,7 @@ void App::CaptureGameplayRenderSnapshot() {
 
 void App::DrawGameplayPlayerWeapon() {
 	if (!IsGameplayRenderTarget()) return;
+	if (gameplay_host_.GetWorld().GetActiveCutSceneCamera().active) return;
 
 	const igi::RuntimeRenderSnapshot& render_snapshot =
 		gameplay_host_.GetRenderSnapshot();
@@ -1551,44 +1584,99 @@ void App::SetupRuntimeMissionState() {
 		? runtime_level_objects_->GetObjects()
 		: level_.GetLevelObjects().GetObjects();
 
-	const auto authored_cut_scene_duration = [&authored_objects](int cut_scene_index) {
-		float total_duration_seconds = 0.0f;
+	const auto is_descendant_of = [&authored_objects](
+		int object_index,
+		int ancestor_index) {
+		int parent_index = authored_objects[object_index].parentIndex;
+		for (size_t depth = 0;
+			 depth < authored_objects.size() &&
+			 parent_index >= 0 &&
+			 parent_index < static_cast<int>(authored_objects.size());
+			 ++depth) {
+			if (parent_index == ancestor_index) {
+				return true;
+			}
+			parent_index = authored_objects[parent_index].parentIndex;
+		}
+		return false;
+	};
+
+	const auto try_read_finite_float = [](const std::string& token, float& value) {
+		if (token.empty()) {
+			return false;
+		}
+		try {
+			size_t parsed_characters = 0;
+			value = std::stof(token, &parsed_characters);
+			return parsed_characters == token.size() && std::isfinite(value);
+		} catch (...) {
+			return false;
+		}
+	};
+
+	const auto try_read_boolean = [](const std::string& token, bool& value) {
+		if (token == "TRUE" || token == "true" || token == "1") {
+			value = true;
+			return true;
+		}
+		if (token == "FALSE" || token == "false" || token == "0") {
+			value = false;
+			return true;
+		}
+		return false;
+	};
+
+	const auto authored_cut_scene_shots = [
+		&authored_objects,
+		&is_descendant_of,
+		&try_read_finite_float,
+		&try_read_boolean](int cut_scene_index) {
+		std::vector<igi::AuthoredMissionCutSceneShot> shots;
 		for (int object_index = 0;
 			 object_index < static_cast<int>(authored_objects.size());
 			 ++object_index) {
 			const LevelObject& object = authored_objects[object_index];
-			if (object.deleted || object.type != "EditCamera") {
+			if (object.deleted || object.type != "EditCamera" ||
+				!is_descendant_of(object_index, cut_scene_index) ||
+				object.argTokens.size() <= 15) {
 				continue;
 			}
 
-			int parent_index = object.parentIndex;
-			bool belongs_to_cut_scene = false;
-			for (size_t depth = 0;
-				 depth < authored_objects.size() &&
-				 parent_index >= 0 &&
-				 parent_index < static_cast<int>(authored_objects.size());
-				 ++depth) {
-				if (parent_index == cut_scene_index) {
-					belongs_to_cut_scene = true;
-					break;
-				}
-				parent_index = authored_objects[parent_index].parentIndex;
-			}
-			if (!belongs_to_cut_scene || object.argTokens.size() <= 10) {
+			igi::AuthoredMissionCutSceneShot shot;
+			float duration_seconds = 0.0f;
+			if (!try_read_finite_float(
+					App::StripQuotes(object.argTokens[3]), shot.position.x) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[4]), shot.position.y) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[5]), shot.position.z) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[6]), shot.orientation.x) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[7]), shot.orientation.y) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[8]), shot.orientation.z) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[9]), shot.field_of_view_radians) ||
+				!try_read_finite_float(
+					App::StripQuotes(object.argTokens[10]), duration_seconds)) {
+				// Malformed camera shots are ignored individually; other mission
+				// state and gameplay remain loadable.
 				continue;
 			}
-
-			try {
-				const float duration = std::stof(App::StripQuotes(object.argTokens[10]));
-				if (std::isfinite(duration)) {
-					total_duration_seconds += std::max(0.0f, duration);
-				}
-			} catch (...) {
-				// Malformed optional camera durations do not invalidate the mission;
-				// the runtime will still publish the authored CutScene state.
+			if (!try_read_boolean(
+					App::StripQuotes(object.argTokens[15]),
+					shot.smooth_to_next)) {
+				continue;
 			}
+			shot.field_of_view_radians = std::clamp(
+				shot.field_of_view_radians,
+				0.001f,
+				3.0f);
+			shot.duration_seconds = std::max(0.0f, duration_seconds);
+			shots.push_back(std::move(shot));
 		}
-		return total_duration_seconds;
+		return shots;
 	};
 
 	std::vector<igi::MissionStateTaskSource> task_sources;
@@ -1610,8 +1698,12 @@ void App::SetupRuntimeMissionState() {
 		task_source.task_id = authored_object.taskId;
 		task_source.argument_tokens = authored_object.argTokens;
 		if (authored_object.type == "CutScene") {
-			task_source.authored_duration_seconds =
-				authored_cut_scene_duration(object_index);
+			task_source.authored_camera_shots =
+				authored_cut_scene_shots(object_index);
+			for (const igi::AuthoredMissionCutSceneShot& shot :
+				task_source.authored_camera_shots) {
+				task_source.authored_duration_seconds += shot.duration_seconds;
+			}
 		}
 		task_sources.push_back(std::move(task_source));
 	}
