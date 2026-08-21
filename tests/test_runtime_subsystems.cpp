@@ -3370,3 +3370,13 @@ TEST(RuntimeSpawnTest, ReturnsNoSpawnWhenLevelHasNoHumanPlayerTask) {
 
     EXPECT_FALSE(SelectAuthoredPlayerSpawn(candidates).has_value());
 }
+
+TEST(AiSystemTest, ClearResetsFixedStepSimulationTick) {
+    AiSystem ai;
+    ai.Update(1.0 / 30.0, glm::vec3(0.0f), true);
+    EXPECT_GT(ai.GetSimulationTick(), 0U);
+
+    ai.Clear();
+
+    EXPECT_EQ(ai.GetSimulationTick(), 0U);
+}

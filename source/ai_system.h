@@ -134,6 +134,8 @@ public:
     void SetMovementCollisionQuery(MovementCollisionQuery movement_collision_query);
     void SetLineOfSightQuery(LineOfSightQuery line_of_sight_query);
 
+    uint64_t GetSimulationTick() const { return tick_; }
+
     // Fixed-step simulation tick
     void Update(double delta_seconds, const glm::vec3& player_pos, bool player_alive);
 

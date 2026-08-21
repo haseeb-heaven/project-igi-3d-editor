@@ -11,6 +11,7 @@ AiSystem::AiSystem() = default;
 void AiSystem::Clear() {
     guards_.clear();
     event_queue_.Clear();
+    tick_ = 0;
 }
 
 void AiSystem::RegisterGuard(const AiGuardEntity& guard) {
