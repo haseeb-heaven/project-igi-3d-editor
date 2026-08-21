@@ -284,6 +284,7 @@ target_sources(igi_tests PRIVATE
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
+    source/level/qvm_ai_bindings.cpp
     source/level/qvm_compiler.cpp
     source/level/qvm_decompiler.cpp
     source/config.cpp

@@ -2,6 +2,7 @@
 
 #include "../source/ai_script_host.h"
 #include "../source/level/qvm_decompiler.h"
+#include "../source/level/qvm_ai_bindings.h"
 #include "../source/level/qvm_parser.h"
 #include "../source/renderer/graph_writer.h"
 
@@ -181,6 +182,7 @@ TEST(VanillaFixtureParityTest, RetailAiScriptDrivesPatrolAndAlarmBindings) {
 
     const QVMFile ai_script = QVM_Parse(ai_script_path.string());
     ASSERT_TRUE(ai_script.valid) << ai_script.error;
+    EXPECT_EQ(igi::FindFirstCallIntegerArgument(ai_script, "AIAction_Patrol"), 2405);
 
     igi::QvmNativeRegistry registry;
     igi::AiScriptHost script_host(registry);

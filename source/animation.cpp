@@ -1,4 +1,6 @@
 #include "animation.h"
+#include "level/qvm_ai_bindings.h"
+#include "level/qvm_parser.h"
 #include "utils_igi1conv.h"
 #include "logger.h"
 #include "utils.h"
@@ -102,44 +104,24 @@ std::vector<int> FindAiScriptAnimationIds(const std::string& qvmPath) {
     return ids;
 }
 
-// Decompiles ai/<aiTaskId>.qvm to a temp .qsc (via igi1conv), scans it for the
-// first AIAction_Patrol(<id>, ...) call, and deletes the temp file. Returns the
-// patrol path (PatrolPath task) id, or -1 when the script has no patrol action
-// (or the decompile/scan fails).
+// Reads ai/<aiTaskId>.qvm directly and resolves the first literal argument of
+// AIAction_Patrol. Runtime behavior must not depend on a converter executable
+// or temporary decompiler output; QVM decompilation remains an editor-side
+// inspection tool only.
 int FindAiScriptPatrolPathId(const std::string& qvmPath) {
     if (qvmPath.empty() || !fs::exists(qvmPath)) {
         Logger::Get().Log(LogLevel::DEBUG, "[Anim] AI script not found: " + qvmPath);
         return -1;
     }
 
-    std::string tempQsc = igi1conv::MakeTempPath(".aipatrol.qsc");
-    std::string err;
-    if (!igi1conv::QvmDecompile(qvmPath, tempQsc, err)) {
-        Logger::Get().Log(LogLevel::WARNING, "[Anim] Failed to decompile AI script " + qvmPath + ": " + err);
+    const QVMFile qvm = QVM_Parse(qvmPath);
+    if (!qvm.valid) {
+        Logger::Get().Log(LogLevel::WARNING,
+                          "[Anim] Failed to parse AI script " + qvmPath + ": " + qvm.error);
         return -1;
     }
 
-    int pathId = -1;
-    std::ifstream f(tempQsc);
-    if (f.is_open()) {
-        std::string line;
-        const std::string needle = "AIAction_Patrol(";
-        while (std::getline(f, line)) {
-            size_t pos = line.find(needle);
-            if (pos == std::string::npos) continue;
-            pos += needle.size();
-            try {
-                pathId = std::stoi(line.substr(pos));
-                break;
-            } catch (...) {}
-        }
-        f.close();
-    } else {
-        Logger::Get().Log(LogLevel::WARNING, "[Anim] Could not open decompiled AI script: " + tempQsc);
-    }
-
-    std::error_code ec;
-    fs::remove(tempQsc, ec);
+    const int pathId = igi::FindFirstCallIntegerArgument(qvm, "AIAction_Patrol");
 
     Logger::Get().Log(LogLevel::INFO, "[Anim] AIAction_Patrol path id " + std::to_string(pathId) +
                      " in " + qvmPath);

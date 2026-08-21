@@ -8,6 +8,7 @@
 #include <vector>
 #include "../source/game_clock.h"
 #include "../source/level/qvm_interpreter.h"
+#include "../source/level/qvm_ai_bindings.h"
 #include "../source/level/qvm_native_registry.h"
 #include "../source/level/task_tree.h"
 #include "../source/player_controller.h"
@@ -181,6 +182,13 @@ QVMFile BuildRetailAiPatrolScript() {
         program_end,
     };
     return parsed_file;
+}
+
+TEST(RuntimeQvmTest, ResolvesLiteralIntegerFromNativeCallArgumentBlock) {
+    const QVMFile script = BuildRetailAiPatrolScript();
+
+    EXPECT_EQ(FindFirstCallIntegerArgument(script, "AIAction_Patrol"), 700);
+    EXPECT_EQ(FindFirstCallIntegerArgument(script, "MissingNative"), -1);
 }
 
 } // namespace
