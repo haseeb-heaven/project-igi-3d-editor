@@ -75,6 +75,9 @@
 - [x] Prefer the authored vanilla `HumanPlayer` task (script id zero, then the
       first authored player) for Play-mode spawn placement; retain editor-camera
       and level-start positions only as incomplete-level fallbacks.
+- [x] Add an opt-in vanilla fixture parity test for authored level-one QVM
+      gameplay definitions and graph navigation data; proprietary assets remain
+      external through `IGI_VANILLA_ROOT`.
 - [x] Publish authored player/guard death variables and one-tick interaction
       pulses; preserve concrete and generic pickup state aliases used by the
       vanilla objective expressions.

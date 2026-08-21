@@ -80,6 +80,13 @@ readable code to this C++20 codebase.
   Windows CMake build, and the full test target when the environment permits.
   If Windows tooling is unavailable, report the exact verification gap.
 
+The proprietary vanilla install is an external fixture, never a repository
+dependency. Set `IGI_VANILLA_ROOT` to a vanilla Project IGI installation to
+run `VanillaFixtureParityTest`; the test checks real level-one QVM gameplay
+definitions and navigation data, and skips when the fixture is not mounted.
+Fixture evidence supplements focused runtime tests; it does not replace
+Windows interactive verification.
+
 ## Review checklist
 
 - Does the change preserve editor state across open, tick, restart, and close?
