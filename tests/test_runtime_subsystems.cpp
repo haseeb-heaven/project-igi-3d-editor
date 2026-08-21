@@ -3056,6 +3056,8 @@ TEST(RuntimeWorldTest, AuthoredGuardGeneratorGatesPreauthoredGuards) {
 
     ASSERT_EQ(world.GetGuardGeneratorSnapshots().size(), 1U);
     EXPECT_FALSE(world.GetGuardGeneratorSnapshots()[0].is_on);
+    EXPECT_TRUE(
+        world.GetGuardGeneratorSnapshots()[0].active_guard_object_indices.empty());
     ASSERT_NE(world.GetAi().FindGuard(41), nullptr);
     ASSERT_NE(world.GetAi().FindGuard(42), nullptr);
     EXPECT_FALSE(world.GetAi().FindGuard(41)->runtime_enabled);
@@ -3065,6 +3067,9 @@ TEST(RuntimeWorldTest, AuthoredGuardGeneratorGatesPreauthoredGuards) {
     world.UpdateSimulationTick(0, PlayerInputCmd());
 
     EXPECT_TRUE(world.GetGuardGeneratorSnapshots()[0].is_on);
+    EXPECT_EQ(
+        world.GetGuardGeneratorSnapshots()[0].active_guard_object_indices,
+        std::vector<int>({41}));
     EXPECT_TRUE(world.GetAi().FindGuard(41)->runtime_enabled);
     EXPECT_FALSE(world.GetAi().FindGuard(42)->runtime_enabled);
 }

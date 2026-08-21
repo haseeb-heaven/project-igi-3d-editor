@@ -114,14 +114,15 @@ struct RuntimeConditionalContainerSnapshot {
 };
 
 // Immutable presentation state for one authored GuardGenerator. The runtime
-// gates pre-authored child guards deterministically; maximum_spawns documents
-// the retail allocation limit while dynamic soldier creation is still pending.
+// gates pre-authored child guards deterministically and publishes the active
+// child set so presentation does not duplicate mission-state evaluation.
 struct RuntimeGuardGeneratorSnapshot {
     int object_index = -1;
     std::string task_id;
     bool is_on = false;
     int maximum_spawns = 0;
     std::vector<int> guard_object_indices;
+    std::vector<int> active_guard_object_indices;
 };
 
 class RuntimeWorld {

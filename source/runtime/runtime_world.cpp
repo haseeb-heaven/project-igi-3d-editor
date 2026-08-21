@@ -2099,6 +2099,16 @@ void RuntimeWorld::RefreshAuthoredGuardGeneratorSnapshots() {
         snapshot.maximum_spawns = runtime_generator.definition.maximum_spawns;
         snapshot.guard_object_indices =
             runtime_generator.definition.guard_object_indices;
+        const size_t active_guard_count = runtime_generator.is_on
+            ? std::min(
+                snapshot.guard_object_indices.size(),
+                static_cast<size_t>(std::max(
+                    0,
+                    snapshot.maximum_spawns)))
+            : 0U;
+        snapshot.active_guard_object_indices.assign(
+            snapshot.guard_object_indices.begin(),
+            snapshot.guard_object_indices.begin() + active_guard_count);
         authored_guard_generator_snapshots_.push_back(std::move(snapshot));
     }
 }

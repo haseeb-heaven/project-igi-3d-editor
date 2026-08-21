@@ -2256,11 +2256,9 @@ void App::ApplyRuntimeGuardGeneratorStates() {
 	std::vector<uint8_t> visible_by_guard_generator(objects.size(), 1U);
 	for (const igi::RuntimeGuardGeneratorSnapshot& snapshot :
 		 gameplay_host_.GetWorld().GetGuardGeneratorSnapshots()) {
-		const size_t maximum_spawn_count = snapshot.is_on
-			? std::min(
-				snapshot.guard_object_indices.size(),
-				static_cast<size_t>(std::max(0, snapshot.maximum_spawns)))
-			: 0U;
+		const std::unordered_set<int> active_guard_object_indices(
+			snapshot.active_guard_object_indices.begin(),
+			snapshot.active_guard_object_indices.end());
 		for (size_t guard_index = 0;
 			 guard_index < snapshot.guard_object_indices.size();
 			 ++guard_index) {
@@ -2269,7 +2267,7 @@ void App::ApplyRuntimeGuardGeneratorStates() {
 				object_index >= static_cast<int>(objects.size())) {
 				continue;
 			}
-			const bool is_enabled = guard_index < maximum_spawn_count;
+			const bool is_enabled = active_guard_object_indices.contains(object_index);
 			visible_by_guard_generator[static_cast<size_t>(object_index)] =
 				visible_by_guard_generator[static_cast<size_t>(object_index)] &&
 				is_enabled;
