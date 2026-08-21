@@ -346,3 +346,39 @@ TEST(VanillaFixtureParityTest, CommonPatrolScriptExposesAnimationArguments) {
     EXPECT_NE(std::find(animation_ids.begin(), animation_ids.end(), 36),
               animation_ids.end());
 }
+
+TEST(VanillaFixtureParityTest, CommonPatrolScriptExecutesAnimationEventBinding) {
+    if (VanillaRoot().empty()) {
+        GTEST_SKIP() << "Set IGI_VANILLA_ROOT to the vanilla Project IGI install "
+                        "to run this fixture parity test";
+    }
+
+    const std::filesystem::path common_path =
+        FindChildCaseInsensitive(VanillaRoot(), "common");
+    const std::filesystem::path ai_path =
+        FindChildCaseInsensitive(common_path, "ai");
+    const std::filesystem::path patrol_path =
+        FindChildCaseInsensitive(ai_path, "patrol.qvm");
+    ASSERT_FALSE(patrol_path.empty()) << "Vanilla COMMON/AI/PATROL.QVM is missing";
+
+    const QVMFile patrol_script = QVM_Parse(patrol_path.string());
+    ASSERT_TRUE(patrol_script.valid) << patrol_script.error;
+
+    igi::QvmNativeRegistry registry;
+    igi::AiScriptHost script_host(registry);
+    igi::QvmProgram program;
+    ASSERT_TRUE(script_host.LoadProgram(patrol_script, program))
+        << script_host.GetLastError();
+
+    igi::AiGuardEntity guard;
+    guard.requested_animation = 39;
+    ASSERT_TRUE(script_host.Run(program, guard, 3))
+        << script_host.GetLastError();
+
+    // Retail AIEVENT_ANIMATION stores the animation selected by the previous
+    // action in slot zero, reads that slot back, then dispatches the dynamic
+    // AIAction_PlayAnimation call. Verify the complete native binding chain.
+    ASSERT_EQ(guard.script_integer_values.at(0), 39);
+    EXPECT_EQ(guard.requested_animation, 39);
+    EXPECT_EQ(guard.animation_request_serial, 1U);
+}
