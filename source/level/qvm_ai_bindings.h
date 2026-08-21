@@ -2,7 +2,9 @@
 
 #include "qvm_parser.h"
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
 namespace igi {
 
@@ -15,5 +17,12 @@ namespace igi {
 int FindFirstCallIntegerArgument(
     const QVMFile& qvm,
     const std::string& function_name);
+
+// Returns every statically resolvable integer literal at one argument index
+// across calls to a named native function, preserving bytecode order.
+std::vector<int> FindCallIntegerArguments(
+    const QVMFile& qvm,
+    const std::string& function_name,
+    std::size_t argument_index);
 
 } // namespace igi

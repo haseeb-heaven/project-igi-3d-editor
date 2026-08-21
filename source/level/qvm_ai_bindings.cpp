@@ -39,11 +39,13 @@ bool TryReadIntegerLiteral(
 
 } // namespace
 
-int FindFirstCallIntegerArgument(
+std::vector<int> FindCallIntegerArguments(
     const QVMFile& qvm,
-    const std::string& function_name) {
+    const std::string& function_name,
+    std::size_t argument_index) {
+    std::vector<int> values;
     if (!qvm.valid || function_name.empty()) {
-        return -1;
+        return values;
     }
 
     for (size_t instruction_index = 0;
@@ -61,25 +63,36 @@ int FindFirstCallIntegerArgument(
         }
 
         const QVMInstruction& call = qvm.instructions[instruction_index + 1];
-        if (call.type != QVMOpType::CALL || call.call_targets.empty()) {
+        if (call.type != QVMOpType::CALL ||
+            call.call_targets.size() <= argument_index) {
             continue;
         }
 
-        const int32_t first_argument_address = call.call_targets.front();
-        if (first_argument_address < 0) {
+        const int32_t argument_address = call.call_targets[argument_index];
+        if (argument_address < 0) {
             continue;
         }
 
         const QVMInstruction* argument = FindInstructionAtAddress(
             qvm,
-            static_cast<uint32_t>(first_argument_address));
+            static_cast<uint32_t>(argument_address));
         int value = -1;
         if (argument != nullptr && TryReadIntegerLiteral(*argument, value)) {
-            return value;
+            values.push_back(value);
         }
     }
 
-    return -1;
+    return values;
+}
+
+int FindFirstCallIntegerArgument(
+    const QVMFile& qvm,
+    const std::string& function_name) {
+    const std::vector<int> values = FindCallIntegerArguments(
+        qvm,
+        function_name,
+        0);
+    return values.empty() ? -1 : values.front();
 }
 
 } // namespace igi

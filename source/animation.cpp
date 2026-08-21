@@ -71,33 +71,21 @@ std::vector<int> FindAiScriptAnimationIds(const std::string& qvmPath) {
         return ids;
     }
 
-    std::string tempQsc = igi1conv::MakeTempPath(".aianim.qsc");
-    std::string err;
-    if (!igi1conv::QvmDecompile(qvmPath, tempQsc, err)) {
-        Logger::Get().Log(LogLevel::WARNING, "[Anim] Failed to decompile AI script " + qvmPath + ": " + err);
+    const QVMFile qvm = QVM_Parse(qvmPath);
+    if (!qvm.valid) {
+        Logger::Get().Log(LogLevel::WARNING,
+                          "[Anim] Failed to parse AI script " + qvmPath + ": " + qvm.error);
         return ids;
     }
 
-    std::ifstream f(tempQsc);
-    if (f.is_open()) {
-        std::string line;
-        const std::string needle = "AIAction_PlayAnimation(";
-        while (std::getline(f, line)) {
-            size_t pos = line.find(needle);
-            if (pos == std::string::npos) continue;
-            pos += needle.size();
-            try {
-                int id = std::stoi(line.substr(pos));
-                if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
-            } catch (...) {}
+    for (const int animation_id : igi::FindCallIntegerArguments(
+             qvm,
+             "AIAction_PlayAnimation",
+             0)) {
+        if (std::find(ids.begin(), ids.end(), animation_id) == ids.end()) {
+            ids.push_back(animation_id);
         }
-        f.close();
-    } else {
-        Logger::Get().Log(LogLevel::WARNING, "[Anim] Could not open decompiled AI script: " + tempQsc);
     }
-
-    std::error_code ec;
-    fs::remove(tempQsc, ec);
 
     Logger::Get().Log(LogLevel::INFO, "[Anim] Found " + std::to_string(ids.size()) +
                      " AIAction_PlayAnimation id(s) in " + qvmPath);

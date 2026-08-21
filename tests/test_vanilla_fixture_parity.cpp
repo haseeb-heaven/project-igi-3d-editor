@@ -320,3 +320,29 @@ TEST(VanillaFixtureParityTest, RetailAiScriptDrivesPatrolAndAlarmBindings) {
         << script_host.GetLastError();
     EXPECT_EQ(guard.script_alarm_control_id, 98);
 }
+
+TEST(VanillaFixtureParityTest, CommonPatrolScriptExposesAnimationArguments) {
+    if (VanillaRoot().empty()) {
+        GTEST_SKIP() << "Set IGI_VANILLA_ROOT to the vanilla Project IGI install "
+                        "to run this fixture parity test";
+    }
+
+    const std::filesystem::path common_path =
+        FindChildCaseInsensitive(VanillaRoot(), "common");
+    const std::filesystem::path ai_path =
+        FindChildCaseInsensitive(common_path, "ai");
+    const std::filesystem::path patrol_path =
+        FindChildCaseInsensitive(ai_path, "patrol.qvm");
+    ASSERT_FALSE(patrol_path.empty()) << "Vanilla COMMON/AI/PATROL.QVM is missing";
+
+    const QVMFile patrol_script = QVM_Parse(patrol_path.string());
+    ASSERT_TRUE(patrol_script.valid) << patrol_script.error;
+    const std::vector<int> animation_ids = igi::FindCallIntegerArguments(
+        patrol_script,
+        "AIAction_PlayAnimation",
+        0);
+    EXPECT_NE(std::find(animation_ids.begin(), animation_ids.end(), 39),
+              animation_ids.end());
+    EXPECT_NE(std::find(animation_ids.begin(), animation_ids.end(), 36),
+              animation_ids.end());
+}

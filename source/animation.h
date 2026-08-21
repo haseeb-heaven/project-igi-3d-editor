@@ -123,9 +123,10 @@ private:
     std::string FindIffFile(int boneHierarchy) const;
 };
 
-// Decompiles ai/<aiTaskId>.qvm to a temp .qsc (via igi1conv), scans it for
-// AIAction_PlayAnimation(<id>, ...) calls, and deletes the temp file. Returns
-// the unique animation ids in first-seen order (empty on any failure).
+// Parses ai/<aiTaskId>.qvm directly and resolves literal
+// AIAction_PlayAnimation(<id>, ...) arguments in first-seen order. Dynamic
+// animation expressions are intentionally omitted until their native contract
+// is verified; the editor-side QVM disassembler remains available for evidence.
 std::vector<int> FindAiScriptAnimationIds(const std::string& qvmPath);
 
 // Parses ai/<aiTaskId>.qvm directly and resolves the first literal
