@@ -160,10 +160,24 @@ private:
             }
             return tok;
         }
-        while (i < s.size() && s[i] != ',' && s[i] != ')' && s[i] != '(') {
+        if (i < s.size() && s[i] == '(') {
+            // Unquoted parenthesised expression: consume the balanced group so the
+            // caller never stalls on an empty token (review finding 3836051561).
+            int depth = 0;
+            do {
+                const char ch = s[i];
+                tok += ch;
+                ++i;
+                if (ch == '(') ++depth;
+                else if (ch == ')') --depth;
+            } while (i < s.size() && depth > 0);
+            return tok;
+        }
+        while (i < s.size() && s[i] != ',' && s[i] != ')') {
             tok += s[i++];
         }
         while (!tok.empty() && std::isspace(static_cast<unsigned char>(tok.back()))) tok.pop_back();
+        if (tok.empty() && i < s.size()) ++i; // always make progress (hang guard)
         return tok;
     }
 };
