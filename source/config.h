@@ -85,6 +85,9 @@ struct ConfigData {
     bool enableLightmaps; // Apply calculated "Calculate Lightmap" textures during render (Escape menu checkbox)
     bool enableFog; // Terrain/object atmospheric fog — toggle in Terrain Settings panel
     int fogIntensity; // 0-200 (%), step 10; 100 = level default, higher = thicker fog
+    bool weatherEnabled; // r_weather_enabled: render the level's authored rain/snow weather
+    int weatherStyle; // r_weather_kind: 0 = Auto (follow "Is Rain" flag), 1 = Rain, 2 = Snow
+    int weatherSpeed; // r_weather_speed: particle fall-speed percent, 0-200 (100 = authored)
     bool musicEnabled; // Escape-menu Music checkbox preference — persists across level loads/game launches
 
     // NEW: Advanced QED Settings

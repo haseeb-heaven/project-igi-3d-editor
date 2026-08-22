@@ -289,6 +289,7 @@ target_sources(igi_tests PRIVATE
     source/renderer/mef_native.cpp
     source/utils_igi1conv.cpp
     source/renderer/object_lightmap.cpp
+    tests/test_weather_params.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies

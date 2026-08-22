@@ -332,6 +332,9 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					int SEARCH_ROW = btn_idx++;
 					int MUSIC_ROW = btn_idx++;
 					int LIGHTMAPS_ROW = btn_idx++;
+					int WEATHER_ENABLED_ROW = btn_idx++;
+					int WEATHER_STYLE_ROW = btn_idx++;
+					int WEATHER_SPEED_ROW = btn_idx++;
 					int TERRAIN_HEADER_ROW = btn_idx++;
 				int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1, TERRAIN_FOG_ROW = -1, TERRAIN_FOGINT_ROW = -1;
 				if (pause_terrain_expanded_) {
@@ -409,6 +412,36 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
 					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
+					else if (btn_hit2(WEATHER_ENABLED_ROW)) {
+						Config::Get().weatherEnabled = !Config::Get().weatherEnabled;
+						SetWeatherSettings(Config::Get().weatherEnabled, Config::Get().weatherStyle, Config::Get().weatherSpeed);
+						Config::Save();
+					}
+					else if (btn_hit2(WEATHER_STYLE_ROW)) {
+						// Auto -> Rain -> Snow -> Auto (r_weather_kind)
+						int& ws = Config::Get().weatherStyle;
+						ws = (ws + 1) % 3;
+						SetWeatherSettings(Config::Get().weatherEnabled, ws, Config::Get().weatherSpeed);
+						Config::Save();
+					}
+					else if (btn_hit2(WEATHER_SPEED_ROW)) {
+						// Layout MUST match renderer: dynamic label width, val_w=56
+						const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
+						const char* lbl = "Weather Speed";
+						int label_px = (int)strlen(lbl) * 6;
+						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
+						int gx = menu_x + (menu_w - group_w) / 2;
+						int minus_x = gx + label_px + label_gap;
+						int plus_x  = minus_x + btn_w + gap + val_w + gap;
+						int& wsp = Config::Get().weatherSpeed;
+						if (x >= minus_x && x < minus_x + btn_w) {
+							wsp = std::max(0, wsp - 25);
+							SetWeatherSettings(Config::Get().weatherEnabled, Config::Get().weatherStyle, wsp); Config::Save();
+						} else if (x >= plus_x && x < plus_x + btn_w) {
+							wsp = std::min(200, wsp + 25);
+							SetWeatherSettings(Config::Get().weatherEnabled, Config::Get().weatherStyle, wsp); Config::Save();
+						}
+					}
 					else if (btn_hit2(TERRAIN_HEADER_ROW)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_HGT_ROW)) { ToggleTerrainModOption(2); }

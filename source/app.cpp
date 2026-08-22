@@ -98,6 +98,7 @@ bool App::Init(int argc, char** argv) {
 	renderer_.SetLightmapsEnabled(cfg.enableLightmaps);
 	renderer_.SetFogEnabled(cfg.enableFog);
 	renderer_.SetFogIntensity(cfg.fogIntensity);
+	renderer_.SetWeatherSettings(cfg.weatherEnabled, cfg.weatherStyle, cfg.weatherSpeed);
 
 	auto_save_enabled_ = cfg.auto_save_enabled;
 	auto_save_interval_seconds_ = cfg.auto_save_interval_seconds;
@@ -246,6 +247,10 @@ void App::SetFogEnabled(bool enabled) {
 
 void App::SetFogIntensity(int intensity) {
     renderer_.SetFogIntensity(intensity);
+}
+
+void App::SetWeatherSettings(bool enabled, int style, int speedPercent) {
+    renderer_.SetWeatherSettings(enabled, style, speedPercent);
 }
 
 void App::ToggleTerrainModOption(int opt) {

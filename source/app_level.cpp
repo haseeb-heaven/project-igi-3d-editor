@@ -415,7 +415,7 @@ void App::LoadLevel(int level_no) {
 		// [4]=TracelineStart(meters),[5]=TracelineEnd(meters),
 		// [6]=IsActive(quoted VarString "0"/"1"),[7]=RainAlpha.
 		{
-			bool rainActive = false;
+			bool isRain = true, isActive = false;
 			float rainStartM = 0.0f, rainEndM = 0.0f, rainAlpha = 0.0f;
 			bool foundRainEffect = false;
 			for (const auto& re : objects) {
@@ -426,17 +426,16 @@ void App::LoadLevel(int level_no) {
 					std::string isRainTok = re.argTokens[3];
 					if (!isRainTok.empty() && isRainTok.front() == '"')
 						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
-					bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
+					isRain = (isRainTok == "TRUE" || isRainTok == "true");
 					std::string isActiveTok = re.argTokens[6];
 					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
 						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
-					bool isActive = !isActiveTok.empty() && isActiveTok != "0";
+					isActive = !isActiveTok.empty() && isActiveTok != "0";
 					rainStartM = std::stof(re.argTokens[4]);
 					rainEndM = std::stof(re.argTokens[5]);
 					rainAlpha = std::stof(re.argTokens[7]);
-					rainActive = isRain && isActive;
 					Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
-						std::to_string(rainActive) + " isRain=" + isRainTok +
+						std::to_string(isActive) + " isRain=" + isRainTok +
 						" isActive=" + isActiveTok +
 						" start=" + std::to_string(rainStartM) +
 						"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
@@ -446,8 +445,8 @@ void App::LoadLevel(int level_no) {
 				break; // first RainEffect task only
 			}
 			if (!foundRainEffect)
-				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — rain disabled");
-			renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
+				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — weather disabled");
+			renderer_.SetRainEffect(isActive, isRain, rainStartM, rainEndM, rainAlpha);
 		}
 
 		// Log all loaded objects for verification script
