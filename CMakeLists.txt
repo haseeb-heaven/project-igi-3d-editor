@@ -251,6 +251,7 @@ add_executable(igi_tests
     tests/test_lod_chain.cpp
     tests/test_fog_presets.cpp
     tests/test_magic_object_registry.cpp
+    tests/test_anim_player.cpp
     tests/test_railroad_path.cpp
     tests/test_debug_command_parser.cpp
 )
