@@ -176,7 +176,7 @@ void App::LoadLevel(int level_no) {
 		// The renderer GL caches are torn down by BeginLoadLevel()/ClearCaches().
 		// BeginLoadLevel also calls ClearResCache(), so LoadResCache must come AFTER it.
 		renderer_.SetLevel(level_no);
-		renderer_.SetRainEffect(false, 0, 0, 0); // reset rain — prevent carryover from previous level
+		renderer_.SetRainEffect(false, false, 0.0f, 0.0f, 0.0f); // reset rain — prevent carryover from previous level
 		renderer_.BeginLoadLevel();
 		// Build in-memory .res index AFTER BeginLoadLevel so ClearCaches() doesn't wipe it.
 		renderer_.LoadResCache(level_no, Utils::GetIGIRootPath());

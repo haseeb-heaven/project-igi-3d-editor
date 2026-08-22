@@ -29,6 +29,10 @@ constexpr float kSnowMaxAlpha       = 0.42f; // MaximumAlpha
 constexpr float kSnowMinAlpha       = 0.10f; // floor so flakes stay visible on white terrain
 constexpr float kSnowAlphaBoost     = 1.75f; // authored alpha scale
 constexpr float kSnowDriftMeters    = 0.35f; // DriftMeters (sway amplitude)
+constexpr float kSnowDriftFreqX     = 0.45f; // driftX: sin(seconds * FreqX + ...)
+constexpr float kSnowSeedFreqX      = 17.0f; // driftX: ... + seedX * SeedFreqX
+constexpr float kSnowDriftFreqY     = 0.35f; // driftY: cos(seconds * FreqY + ...)
+constexpr float kSnowSeedFreqY      = 19.0f; // driftY: ... + seedY * SeedFreqY
 
 // Fall speed as world-meters of the authored band per second, for a seed in
 // [0,1]. Mirrors RainRenderer/SnowRenderer.CalculateFallSpeed.
@@ -58,11 +62,11 @@ inline float SnowFlakeAlpha(float authoredAlpha) {
 //   driftX = sin(seconds * 0.45 + seedX * 17) * DriftMeters
 //   driftY = cos(seconds * 0.35 + seedY * 19) * DriftMeters
 inline float SnowDriftX(float seconds, float seedX) {
-    return std::sin(seconds * 0.45f + seedX * 17.0f) * kSnowDriftMeters;
+    return std::sin(seconds * kSnowDriftFreqX + seedX * kSnowSeedFreqX) * kSnowDriftMeters;
 }
 
 inline float SnowDriftY(float seconds, float seedY) {
-    return std::cos(seconds * 0.35f + seedY * 19.0f) * kSnowDriftMeters;
+    return std::cos(seconds * kSnowDriftFreqY + seedY * kSnowSeedFreqY) * kSnowDriftMeters;
 }
 
 // Wrap a value into [0, modulus) (open-igi Mod helper).
