@@ -2,6 +2,7 @@
 #include "../pch.h"
 #include "../level/level_objects.h"
 #include "renderer_objects.h"
+#include "spline_placement.h"
 #include <functional>
 
 class Renderer_Splines {
@@ -22,17 +23,8 @@ private:
     Renderer_Objects& obj_renderer_;
     std::function<bool(double, double, float&)> terrain_z_fn_;
 
-    void DrawSplineSegment(
-        const LevelObject& start,
-        const LevelObject& end,
-        const LevelObject& prev,
-        const LevelObject& nextNext,
-        const LevelObject& parent,
-        GLuint ubo_mats,
-        GLuint shader_program,
-        const std::string& fallbackSegmentModelId = "");
-
-    static glm::vec3 HermitePoint(float t,
-        const glm::vec3& p0, const glm::vec3& p1,
-        const glm::vec3& t0, const glm::vec3& t1);
+    // One stretched deck tile (plus its ATTA details) at a precomputed placement.
+    void DrawTile(const Mesh& mesh, const std::string& seg_model_id,
+                  const glm::mat4& unscaled_model, const glm::vec3& stretch,
+                  GLuint ubo_mats, GLuint shader_program);
 };
