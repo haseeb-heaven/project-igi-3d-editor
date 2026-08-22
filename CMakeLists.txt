@@ -254,6 +254,7 @@ add_executable(igi_tests
     tests/test_magic_object_registry.cpp
     tests/test_anim_player.cpp
     tests/test_menu_qvm.cpp
+    tests/test_menu_qvm_edit.cpp
     tests/test_ladder_preview.cpp
     tests/test_lod_chain.cpp
     tests/test_spline_placement.cpp
@@ -283,6 +284,7 @@ target_sources(igi_tests PRIVATE
     source/renderer/heli_preview.cpp
     source/renderer/railroad_path.cpp
     source/renderer/menu_qvm.cpp
+    source/renderer/menu_qvm_edit.cpp
     source/renderer/menu_qvm_runtime.cpp
     source/renderer/fog_presets.cpp
     source/renderer/magic_object_registry.cpp
