@@ -217,10 +217,14 @@ void EmitItem(const ParsedCall& call, std::vector<MenuItemDef>& out) {
 
 void CollectScreens(const ParsedCall& call, MenuDef& def) {
     if (call.type == "MenuManager") {
-        def.manager_id = call.params.empty() ? call.head_id : ToInt(call.params[0], call.head_id);
-        for (const auto& p : call.params) {
-            const std::string v = Unquote(p);
-            if (v.find(".res") != std::string::npos) def.resource_path = v;
+        // Declared: Current menuscreen(Int32)=id, Resource path(String256), isOwnDisplay.
+        // params[0] is the human description; id and path follow positionally.
+        for (size_t pi = 0; pi < call.params.size(); ++pi) {
+            const std::string raw = call.params[pi];
+            const std::string v = Unquote(raw);
+            if (!v.empty() && v.find(".res") != std::string::npos && def.resource_path.empty())
+                def.resource_path = v;
+            if (IsNumber(raw)) def.manager_id = ToInt(raw, def.manager_id);
         }
     } else if (call.type == "MenuScreen" && call.params.size() >= 7) {
         // params[0]=title, [1]=background, [2..5]=frame rect, [6]=escape, ...
