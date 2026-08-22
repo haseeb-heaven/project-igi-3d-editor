@@ -16,6 +16,7 @@
 #include "qsc_lexer.h"
 #include "qsc_parser.h"
 #include "qvm_compiler.h"
+#include "renderer/fog_presets.h"
 
 
 
@@ -137,7 +138,7 @@ bool Level::Load(load_params_s& params, glm::vec3& start_pos, float& start_yaw) 
 
 	try {
 		LoadStartPosInfo(qsc_objects, start_pos, start_yaw);
-		LoadFogInfo(qsc_objects, params.render_res_loader_);
+		LoadFogInfo(qsc_objects, params.render_res_loader_, params.level_no_);
 		LoadSkydomeInfo(qsc_objects, params.render_res_loader_);
 		LoadFlatSkyLayersInfo(qsc_objects, params.render_res_loader_);
 
@@ -447,7 +448,7 @@ void Level::LoadStartPosInfo(const QSC* qsc_objects, glm::vec3& start_pos, float
 	}
 }
 
-void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader) {
+void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader, int level_no) {
 	glm::vec4 fog_color(0.15f, 0.15f, 0.15f, 1.0f);
 	float fog_far_meters = 30000.0f;
 
@@ -514,6 +515,39 @@ void Level::LoadFogInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loa
 		fog_color.g = bestFogColor[1];
 		fog_color.b = bestFogColor[2];
 		fog_far_meters = bestFogFarMeters;
+	}
+
+	// Issue #66: per-mission fog presets (open-igi FogPresets.cs). The QSC-derived fog
+	// above stays the fallback; a preset file holds per-mission EXCEPTIONS layered on top.
+	// Derivation rule (open-igi DesktopGame.cs next to the Resolve call site): authored
+	// density derives from the level's FlatSky FogAmount; 0.014 when there is no FlatSky.
+	{
+		float flat_sky_fog_amount = -1.0f;
+		const QSC::func_s* flat_funcs[8];
+		const int num_flat = qsc_objects->FindFuncByStr("FlatSky", flat_funcs);
+		if (num_flat > 0 && flat_funcs[0]) {
+			int idx = 0;
+			for (const QSC::arg_s* a = flat_funcs[0]->args_; a; a = a->next_) {
+				if (a->type_ == QSC::arg_s::type_t::DBL) {
+					if (idx == 3) { flat_sky_fog_amount = (float)a->dbl_; break; } // [3]=FogAmount
+					++idx;
+				}
+			}
+		}
+		const bool has_flat_sky = flat_sky_fog_amount >= 0.0f;
+		const float derived_density = igi::FogPresets::DeriveFlatSkyDensity(
+			has_flat_sky ? flat_sky_fog_amount : 0.0f, has_flat_sky);
+
+		bool preset_ok = false;
+		std::string preset_path = "fog-presets.json";
+		if (!std::filesystem::exists(preset_path))
+			preset_path = Utils::GetIGIRootPath() + "\\fog-presets.json";
+		igi::FogPresets presets = igi::FogPresets::Load(preset_path, &preset_ok);
+		const igi::ResolvedFog resolved = presets.Resolve(level_no, derived_density, 0.0f, 0);
+		if (resolved.density_authored && resolved.density > 0.0f) {
+			// Same density->far mapping as the QSC path above for consistency.
+			fog_far_meters = (1.0f / resolved.density) * 120.0f;
+		}
 	}
 
 	// fog_far_meters is derived from the QSC fog-density value in meters; the

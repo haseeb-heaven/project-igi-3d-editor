@@ -74,7 +74,7 @@ private:
 	bool					loaded_;
 
 	void					LoadStartPosInfo(const QSC* qsc_objects, glm::vec3& start_pos, float& start_yaw) const;
-	void					LoadFogInfo(const QSC * qsc_objects, IRenderResLoader* render_res_loader);
+	void					LoadFogInfo(const QSC * qsc_objects, IRenderResLoader* render_res_loader, int level_no);
 	void					LoadSkydomeInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					LoadFlatSkyLayersInfo(const QSC* qsc_objects, IRenderResLoader* render_res_loader);
 	void					DecompileObjects(int levelNo);
