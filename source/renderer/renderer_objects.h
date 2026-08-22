@@ -91,6 +91,11 @@ public:
     std::vector<uint8_t> FindTextureData(const std::string& textureId) const;
     std::vector<uint8_t> FindMeshData(const std::string& modelId) const;
 
+    // Material-slot -> texture-name map for a model (DAT lookup with variant/global
+    // fallbacks). Public for the light-fixture extractor (#63), which resolves each
+    // render block's emitter material the same way ApplyTexturesToMesh does.
+    std::vector<std::string> GetTextureIdsForModel(const std::string& modelId);
+
     // Pre-fill the attachment cache from already-parsed geometry (avoids re-reading
     // MEF bytes that were already loaded for mesh creation in GetOrLoadMesh).
     void PrePopulateAttaFromParsed(const std::string& modelId, bool isBuilding,
@@ -354,7 +359,6 @@ private:
     void LoadDatIntoMap(const std::string& datPath, std::map<std::string, std::vector<std::string>>& outMap);
     void EnsureTextureMapLoaded();
     void EnsureGlobalTextureMapLoaded() const;
-    std::vector<std::string> GetTextureIdsForModel(const std::string& modelId);
     GLuint GetOrLoadTexture(const std::string& textureId);
     void ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId, const std::string& parentModelId = "");
     void InitSelectionBox();

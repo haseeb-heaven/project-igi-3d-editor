@@ -254,6 +254,7 @@ add_executable(igi_tests
     tests/test_anim_player.cpp
     tests/test_ladder_preview.cpp
     tests/test_railroad_path.cpp
+    tests/test_light_fixture.cpp
     tests/test_debug_command_parser.cpp
 )
 
@@ -276,6 +277,8 @@ target_sources(igi_tests PRIVATE
     source/renderer/magic_object_registry.cpp
     source/renderer/anim_player.cpp
     source/renderer/ladder_preview.cpp
+    source/renderer/light_fixture.cpp
+    source/renderer/light_fixture_store.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
