@@ -7,6 +7,8 @@
 #include "graph_overlay.h"
 #include "object_lightmap.h"
 #include "menu_assets.h"
+#include "menu_qvm_render.h"
+#include "../utils.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
@@ -1430,7 +1432,19 @@ void Renderer::Draw(const draw_params_s &params,
 
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
+    // QVM-driven retail menu (#74): when the game's ingamemenu.qvm resolves, it
+    // replaces the hand-drawn fallback entirely (draw + click handling via the
+    // legacy pause_active_input_ flag, consumed here).
+    bool qvm_menu_handled = false;
     if (task_tree_view.pause_mode_) {
+      if (igi::MenuRender::Get().EnsureLoaded(Utils::GetIGIRootPath())) {
+        qvm_menu_handled = igi::MenuRender::Get().Draw(
+            params.view_define_->viewport_width_, params.view_define_->viewport_height_,
+            task_tree_view.mouse_x_, task_tree_view.mouse_y_);
+      }
+    }
+
+    if (task_tree_view.pause_mode_ && !qvm_menu_handled) {
       const int menu_w = 460;
       const int menu_h = 790; // +38*3 for Weather rows (Enabled/Style/Speed) after Lightmaps (plus prior Fog/Lightmaps additions)
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;

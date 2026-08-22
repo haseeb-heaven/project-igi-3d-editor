@@ -5,6 +5,8 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "renderer/object_lightmap.h"
+#include "renderer/menu_qvm_render.h"
+#include "utils.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 	if (show_help_) {
@@ -313,6 +315,15 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			}
 
 			if (pause_mode_) {
+				// QVM-driven retail menu (#74): when available, it owns all menu
+				// clicks — hit-test against its authored texts and run the bound
+				// retail scripts. Legacy rows below stay for the fallback skin.
+				if (igi::MenuRender::Get().EnsureLoaded(Utils::GetIGIRootPath()) &&
+				    igi::MenuRender::Get().OnClick(window_state_.viewport_width_,
+				                                   window_state_.viewport_height_, x, y)) {
+					mouse_state_.left_button_down_ = false;
+					return; // consumed by the retail menu
+				}
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
 				const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)

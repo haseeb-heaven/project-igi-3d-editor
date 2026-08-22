@@ -255,6 +255,7 @@ add_executable(igi_tests
     tests/test_anim_player.cpp
     tests/test_ladder_preview.cpp
     tests/test_railroad_path.cpp
+    tests/test_menu_runtime.cpp
     tests/test_light_fixture.cpp
     tests/test_editor_audio.cpp
     tests/test_lightmap_baker.cpp
@@ -277,6 +278,8 @@ target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
     source/renderer/heli_preview.cpp
     source/renderer/railroad_path.cpp
+    source/renderer/menu_qvm.cpp
+    source/renderer/menu_qvm_runtime.cpp
     source/renderer/fog_presets.cpp
     source/renderer/magic_object_registry.cpp
     source/renderer/anim_player.cpp
