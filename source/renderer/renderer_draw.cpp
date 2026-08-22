@@ -1451,28 +1451,12 @@ void Renderer::Draw(const draw_params_s &params,
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
 
-      // Authentic igi.exe menu skin (#71): when the game's own background sprite
-      // resolves from resources.res / mainmenu.res, draw it full-menu instead of the
-      // hand-drawn emerald panel. All rows/hit-testing below are unchanged — only
-      // the backdrop swaps, so the fallback path stays byte-identical when the
-      // game assets are absent.
-      const uint32_t menu_bg = igi::MenuAssets::Get().GetSprite("pausemenubg");
-      if (menu_bg != 0) {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-        glBindTexture(GL_TEXTURE_2D, menu_bg);
-        glEnable(GL_TEXTURE_2D);
-        glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2i(menu_x, menu_y);
-        glTexCoord2f(1.0f, 1.0f); glVertex2i(menu_x + menu_w, menu_y);
-        glTexCoord2f(1.0f, 0.0f); glVertex2i(menu_x + menu_w, menu_y + menu_h);
-        glTexCoord2f(0.0f, 0.0f); glVertex2i(menu_x, menu_y + menu_h);
-        glEnd();
-        glDisable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glDisable(GL_BLEND);
-      } else {
+      // Authentic igi.exe backdrop is owned by the QVM menu renderer (#74): screen
+      // 900 has no authored background (retail draws menus over live gameplay) and
+      // screens 901-903 use mainmenu.pic via MenuAssets there. The old
+      // GetSprite("pausemenubg") branch here named a sprite that exists in no pack
+      // and was dead code — removed (review finding 3836032446).
+      {
       // Glassmorphism-style background
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
