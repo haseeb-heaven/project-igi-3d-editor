@@ -347,6 +347,10 @@ void Renderer_Objects::ClearCaches() {
     // on each level load in app_level.cpp), so clear it here too.
     ClearAllLightmaps();
     indoor_ambient_by_task_.clear();
+    // heli_thrust_decls_ caches the "Heli" Task_DeclareParameters Original-Thrust
+    // token offset (#60), which is per-level — a different mission may declare a
+    // different layout, so a stale entry would silently mis-read collective.
+    heli_thrust_decls_.clear();
     Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Cleared per-task lightmap caches on level switch");
     ClearResCache();
 }
