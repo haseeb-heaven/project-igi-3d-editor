@@ -5,6 +5,7 @@
 #include "../level/level_objects.h"
 #include "dat_writer.h"
 #include "res_writer.h"
+#include "heli_preview.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -231,6 +232,11 @@ private:
 	bool fog_enabled_ = true;
 	float elapsed_time_secs_ = 0.0f;      // rotor animation accumulator (Heli main/tail)
 	std::string current_draw_obj_type_; // set before DrawAttachmentsRecursive for Heli rotor spin
+	float current_heli_collective_ = -1.0f; // authored "Original Thrust" of the Heli being drawn (-1 = unknown)
+	// per-level Task_DeclareParameters offsets cache ("Heli" -> argTokens offset or -1);
+	// mirrors heli_preview::DeclarationIndex (kept as the raw map type to break the
+	// pch.h -> renderer_objects.h -> heli_preview.h include cycle)
+	std::map<std::string, int> heli_thrust_decls_;
 	std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
     struct BakePose {
         glm::dvec3 pos;
