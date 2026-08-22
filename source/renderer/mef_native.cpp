@@ -1,5 +1,6 @@
 #include "mef_native.h"
 
+#include "../logger.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <array>
 #include <cstdint>
@@ -960,6 +961,23 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
     if (xtvc1) geometry.xtvcVerts1 = ParseXtvcVerts (bytes, *xtvc1, isIgi1);
     if (ecfc1) geometry.ecfcFaces1 = ParseEcfcFaces (bytes, *ecfc1, isIgi1);
     if (tamc1) geometry.tamcRecords1= ParseTamcRecords(bytes, *tamc1, isIgi1);
+
+    // #47 diagnostic: dual-vertex-set models (XTVC0/ECFC0 + XTVC1/ECFC1). Per open-igi's
+    // retail-verified MefCollisionMesh.cs, XTVC/ECFC are COLLISION chunks — the HSMC header
+    // carries exactly 2 collision mesh levels (64 B = 2 x 32 B records), so the two sets are
+    // collision LOD levels, NOT render data (XTVC verts are "three floats and a zero" — no UVs).
+    // Visual rendering must come from XTRV+DNER/ECAF. If the render path fails on a dual-set
+    // model, log loudly so affected models (e.g. 001_02_1) can be triaged with game assets.
+    if (xtvc1 && ecfc1) {
+        Logger::Get().Log(LogLevel::INFO,
+            "[MEF] Dual collision-vertex-set model '" + filepath + "': sets=2" +
+            " (XTVC0=" + std::to_string(xtvc0 ? xtvc0->size / 16 : 0) + "v" +
+            " XTVC1=" + std::to_string(xtvc1->size / 16) + "v)" +
+            std::string(geometry.fromRenderMesh ?
+                " render=OK (collision sets unused for visuals)" :
+                " RENDER-PATH FAILED — collision fallback would show fabricated UVs"));
+    }
+
     if (xtvm)  geometry.xtvmVerts  = ParseXtvmVerts (bytes, *xtvm);
     if (atta)  geometry.mefAttachments = ParseMefAttachments(bytes, *atta);
 
