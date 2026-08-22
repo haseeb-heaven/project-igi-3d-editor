@@ -257,6 +257,7 @@ add_executable(igi_tests
     tests/test_railroad_path.cpp
     tests/test_light_fixture.cpp
     tests/test_editor_audio.cpp
+    tests/test_lightmap_baker.cpp
     tests/test_interactables.cpp
     tests/test_debug_command_parser.cpp
 )
@@ -287,6 +288,7 @@ target_sources(igi_tests PRIVATE
     source/editor_audio/sound_bank.cpp
     source/editor_audio/audio_out.cpp
     source/renderer/light_fixture_store.cpp
+    source/renderer/lightmap_baker.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
