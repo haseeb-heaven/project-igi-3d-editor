@@ -257,6 +257,7 @@ add_executable(igi_tests
     tests/test_railroad_path.cpp
     tests/test_menu_runtime.cpp
     tests/test_light_fixture.cpp
+    tests/test_pickup_preview.cpp
     tests/test_editor_audio.cpp
     tests/test_lightmap_baker.cpp
     tests/test_interactables.cpp
@@ -286,6 +287,7 @@ target_sources(igi_tests PRIVATE
     source/renderer/ladder_preview.cpp
     source/renderer/light_fixture.cpp
     source/renderer/light_fixture_extract.cpp
+    source/renderer/pickup_preview.cpp
     source/editor_audio/ilsf_sound.cpp
     source/editor_audio/wav_pcm.cpp
     source/editor_audio/sound_bank.cpp

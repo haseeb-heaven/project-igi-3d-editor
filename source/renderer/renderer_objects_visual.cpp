@@ -4,6 +4,7 @@
  *          Split from renderer_objects.cpp; shares renderer_objects_internal.h.
  *****************************************************************************/
 #include "renderer_objects_internal.h"
+#include "pickup_preview.h"
 
 void Renderer_Objects::InitSphereMesh() {
     const int LAT = 12;
@@ -696,6 +697,20 @@ void Renderer_Objects::DrawInteractableGizmos(const std::vector<LevelObject>& ob
 
     for (const auto& obj : objects) {
         if (obj.deleted) continue;
+
+        // Pickup-volume gizmos (#75): retail radius disc + vertical tolerance band
+        // for GunPickup / AmmoPickup / GenericPickup (0x46C630 / 0x46D230 constants).
+        if (obj.type == "GunPickup" || obj.type == "AmmoPickup" || obj.type == "GenericPickup") {
+            const auto gizmo_lines = igi::BuildPickupGizmoLines(glm::dvec3(obj.pos));
+            std::vector<glm::vec3> pts;
+            pts.reserve(gizmo_lines.size() * 2);
+            for (const auto& l : gizmo_lines) {
+                pts.push_back(glm::vec3(l.first));
+                pts.push_back(glm::vec3(l.second));
+            }
+            const glm::mat4 model(1.0f); // gizmo built in world space
+            drawLines(pts, glm::vec4(0.2f, 0.9f, 0.3f, 1.0f), model);
+        }
 
         if (obj.type == "Wire") {
             const glm::vec3 a = glm::vec3(obj.pos);
