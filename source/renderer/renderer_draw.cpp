@@ -6,6 +6,7 @@
 #include "renderer_internal.h"
 #include "graph_overlay.h"
 #include "object_lightmap.h"
+#include "menu_assets.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
@@ -1436,6 +1437,28 @@ void Renderer::Draw(const draw_params_s &params,
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
 
+      // Authentic igi.exe menu skin (#71): when the game's own background sprite
+      // resolves from resources.res / mainmenu.res, draw it full-menu instead of the
+      // hand-drawn emerald panel. All rows/hit-testing below are unchanged — only
+      // the backdrop swaps, so the fallback path stays byte-identical when the
+      // game assets are absent.
+      const uint32_t menu_bg = igi::MenuAssets::Get().GetSprite("pausemenubg");
+      if (menu_bg != 0) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+        glBindTexture(GL_TEXTURE_2D, menu_bg);
+        glEnable(GL_TEXTURE_2D);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2i(menu_x, menu_y);
+        glTexCoord2f(1.0f, 1.0f); glVertex2i(menu_x + menu_w, menu_y);
+        glTexCoord2f(1.0f, 0.0f); glVertex2i(menu_x + menu_w, menu_y + menu_h);
+        glTexCoord2f(0.0f, 0.0f); glVertex2i(menu_x, menu_y + menu_h);
+        glEnd();
+        glDisable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_BLEND);
+      } else {
       // Glassmorphism-style background
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1464,6 +1487,7 @@ void Renderer::Draw(const draw_params_s &params,
       glVertex2i(menu_x + menu_w - 10, menu_y + menu_h - 45);
       glEnd();
       glLineWidth(1.0f);
+      } // end fallback skin (authentic sprite drawn above when available)
 
       int screen_menu_top = (viewport_h - menu_h) / 2;
       // Title — centered, bright green
