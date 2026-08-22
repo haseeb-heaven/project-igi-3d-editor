@@ -246,6 +246,7 @@ add_executable(igi_tests
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
     tests/test_mef_native_lightmap.cpp
+    tests/test_heli_preview.cpp
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
 )
@@ -263,6 +264,7 @@ target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/g
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
 target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
+    source/renderer/heli_preview.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp

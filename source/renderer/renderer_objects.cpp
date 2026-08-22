@@ -1050,6 +1050,12 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 rootWorldMat = rootWorldMat * parentRot;
 
                 current_draw_obj_type_ = obj.type;  // tells DrawAttachmentsRecursive if parent is Heli (rotor spin)
+                // Issue #60: resolve the authored "Original Thrust" collective so the
+                // rotor preview spins with retail collective-driven semantics
+                // (Heli::ReadChannels 0x431B70 restores live+target collective from
+                // this value at tick zero; RotorPhase += Thrust per 30 Hz tick).
+                current_heli_collective_ = heli_preview::LookupAuthoredCollective(
+                    &objects, obj, heli_thrust_decls_);
                 std::unordered_set<std::string> drawn;
                 DrawAttachmentsRecursive(obj.modelId, obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
