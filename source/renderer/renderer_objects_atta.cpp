@@ -5,6 +5,47 @@
  *          Split from renderer_objects.cpp; shares renderer_objects_internal.h.
  *****************************************************************************/
 #include "renderer_objects_internal.h"
+#include "magic_object_registry.h"
+
+namespace {
+
+// Resolve one ATTA attachment into an AttachInfo, consulting the retail magic-object
+// table (#67, open-igi 0x4DFA50 walk): when the attachment name is defined in
+// magicobj.qvm, the spawned child carries the DEFINED model (which may differ from
+// the attachment name) plus TASKTYPE metadata. Placement transform is untouched.
+// Unmatched names are logged once each at DEBUG so gaps stay visible without spam.
+AttachInfo ResolveAttachInfo(const std::string& aname,
+                             float px, float py, float pz,
+                             const float* r) {
+    AttachInfo info;
+    info.modelId = aname;
+    info.px = px; info.py = py; info.pz = pz;
+    for (int i = 0; i < 9; ++i) info.r[i] = r[i];
+
+    igi::MagicObjectRegistry& reg = igi::MagicObjectRegistry::Get();
+    reg.EnsureLoaded();
+    igi::MagicObjectDefinition def;
+    if (reg.TryGet(aname, def)) {
+        info.from_magic_table = true;
+        info.magic_attachment_name = aname;
+        info.magic_task_type = def.task_type_name;
+        if (def.model != aname) {
+            Logger::Get().Log(LogLevel::INFO,
+                "[MagicObjects] attachment '" + aname + "' -> magic model '" + def.model + "'" +
+                (def.task_type_name.empty() ? "" : " (" + def.task_type_name + ")"));
+            info.modelId = def.model;
+        }
+    } else if (reg.Loaded()) {
+        static std::set<std::string> unmatched_logged;
+        if (unmatched_logged.insert(aname).second) {
+            Logger::Get().Log(LogLevel::DEBUG,
+                "[MagicObjects] attachment name not in table: '" + aname + "'");
+        }
+    }
+    return info;
+}
+
+} // namespace
 
 std::string Renderer_Objects::AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos) {
     char buf[160];
@@ -682,13 +723,8 @@ void Renderer_Objects::PrePopulateAttaFromParsed(const std::string& modelId, boo
     for (const auto& a : mefAttachments) {
         std::string aname(a.name, strnlen(a.name, 16));
         if (aname.empty()) continue;
-        AttachInfo info;
-        info.modelId = aname;
-        info.px = a.px; info.py = a.py; info.pz = a.pz;
-        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
-        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
-        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
-        attaches.push_back(info);
+        const float r[9] = {a.r00, a.r01, a.r02, a.r03, a.r04, a.r05, a.r06, a.r07, a.r08};
+        attaches.push_back(ResolveAttachInfo(aname, a.px, a.py, a.pz, r));
     }
     attachment_cache_[cacheKey] = std::move(attaches);
 }
@@ -775,78 +811,78 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
         std::string aname(a.name, strnlen(a.name, 16));
         if (aname.empty()) continue;
 
-        AttachInfo info;
-        info.modelId = aname;
-        info.px = a.px; info.py = a.py; info.pz = a.pz;
-        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
-        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
-        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
+        const float r[9] = {a.r00, a.r01, a.r02, a.r03, a.r04, a.r05, a.r06, a.r07, a.r08};
+        AttachInfo info = ResolveAttachInfo(aname, a.px, a.py, a.pz, r);
         attaches.push_back(info);
 
         // Pre-warm the sub-model mesh — try res cache first, disk fallback.
+        // Uses the RESOLVED model id (magic-object table may define a different
+        // model than the raw attachment name — #67).
         std::string subKey = std::to_string(current_level_) + ":" +
-                             (isBuilding ? "building:" : "object:") + aname;
+                             (isBuilding ? "building:" : "object:") + info.modelId;
         if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
             bool loaded = false;
-            std::vector<uint8_t> subBytes = FindMeshData(aname);
+            const std::string& resolvedId = info.modelId;
+            std::vector<uint8_t> subBytes = FindMeshData(resolvedId);
             if (!subBytes.empty()) {
                 try {
-                    Mesh subMesh = loadObjModelFromMemory(subBytes, aname);
-                    ApplyTexturesToMesh(subMesh, aname, modelId);
+                    Mesh subMesh = loadObjModelFromMemory(subBytes, resolvedId);
+                    ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                     mesh_cache_[subKey] = subMesh;
                     Logger::Get().Log(LogLevel::INFO,
-                        "[Renderer_Objects] ATTA sub-model loaded from ResCache: " + aname +
+                        "[Renderer_Objects] ATTA sub-model loaded from ResCache: " + resolvedId +
                         " (" + std::to_string(subMesh.vertexCount) + " verts)");
                     loaded = true;
                 } catch (const std::exception& se) {
                     Logger::Get().Log(LogLevel::WARNING,
-                        "[Renderer_Objects] ATTA ResCache parse failed for " + aname + ": " + se.what());
+                        "[Renderer_Objects] ATTA ResCache parse failed for " + resolvedId + ": " + se.what());
                 }
             }
             if (!loaded) {
-                std::string subFile = FindModelFile(aname, isBuilding);
+                std::string subFile = FindModelFile(resolvedId, isBuilding);
                 if (subFile.empty()) {
                     // FindModelFile may have lazily indexed a cross-level .res as a side
                     // effect (its cross-level lookup block) -- retry the ResCache now that
                     // the owning level's models.res is indexed, before giving up.
-                    std::vector<uint8_t> lazyBytes = FindMeshData(aname);
+                    std::vector<uint8_t> lazyBytes = FindMeshData(resolvedId);
                     if (!lazyBytes.empty()) {
                         try {
-                            Mesh subMesh = loadObjModelFromMemory(lazyBytes, aname);
-                            ApplyTexturesToMesh(subMesh, aname, modelId);
+                            Mesh subMesh = loadObjModelFromMemory(lazyBytes, resolvedId);
+                            ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                             mesh_cache_[subKey] = subMesh;
                             Logger::Get().Log(LogLevel::INFO,
-                                "[Renderer_Objects] ATTA sub-model loaded from ResCache (lazy): " + aname +
+                                "[Renderer_Objects] ATTA sub-model loaded from ResCache (lazy): " + resolvedId +
                                 " (" + std::to_string(subMesh.vertexCount) + " verts)");
                             loaded = true;
                         } catch (const std::exception& se) {
                             Logger::Get().Log(LogLevel::WARNING,
-                                "[Renderer_Objects] ATTA lazy ResCache parse failed for " + aname + ": " + se.what());
+                                "[Renderer_Objects] ATTA lazy ResCache parse failed for " + resolvedId + ": " + se.what());
                         }
                     }
                     if (!loaded) {
                         Logger::Get().Log(LogLevel::WARNING,
-                            "[Renderer_Objects] ATTA sub-model NOT FOUND: " + aname);
+                            "[Renderer_Objects] ATTA sub-model NOT FOUND: " + resolvedId);
                         Mesh empty; mesh_cache_[subKey] = empty;
                     }
                 } else {
                     try {
                         Mesh subMesh = loadObjModel(subFile, "");
-                        ApplyTexturesToMesh(subMesh, aname, modelId);
+                        ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                         mesh_cache_[subKey] = subMesh;
                         Logger::Get().Log(LogLevel::INFO,
-                            "[Renderer_Objects] ATTA sub-model loaded from disk: " + aname +
+                            "[Renderer_Objects] ATTA sub-model loaded from disk: " + resolvedId +
                             " (" + std::to_string(subMesh.vertexCount) + " verts)");
                     } catch (const std::exception& se) {
                         Logger::Get().Log(LogLevel::ERR,
-                            "[Renderer_Objects] ATTA sub-model load FAILED: " + aname + ": " + se.what());
+                            "[Renderer_Objects] ATTA sub-model load FAILED: " + resolvedId + ": " + se.what());
                         Mesh empty; mesh_cache_[subKey] = empty;
                     }
                 }
             }
         }
-        // Recurse: parse this child's own ATTA section
-        LoadAttachmentsRecursive(aname, isBuilding, visited);
+        // Recurse: parse this child's own ATTA section. Retail 0x4DFA50 walks the
+        // spawned model's own attachments too, so use the RESOLVED model id (#67).
+        LoadAttachmentsRecursive(info.modelId, isBuilding, visited);
     }
 
     attachment_cache_[cacheKey] = std::move(attaches);
