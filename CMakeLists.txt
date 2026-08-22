@@ -41,6 +41,7 @@ file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SOURCES_CLI "source/cli/*.*")
+file(GLOB SOURCES_EDITOR_AUDIO "source/editor_audio/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
@@ -55,7 +56,7 @@ source_group("cli" FILES ${SOURCES_CLI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_EDITOR_AUDIO} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
   set_target_properties(igi-editor PROPERTIES
@@ -255,6 +256,7 @@ add_executable(igi_tests
     tests/test_ladder_preview.cpp
     tests/test_railroad_path.cpp
     tests/test_light_fixture.cpp
+    tests/test_editor_audio.cpp
     tests/test_interactables.cpp
     tests/test_debug_command_parser.cpp
 )
@@ -280,6 +282,10 @@ target_sources(igi_tests PRIVATE
     source/renderer/ladder_preview.cpp
     source/renderer/light_fixture.cpp
     source/renderer/light_fixture_extract.cpp
+    source/editor_audio/ilsf_sound.cpp
+    source/editor_audio/wav_pcm.cpp
+    source/editor_audio/sound_bank.cpp
+    source/editor_audio/audio_out.cpp
     source/renderer/light_fixture_store.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
