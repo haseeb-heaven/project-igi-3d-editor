@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "renderer_rain.h"
 #include "weather_math.h"
+
+#include <string>
 #include "../logger.h"
 #include <freeglut.h>
 #include <vector>
@@ -10,7 +12,7 @@
 // ported from this file's original constants and then corrected against igi.exe):
 // 1200 drops, 0.08 m streaks, fall speed 0.08..0.18 of the authored band per
 // second, alpha = clamp(authored * 1.25, 0, 0.28). See weather_math.h.
-static const char* RAIN_VERT_SRC = R"(
+static const char* RAIN_VERT_SRC_FMT = R"(
 #version 330 core
 layout(location = 0) in vec3 a_seed;   // per-drop random seed, x/y/z in [0,1)
 layout(location = 1) in float a_isTop; // 0 = bottom vertex of the streak, 1 = top
@@ -31,8 +33,9 @@ uniform float u_speedMul;    // user speed multiplier (r_weather_speed)
 
 void main() {
     float fallRange = max(u_heightStart - u_heightEnd, 1.0);
-    // open-igi: (0.08 + seed.z * 0.10) of the band per second
-    float speed = (0.08 + a_seed.z * 0.10) * fallRange * u_speedMul;
+    // open-igi: (min + seed.z * spread) of the band per second — constants
+    // injected from igi::weather (single source of truth with weather_math.h).
+    float speed = (%.9g + a_seed.z * %.9g) * fallRange * u_speedMul;
     float z = u_heightStart - mod(u_time * speed + a_seed.y * fallRange + u_cameraPos.z, fallRange);
 
     vec2 cell = mod(a_seed.xy * u_boxSize - u_cameraPos.xy, u_boxSize) - u_boxSize * 0.5;
@@ -42,21 +45,21 @@ void main() {
 }
 )";
 
-static const char* RAIN_FRAG_SRC = R"(
+static const char* RAIN_FRAG_SRC_FMT = R"(
 #version 330 core
 uniform float u_alpha;
 out vec4 fragColor;
 void main() {
     // open-igi: clamp(authored alpha * 1.25, 0, 0.28) — a restrained scale so a
     // thin streak never turns into a solid sheet of white.
-    fragColor = vec4(0.8, 0.85, 0.9, clamp(u_alpha * 1.25, 0.0, 0.28));
+    fragColor = vec4(0.8, 0.85, 0.9, clamp(u_alpha * %.9g, 0.0, %.9g));
 }
 )";
 
 // Snow flakes: port of open-igi SnowRenderer.cs — slow drifting flakes in a
 // camera-relative box. Fall speed is 0.025..0.065 of the band per second with
 // sinusoidal X/Y drift; flakes are round point sprites tinted pale cool white.
-static const char* SNOW_VERT_SRC = R"(
+static const char* SNOW_VERT_SRC_FMT = R"(
 #version 330 core
 layout(location = 0) in vec3 a_seed;   // per-flake random seed, x/y/z in [0,1)
 
@@ -79,12 +82,12 @@ uniform float DRIFT_UNITS;   // drift amplitude in world units
 void main() {
     float fallRange = max(u_heightStart - u_heightEnd, 1.0);
     // open-igi: (0.025 + seed.z * 0.04) of the band per second
-    float speed = (0.025 + a_seed.z * 0.04) * fallRange * u_speedMul;
+    float speed = (%.9g + a_seed.z * %.9g) * fallRange * u_speedMul;
     float z = u_heightStart - mod(u_time * speed + a_seed.z * fallRange + u_cameraPos.z, fallRange);
 
     // open-igi sway: sin(t*0.45 + sx*17)*drift on X, cos(t*0.35 + sy*19)*drift on Y
-    float driftX = sin(u_time * 0.45 + a_seed.x * 17.0);
-    float driftY = cos(u_time * 0.35 + a_seed.y * 19.0);
+    float driftX = sin(u_time * %.9g + a_seed.x * %.9g);
+    float driftY = cos(u_time * %.9g + a_seed.y * %.9g);
     float halfBox = u_boxSize * 0.5;
     float cellX = mod(a_seed.x * u_boxSize - u_cameraPos.x, u_boxSize) - halfBox + driftX * DRIFT_UNITS;
     float cellY = mod(a_seed.y * u_boxSize - u_cameraPos.y, u_boxSize) - halfBox + driftY * DRIFT_UNITS;
@@ -97,7 +100,7 @@ void main() {
 }
 )";
 
-static const char* SNOW_FRAG_SRC = R"(
+static const char* SNOW_FRAG_SRC_FMT = R"(
 #version 330 core
 uniform float u_alpha;
 out vec4 fragColor;
@@ -108,7 +111,7 @@ void main() {
     if (dot(d, d) > 0.25) discard;
     // open-igi SnowRenderer colour Bgra32(0.92, 0.97, 255): pale cool white,
     // alpha clamped into [0.10, 0.42] so flakes stay visible on snow terrain.
-    fragColor = vec4(0.92, 0.97, 1.0, clamp(u_alpha * 1.75, 0.10, 0.42));
+    fragColor = vec4(0.92, 0.97, 1.0, clamp(u_alpha * %.9g, %.9g, %.9g));
 }
 )";
 
@@ -160,9 +163,44 @@ static GLuint LinkWeatherProgram(GLenum vertType, const char* vertSrc, GLenum fr
     return program;
 }
 
+// Shader sources are FORMATTED from the tested igi::weather constants so
+// weather_math.h is the single source of truth shared by renderer and tests
+// (PR #64 review finding: hardcoded literals could silently drift).
+namespace {
+std::string FmtRainVert() {
+    char buf[4096];
+    snprintf(buf, sizeof(buf), RAIN_VERT_SRC_FMT,
+             (double)igi::weather::kRainMinSpeedMul,
+             (double)igi::weather::kRainMaxSpeedMul - (double)igi::weather::kRainMinSpeedMul);
+    return buf;
+}
+std::string FmtRainFrag() {
+    char buf[1024];
+    snprintf(buf, sizeof(buf), RAIN_FRAG_SRC_FMT,
+             (double)igi::weather::kRainAlphaBoost, (double)igi::weather::kRainMaxAlpha);
+    return buf;
+}
+std::string FmtSnowVert() {
+    char buf[4096];
+    snprintf(buf, sizeof(buf), SNOW_VERT_SRC_FMT,
+             (double)igi::weather::kSnowMinSpeedMul,
+             (double)igi::weather::kSnowMaxSpeedMul - (double)igi::weather::kSnowMinSpeedMul);
+    return buf;
+}
+std::string FmtSnowFrag() {
+    char buf[2048];
+    snprintf(buf, sizeof(buf), SNOW_FRAG_SRC_FMT,
+             (double)igi::weather::kSnowAlphaBoost, (double)igi::weather::kSnowMinAlpha,
+             (double)igi::weather::kSnowMaxAlpha);
+    return buf;
+}
+} // namespace
+
 bool Renderer_Rain::Init() {
-    shader_program_ = LinkWeatherProgram(GL_VERTEX_SHADER, RAIN_VERT_SRC,
-                                         GL_FRAGMENT_SHADER, RAIN_FRAG_SRC, ubo_binding_point_);
+    static const std::string rain_vert = FmtRainVert();
+    static const std::string rain_frag = FmtRainFrag();
+    shader_program_ = LinkWeatherProgram(GL_VERTEX_SHADER, rain_vert.c_str(),
+                                         GL_FRAGMENT_SHADER, rain_frag.c_str(), ubo_binding_point_);
     if (!shader_program_) return false;
 
     // Rain seeds (open-igi GenerateSeeds: mt19937, seed 12345)
@@ -193,8 +231,10 @@ bool Renderer_Rain::Init() {
 }
 
 bool Renderer_Rain::InitSnow() {
-    snow_program_ = LinkWeatherProgram(GL_VERTEX_SHADER, SNOW_VERT_SRC,
-                                       GL_FRAGMENT_SHADER, SNOW_FRAG_SRC, ubo_binding_point_);
+    static const std::string snow_vert = FmtSnowVert();
+    static const std::string snow_frag = FmtSnowFrag();
+    snow_program_ = LinkWeatherProgram(GL_VERTEX_SHADER, snow_vert.c_str(),
+                                       GL_FRAGMENT_SHADER, snow_frag.c_str(), ubo_binding_point_);
     if (!snow_program_) return false;
 
     // Snow seeds (open-igi SnowRenderer ctor: Random(271828))
