@@ -253,7 +253,10 @@ add_executable(igi_tests
     tests/test_fog_presets.cpp
     tests/test_magic_object_registry.cpp
     tests/test_anim_player.cpp
+    tests/test_menu_qvm.cpp
     tests/test_ladder_preview.cpp
+    tests/test_lod_chain.cpp
+    tests/test_spline_placement.cpp
     tests/test_railroad_path.cpp
     tests/test_menu_runtime.cpp
     tests/test_light_fixture.cpp
@@ -284,6 +287,8 @@ target_sources(igi_tests PRIVATE
     source/renderer/fog_presets.cpp
     source/renderer/magic_object_registry.cpp
     source/renderer/anim_player.cpp
+    source/renderer/lod_model_chain.cpp
+    source/renderer/spline_placement.cpp
     source/renderer/ladder_preview.cpp
     source/renderer/light_fixture.cpp
     source/renderer/light_fixture_extract.cpp
