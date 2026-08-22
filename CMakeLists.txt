@@ -273,6 +273,9 @@ target_sources(igi_tests PRIVATE
     source/renderer/heli_preview.cpp
     source/renderer/railroad_path.cpp
     source/renderer/fog_presets.cpp
+    source/renderer/magic_object_registry.cpp
+    source/renderer/anim_player.cpp
+    source/renderer/ladder_preview.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
