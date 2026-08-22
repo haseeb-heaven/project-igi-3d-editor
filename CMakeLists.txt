@@ -250,6 +250,7 @@ add_executable(igi_tests
     tests/test_igi1conv_lightmap.cpp
     tests/test_lod_chain.cpp
     tests/test_railroad_path.cpp
+    tests/test_light_fixture.cpp
     tests/test_debug_command_parser.cpp
 )
 
@@ -268,6 +269,8 @@ target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
     source/renderer/heli_preview.cpp
     source/renderer/railroad_path.cpp
+    source/renderer/light_fixture.cpp
+    source/renderer/light_fixture_store.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
