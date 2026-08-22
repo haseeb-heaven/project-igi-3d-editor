@@ -66,3 +66,14 @@ open-igi `CutsceneRuntime.cs` states (citing 0x431B70):
 
 Editor-side implication (#60): the preview must treat authored collective as *restorable*
 (tick-one semantics), not merely a static spin-rate input.
+
+## Addendum: address drift in this build (LOD 0x4CED50)
+The same session checked open-igi's `LodModelChain (0x4CED50)` citation: in this local
+build `0x4CED50` is interior code (`02 7e 05 ...`), not a function entry — the same
+~small layout drift seen at 0x431B70. The Heli function was recoverable by sweep because
+its body covered the cited address; the LOD function's cited address does not land in a
+recoverable body here. Conclusion: this stripped `igi2.exe` is a *near-but-not-identical*
+build to open-igi's pdb-matched reference. Behavior-level verification (Heli tick
+semantics) transfers; exact address labels do not. Locating the LOD name-increment loop
+in this build requires behavioral search (call-site of model-name load + char increment)
+left as follow-up for #62.
