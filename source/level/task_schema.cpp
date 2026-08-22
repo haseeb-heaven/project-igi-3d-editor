@@ -58,10 +58,42 @@ const std::map<std::string, TaskSchema>& GetBuiltinSchemas() {
           add(sc, "Position",    "ObjectPos", 3);
           add(sc, "Orientation", "Real32x9",  6);
           add(sc, "Model",       "String16",  11); }
-        // Wire: start pos@3, end pos@6, model@9
+        // Wire (zipline, retail Wire.doc): Start position@3, End position@6, Model@9.
+        // Issue #42: the End position (args 6-8) was previously missing from this schema
+        // and from the parser — the wire's far anchor was invisible and uneditable.
+        // Retail doc also lists a "Useable expression" parameter after Model; its arg
+        // offset is not confirmed against level data, so it is intentionally not exposed
+        // rather than guessed.
         { auto& sc = s["Wire"];
-          add(sc, "Position", "ObjectPos", 3);
-          add(sc, "Model",    "String16",  9); }
+          add(sc, "Start position", "ObjectPos", 3);
+          add(sc, "End position",   "ObjectPos", 6);
+          add(sc, "Model",          "String16",  9); }
+        // AIStationaryGunHolder (stationary machinegun turret base, retail
+        // AiStationaryGunHolder.doc). Arg offsets follow the doc's parameter order with
+        // the engine's standard layout: Position=ObjectPos(3 args), Orientation=
+        // Real32x9 (3 Euler args), then one arg per scalar/string. INFERRED from the
+        // doc + engine conventions — no level-data confirmation yet; the typed editor
+        // exposes them for inspection and round-trips untouched values verbatim.
+        { auto& sc = s["AIStationaryGunHolder"];
+          add(sc, "Position",         "ObjectPos", 3);
+          add(sc, "Orientation",      "Real32x9",  6);
+          add(sc, "Holder Model",     "String16",  9);
+          add(sc, "Viewcone Alpha",   "Real32",    10);
+          add(sc, "Viewcone Gamma",   "Real32",    11);
+          add(sc, "Viewcone Length",  "Real32",    12);
+          add(sc, "On expression",    "String16",  13);
+          add(sc, "Team expression",  "String16",  14);
+          add(sc, "Barrel Model",     "String16",  15);
+          add(sc, "Rotation Sound",   "String16",  16);
+          add(sc, "Min Alpha",        "Real32",    17);
+          add(sc, "Max Alpha",        "Real32",    18);
+          add(sc, "Max Gamma",        "Real32",    19);
+          add(sc, "Ammo",             "Int32",     20);
+          add(sc, "Alpha Speed",      "Real32",    21);
+          add(sc, "Gamma Speed",      "Real32",    22);
+          add(sc, "Beta Speed",       "Real32",    23);
+          add(sc, "Accuracy",         "Real32",    24);
+          add(sc, "Weapon ID",        "Int32",     25); }
         // AlarmControl / SCameraControl: pos@3, ori@6, model@9 (usually "waypoint")
         for (const char* t : {"AlarmControl","SCameraControl"}) {
             add(s[t], "Position",    "ObjectPos", 3);
@@ -99,7 +131,9 @@ const std::map<std::string, TaskSchema>& GetBuiltinSchemas() {
           add(sc, "Heading",  "Real32",    6);
           add(sc, "Model",    "String16",  7); }
         // Generic positioned objects: pos@3, ori@6, model scanned from arg 9+
-        for (const char* t : {"AIStationaryGunHolder","AlarmLight","Elevator","Generator",
+        // (AIStationaryGunHolder is NOT in this list — it has its own detailed schema
+        // above, built from the retail AiStationaryGunHolder.doc parameter order.)
+        for (const char* t : {"AlarmLight","Elevator","Generator",
                                "GenericPickup","GenericTBA","Plane","Radio",
                                "RotatingObject","Siren","StationaryGun", "GunPickup"}) {
             add(s[t], "Position",    "ObjectPos", 3);

@@ -291,6 +291,7 @@ private:
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
     GLuint selection_shader_ = 0;
+    GLuint gizmo_line_vao_ = 0, gizmo_line_vbo_ = 0;
     std::unordered_set<std::string> logged_draw_buildings_;
     std::set<std::string> window_model_ids_;
     bool window_ids_loaded_ = false;
@@ -349,6 +350,9 @@ private:
     void InitSphereMesh();
     void DrawMagicObjSpheres(const std::vector<LevelObject>& objects, GLuint ubo_mats);
     void DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color);
+    // Issue #42: Wire (zipline) anchor/line gizmos + AIStationaryGunHolder viewcone.
+    void DrawInteractableGizmos(const std::vector<LevelObject>& objects, GLuint ubo_mats);
+    bool EnsureSelectionShader();
     Mesh CreateCubeMesh();
     Mesh CreateTextMesh(const std::string& text);
     void AddCharacterVertices(std::vector<float>& vertices, char c, float x, float y, float scale);

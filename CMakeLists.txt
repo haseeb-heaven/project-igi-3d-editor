@@ -255,6 +255,7 @@ add_executable(igi_tests
     tests/test_ladder_preview.cpp
     tests/test_railroad_path.cpp
     tests/test_light_fixture.cpp
+    tests/test_interactables.cpp
     tests/test_debug_command_parser.cpp
 )
 
