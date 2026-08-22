@@ -1091,6 +1091,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     if (show_magic_obj_spheres) {
         DrawMagicObjSpheres(objects, ubo_mats);
     }
+    // Issue #42: Wire anchor/line + AIStationaryGunHolder viewcone gizmos (cheap,
+    // only touches the two interactable types; kept unconditional for discoverability).
+    DrawInteractableGizmos(objects, ubo_mats);
 }
 
 bool Renderer_Objects::IsVehicleType(const std::string& type) {

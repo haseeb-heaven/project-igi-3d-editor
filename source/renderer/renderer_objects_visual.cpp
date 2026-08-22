@@ -567,11 +567,9 @@ void Renderer_Objects::InitSelectionBox() {
 }
 
 // ─── DrawSelectionBox ─────────────────────────────────────────────────────────
-void Renderer_Objects::DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color) {
-    if (selection_vao_ == 0)
-        InitSelectionBox();
+bool Renderer_Objects::EnsureSelectionShader() {
+    if (selection_shader_ != 0) return true;
 
-    if (selection_shader_ == 0) {
         static const char* simple_vert = R"(
 #version 330 core
 layout(std140) uniform Matrices {
@@ -598,13 +596,13 @@ void main() {
         glShaderSource(vert, 1, &simple_vert, nullptr);
         glCompileShader(vert);
         glGetShaderiv(vert, GL_COMPILE_STATUS, &ok);
-        if (!ok) { glDeleteShader(vert); return; }
+        if (!ok) { glDeleteShader(vert); return false; }
 
         GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(frag, 1, &simple_frag, nullptr);
         glCompileShader(frag);
         glGetShaderiv(frag, GL_COMPILE_STATUS, &ok);
-        if (!ok) { glDeleteShader(vert); glDeleteShader(frag); return; }
+        if (!ok) { glDeleteShader(vert); glDeleteShader(frag); return false; }
 
         selection_shader_ = glCreateProgram();
         glAttachShader(selection_shader_, vert);
@@ -613,8 +611,15 @@ void main() {
         glDeleteShader(vert);
         glDeleteShader(frag);
         glGetProgramiv(selection_shader_, GL_LINK_STATUS, &ok);
-        if (!ok) { glDeleteProgram(selection_shader_); selection_shader_ = 0; return; }
-    }
+        if (!ok) { glDeleteProgram(selection_shader_); selection_shader_ = 0; return false; }
+    return true;
+}
+
+void Renderer_Objects::DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color) {
+    if (selection_vao_ == 0)
+        InitSelectionBox();
+
+    if (!EnsureSelectionShader()) return;
 
     glUseProgram(selection_shader_);
     glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
@@ -637,6 +642,140 @@ void main() {
     glBindVertexArray(selection_vao_);
     glDisable(GL_CULL_FACE);
     glDrawArrays(GL_LINES, 0, 24);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+// ─── DrawInteractableGizmos (issue #42) ──────────────────────────────────────
+// Viewport debug gizmos for the two interactable task types:
+//   * Wire (zipline): straight line between the retail "Start position" and
+//     "End position" anchors plus axis-cross markers at both ends. The retail
+//     Wire.doc stores exactly two positions — no sag/tension data — so a
+//     straight segment is the faithful rendering.
+//   * AIStationaryGunHolder: detection-viewcone sector built from its schema
+//     args (Viewcone Alpha = width in local XY about +Y, Viewcone Gamma =
+//     height in local YZ, Viewcone Length = spot distance) per the retail
+//     AiStationaryGunHolder.doc. Rotation-limit arcs (Min/Max Alpha, Max
+//     Gamma) are drawn as short edge ticks at the sector extremes.
+void Renderer_Objects::DrawInteractableGizmos(const std::vector<LevelObject>& objects, GLuint ubo_mats) {
+    if (!EnsureSelectionShader()) return;
+    if (gizmo_line_vao_ == 0) {
+        glGenVertexArrays(1, &gizmo_line_vao_);
+        glGenBuffers(1, &gizmo_line_vbo_);
+    }
+
+    glUseProgram(selection_shader_);
+    glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
+    glBindVertexArray(gizmo_line_vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, gizmo_line_vbo_);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glDisable(GL_CULL_FACE);
+
+    const GLint loc_model = glGetUniformLocation(selection_shader_, "u_model");
+    const GLint loc_color = glGetUniformLocation(selection_shader_, "u_color");
+
+    auto drawLines = [&](const std::vector<glm::vec3>& pts, const glm::vec4& color,
+                         const glm::mat4& model) {
+        if (pts.size() < 2 || pts.size() % 2 != 0) return;
+        glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform4fv(loc_color, 1, glm::value_ptr(color));
+        glBufferData(GL_ARRAY_BUFFER, pts.size() * sizeof(glm::vec3), pts.data(), GL_DYNAMIC_DRAW);
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(pts.size()));
+    };
+
+    // Placement rotation used everywhere else in the editor: Rz then Rx then Ry.
+    auto placementRot = [](const LevelObject& o) {
+        glm::mat4 r(1.0f);
+        r = glm::rotate(r, (float)o.rot.z, glm::vec3(0, 0, 1));
+        r = glm::rotate(r, (float)o.rot.x, glm::vec3(1, 0, 0));
+        r = glm::rotate(r, (float)o.rot.y, glm::vec3(0, 1, 0));
+        return r;
+    };
+
+    for (const auto& obj : objects) {
+        if (obj.deleted) continue;
+
+        if (obj.type == "Wire") {
+            const glm::vec3 a = glm::vec3(obj.pos);
+            const glm::vec3 b = glm::vec3(obj.wire_end);
+            if (glm::length(b - a) < 0.001f) continue; // no end anchor authored
+
+            const glm::mat4 ident(1.0f);
+            // The wire itself.
+            drawLines({a, b}, glm::vec4(0.30f, 0.90f, 1.00f, 1.0f), ident);
+            // Anchor crosses (axis-aligned, ~0.25 m arm) at both ends.
+            const float s = WORLD_UNITS_PER_METER * 0.25f;
+            for (const glm::vec3& p : {a, b}) {
+                drawLines({
+                    p + glm::vec3(-s, 0, 0), p + glm::vec3(s, 0, 0),
+                    p + glm::vec3(0, -s, 0), p + glm::vec3(0, s, 0),
+                    p + glm::vec3(0, 0, -s), p + glm::vec3(0, 0, s),
+                }, glm::vec4(1.00f, 0.85f, 0.20f, 1.0f), ident);
+            }
+        } else if (obj.type == "AIStationaryGunHolder") {
+            // Schema arg offsets from task_schema.cpp (Viewcone Alpha/Gamma/Length).
+            auto arg = [&](int idx) -> double {
+                return (idx >= 0 && idx < (int)obj.argTokens.size())
+                    ? std::atof(obj.argTokens[idx].c_str()) : 0.0;
+            };
+            double alpha_deg = arg(10); if (alpha_deg <= 0.0) alpha_deg = 60.0;
+            double gamma_deg = arg(11); if (gamma_deg <= 0.0) gamma_deg = 30.0;
+            double length    = arg(12); if (length    <= 0.0) length    = 8192.0;
+
+            const glm::mat4 world =
+                glm::translate(glm::mat4(1.0f), glm::vec3(obj.pos)) * placementRot(obj);
+
+            // Local frame: facing = +Y (retail doc: cone measured "relative to the
+            // models positive Y axis"); alpha spreads in local XY, gamma in local YZ.
+            const float half_a = static_cast<float>(alpha_deg * 0.5 * 3.14159265358979323846 / 180.0);
+            const float L      = static_cast<float>(length);
+            const glm::vec4 cone_color(1.00f, 0.55f, 0.10f, 1.0f);
+
+            // Direction arrow along local +Y (two collinear segments so it reads at depth).
+            drawLines({
+                world * glm::vec4(0, 0, 0, 1),
+                world * glm::vec4(0, L, 0, 1),
+            }, cone_color, glm::mat4(1.0f));
+
+            // Horizontal sector fan: center → arc chords sweeping ±half_a in local XY.
+            constexpr int kArcSteps = 8;
+            std::vector<glm::vec3> fan;
+            fan.reserve((kArcSteps + 1) * 2);
+            auto arcPoint = [&](float ang) {
+                return world * glm::vec4(std::sin(ang) * L, std::cos(ang) * L, 0.0f, 1.0f);
+            };
+            float prev_ang = -half_a;
+            for (int i = 1; i <= kArcSteps; ++i) {
+                float ang = -half_a + (2.0f * half_a) * (float)i / (float)kArcSteps;
+                fan.push_back(world * glm::vec4(0, 0, 0, 1));
+                fan.push_back(arcPoint(prev_ang));
+                fan.push_back(world * glm::vec4(0, 0, 0, 1));
+                fan.push_back(arcPoint(ang));
+                prev_ang = ang;
+            }
+            drawLines(fan, cone_color, glm::mat4(1.0f));
+
+            // Vertical extent ticks at both horizontal extremes: ±gamma/2 in local YZ.
+            const float half_g = static_cast<float>(gamma_deg * 0.5 * 3.14159265358979323846 / 180.0);
+            std::vector<glm::vec3> vert;
+            vert.reserve(8);
+            for (float ang_ext : {-half_a, half_a}) {
+                glm::vec3 base = world * glm::vec4(std::sin(ang_ext) * L, std::cos(ang_ext) * L, 0.0f, 1.0f);
+                for (float gz : {-half_g, half_g}) {
+                    glm::vec3 tip = world * glm::vec4(
+                        std::sin(ang_ext) * std::cos(gz) * L,
+                        std::cos(ang_ext) * std::cos(gz) * L,
+                        std::sin(gz) * L, 1.0f);
+                    vert.push_back(base);
+                    vert.push_back(tip);
+                }
+            }
+            drawLines(vert, glm::vec4(1.00f, 0.80f, 0.30f, 1.0f), glm::mat4(1.0f));
+        }
+    }
+
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
     glUseProgram(0);
