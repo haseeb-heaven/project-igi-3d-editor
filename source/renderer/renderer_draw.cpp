@@ -1431,7 +1431,7 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (task_tree_view.pause_mode_) {
       const int menu_w = 460;
-      const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
+      const int menu_h = 790; // +38*3 for Weather rows (Enabled/Style/Speed) after Lightmaps (plus prior Fog/Lightmaps additions)
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
@@ -1512,6 +1512,12 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
       btn_labels.push_back(lightmap_btn_label);
+      const int WEATHER_ENABLED_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "[X] Weather" — label built at draw time
+      const int WEATHER_STYLE_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "Weather: [Auto]" — label built at draw time
+      const int WEATHER_SPEED_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "Weather Speed  [-] [N%] [+]" spinner
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1673,6 +1679,61 @@ void Renderer::Draw(const draw_params_s &params,
           int lmtw = (int)strlen(lmbuf) * 6;
           draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lmbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_ENABLED_ROW) {
+          // Weather on/off checkbox: "[X] Weather" — same checkbox layout as Lightmaps row.
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          char wbuf[24];
+          snprintf(wbuf, sizeof(wbuf), "[%c] Weather", Config::Get().weatherEnabled ? 'X' : ' ');
+          int wtw = (int)strlen(wbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - wtw) / 2, screen_btn_y, wbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_STYLE_ROW) {
+          // Weather style: "Weather: [Auto]" — cycles Auto -> Rain -> Snow (r_weather_kind).
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          const char* style_name = Config::Get().weatherStyle == Renderer_Rain::kStyleRain ? "Rain"
+                                 : Config::Get().weatherStyle == Renderer_Rain::kStyleSnow ? "Snow" : "Auto";
+          char sbuf[32];
+          snprintf(sbuf, sizeof(sbuf), "Weather: [%s]", style_name);
+          int stw = (int)strlen(sbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - stw) / 2, screen_btn_y, sbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_SPEED_ROW) {
+          // Weather Speed: "Weather Speed  [-] [N%] [+]" — same spinner layout as Fog Intensity.
+          const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
+          const char* lbl = "Weather Speed";
+          int label_px = (int)strlen(lbl) * 6;
+          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+          draw_text_sys(gx, screen_btn_y, lbl,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+          int minus_x = gx + label_px + label_gap;
+          int box_x   = minus_x + btn_w + gap;
+          int plus_x  = box_x + val_w + gap;
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          char wsbuf[8];
+          snprintf(wsbuf, sizeof(wsbuf), "%d%%", Config::Get().weatherSpeed);
+          sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, wsbuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",    rt, rb, screen_btn_y);
 
         } else if (i == TERRAIN_HEADER_ROW) {
           draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),

@@ -50,6 +50,7 @@ public:
   void ToggleTerrainModOption(int opt);
   void SetFogEnabled(bool enabled);
   void SetFogIntensity(int intensity);
+  void SetWeatherSettings(bool enabled, int style, int speedPercent);
 
   void ToggleEditMode();
   bool GetEditMode() const;

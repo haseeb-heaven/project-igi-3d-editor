@@ -124,6 +124,9 @@ void Config::CreateDefault() {
     data_.enableLightmaps = false;
     data_.enableFog = true;
     data_.fogIntensity = 200;
+    data_.weatherEnabled = true;
+    data_.weatherStyle = 0;  // Auto: follow the level's authored "Is Rain" flag
+    data_.weatherSpeed = 100;
     data_.musicEnabled = true;
     data_.consoleAutoActivate = 2;
     data_.searchType = 133577004;
@@ -221,6 +224,9 @@ void Config::Load() {
                 else if (key == "Lightmaps") data_.enableLightmaps = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Fog") data_.enableFog = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "FogIntensity") { int v = std::stoi(val); data_.fogIntensity = std::max(0, std::min(1000, v)); }
+                else if (key == "WeatherEnabled") data_.weatherEnabled = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "WeatherStyle") { int v = std::stoi(val); data_.weatherStyle = std::max(0, std::min(2, v)); }
+                else if (key == "WeatherSpeed") { int v = std::stoi(val); data_.weatherSpeed = std::max(0, std::min(200, v)); }
                 else if (key == "Music") data_.musicEnabled = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
                 else if (key == "SearchType") data_.searchType = std::stoll(val);
@@ -393,6 +399,9 @@ void Config::Save() {
         file << "QEDLightmaps(" << (data_.enableLightmaps ? "TRUE" : "FALSE") << ");\n";
         file << "QEDFog(" << (data_.enableFog ? "TRUE" : "FALSE") << ");\n";
         file << "QEDFogIntensity(" << data_.fogIntensity << ");\n";
+        file << "QEDWeatherEnabled(" << (data_.weatherEnabled ? "TRUE" : "FALSE") << ");\n";
+        file << "QEDWeatherStyle(" << data_.weatherStyle << ");\n";
+        file << "QEDWeatherSpeed(" << data_.weatherSpeed << ");\n";
         file << "QEDMusic(" << (data_.musicEnabled ? "TRUE" : "FALSE") << ");\n";
         file << "QEDUseEditorFont(" << (data_.useEditorFont ? "TRUE" : "FALSE") << ");\n";
         file << "QEDSystemFontSize(" << data_.systemFontSize << ");\n";

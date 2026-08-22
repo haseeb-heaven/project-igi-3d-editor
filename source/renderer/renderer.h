@@ -714,9 +714,14 @@ public:
 		objects_.SetIndoorAmbientForTask(taskId, rgb);
 	}
 	// RainEffect QSC task (per-level, absent on levels with no rain like level2).
+	// active=task availability, isRain="Is Rain" flag (false + active = snowfall);
 	// startMeters/endMeters are the "Traceline start"/"Traceline end" fields.
-	void SetRainEffect(bool active, float startMeters, float endMeters, float alpha) {
-		rain_.SetParams(active, startMeters, endMeters, alpha);
+	void SetRainEffect(bool active, bool isRain, float startMeters, float endMeters, float alpha) {
+		rain_.SetParams(active, isRain, startMeters, endMeters, alpha);
+	}
+	// User weather settings mirroring open-igi r_weather_enabled/kind/speed.
+	void SetWeatherSettings(bool enabled, int style, int speedPercent) {
+		rain_.ApplySettings(enabled, style, speedPercent);
 	}
 	void ClearSuppressedAttas() { objects_.ClearSuppressedAttas(); }
 	bool SuppressAttachmentInMef(const std::string& parentModelId, const std::string& attModelId, const glm::vec3& localPos) {
