@@ -1,5 +1,6 @@
 #include "heli_preview.h"
 #include "../level/level_objects.h"
+#include "../logger.h"
 #include <algorithm>
 #include <cctype>
 
@@ -90,45 +91,12 @@ std::string CompactLower(const std::string& s) {
 
 namespace heli_preview {
 
-float LookupAuthoredCollective(const std::vector<LevelObject>* objects,
-                               const LevelObject& heliObj,
-                               DeclarationIndex& declCache) {
-    if (!objects || heliObj.type != "Heli") return -1.0f;
-
-    // Resolve (and cache) which argToken offset carries the authored collective
-    // for this level's "Heli" declaration.
-    int valueOffset = -1;
-    auto cached = declCache.find("Heli");
-    if (cached != declCache.end()) {
-        valueOffset = cached->second;
-    } else {
-        for (const LevelObject& o : *objects) {
-            if (o.type != "Task_DeclareParameters" || o.argTokens.empty()) continue;
-            if (CompactLower(o.argTokens[0]) != "heli") continue;
-            // argTokens: [0]="Heli", then alternating "<name>", "<type>" pairs.
-            // Multi-component types consume several object tokens (e.g. an
-            // "ObjectPos" position parameter spans x/y/z), so the object-side
-            // offset accumulates per-type widths rather than counting pairs.
-            int tokenOffset = 3;
-            for (size_t i = 1; i + 1 < o.argTokens.size(); i += 2) {
-                const std::string& name = o.argTokens[i];
-                const std::string& type = CompactLower(o.argTokens[i + 1]);
-                if (CompactLower(name) == "originalthrust") {
-                    valueOffset = tokenOffset;
-                    break;
-                }
-                int width = 1;
-                if (type == "objectpos") width = 3;
-                else if (type.size() > 2 && type.compare(type.size() - 2, 2, "x9") == 0) width = 9;
-                tokenOffset += width;
-            }
-            break; // first "Heli" declaration wins
-        }
-        declCache["Heli"] = valueOffset;
-    }
+// Reads the authored collective at `valueOffset` from a Heli task's argTokens.
+// -1 (caller keeps default spin) when the declaration or token is missing/invalid.
+float ResolveCollectiveFromTokens(const LevelObject& heliObj, int valueOffset) {
     if (valueOffset < 0 ||
         valueOffset >= static_cast<int>(heliObj.argTokens.size())) {
-        return -1.0f; // declaration or token missing — caller keeps default spin
+        return -1.0f;
     }
     try {
         std::string tok = heliObj.argTokens[valueOffset];
@@ -137,6 +105,55 @@ float LookupAuthoredCollective(const std::vector<LevelObject>* objects,
     } catch (...) {
         return -1.0f;
     }
+}
+
+float LookupAuthoredCollective(const std::vector<LevelObject>* objects,
+                               const LevelObject& heliObj,
+                               DeclarationIndex& declCache) {
+    if (!objects || heliObj.type != "Heli") return -1.0f;
+
+    // Resolve (and cache) which argToken offset carries the authored collective
+    // for this level's "Heli" declaration.
+    // declCache is cleared per level switch in Renderer_Objects::ClearCaches(),
+    // so entries here are always from the current level's declarations.
+    auto cached = declCache.find("Heli");
+    if (cached != declCache.end()) return ResolveCollectiveFromTokens(heliObj, cached->second);
+
+    int valueOffset = -1;
+    int decl_count = 0;
+    for (const LevelObject& o : *objects) {
+        if (o.type != "Task_DeclareParameters" || o.argTokens.empty()) continue;
+        if (CompactLower(o.argTokens[0]) != "heli") continue;
+        ++decl_count;
+        // argTokens: [0]="Heli", then alternating "<name>", "<type>" pairs.
+        // Multi-component types consume several object tokens (e.g. an
+        // "ObjectPos" position parameter spans x/y/z), so the object-side
+        // offset accumulates per-type widths rather than counting pairs.
+        int tokenOffset = 3;
+        for (size_t i = 1; i + 1 < o.argTokens.size(); i += 2) {
+            const std::string& name = o.argTokens[i];
+            const std::string& type = CompactLower(o.argTokens[i + 1]);
+            if (CompactLower(name) == "originalthrust") {
+                valueOffset = tokenOffset;
+                break;
+            }
+            int width = 1;
+            if (type == "objectpos") width = 3;
+            else if (type.size() > 2 && type.compare(type.size() - 2, 2, "x9") == 0) width = 9;
+            tokenOffset += width;
+        }
+        if (valueOffset >= 0) break; // first resolvable "Heli" declaration wins
+    }
+    if (decl_count > 1) {
+        // Review finding (#65): multiple Heli layouts — first-resolvable-wins is
+        // the retail order (load-order array), but stay diagnosable.
+        Logger::Get().Log(LogLevel::DEBUG,
+            "[HeliPreview] " + std::to_string(decl_count) +
+            " Heli Task_DeclareParameters found; using the first with Original Thrust (offset " +
+            std::to_string(valueOffset) + ")");
+    }
+    declCache["Heli"] = valueOffset;
+    return ResolveCollectiveFromTokens(heliObj, valueOffset);
 }
 
 } // namespace heli_preview
