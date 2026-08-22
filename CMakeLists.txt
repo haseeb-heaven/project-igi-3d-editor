@@ -247,6 +247,7 @@ add_executable(igi_tests
     tests/test_res_stream_append.cpp
     tests/test_mef_native_lightmap.cpp
     tests/test_igi1conv_lightmap.cpp
+    tests/test_lod_chain.cpp
     tests/test_debug_command_parser.cpp
 )
 

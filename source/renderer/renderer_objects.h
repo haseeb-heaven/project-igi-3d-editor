@@ -90,6 +90,9 @@ public:
 
     // Diagnostics: live cache occupancy (for level-switch logging).
     size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
+    // LOD chain length for a loaded model (1..5). Returns 1 when unknown/not loaded.
+    int GetLodChainLength(const std::string& modelId, bool isBuilding) const;
+    void ResolveAndCacheLodChain(const std::string& modelId, bool isBuilding);
     size_t GetTextureCacheCount() const { return texture_cache_.size(); }
 
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false, const std::unordered_set<int>* skip_static_draw_indices = nullptr);
@@ -236,6 +239,9 @@ private:
     };
     std::map<std::string, BakePose> lightmap_bake_pose_by_task_;
     std::map<std::string, Mesh> mesh_cache_;
+    // LOD virtual-model chain length per cacheKey (0x4CED50 name-increment rule, max 5).
+    // Decides how many per-LOD .olm entries an object contributes to lightmaps.res (#62).
+    std::map<std::string, int> lod_chain_length_;
     std::map<std::string, GLuint> texture_cache_;
     std::map<std::string, std::vector<std::string>> model_texture_map_cache_;
     mutable std::map<std::string, std::vector<std::string>> global_texture_map_;

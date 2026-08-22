@@ -4,6 +4,31 @@
  *          Split from renderer_objects.cpp; shares renderer_objects_internal.h.
  *****************************************************************************/
 #include "renderer_objects_internal.h"
+#include "lod_model_chain.h"
+
+// Resolve and cache the LOD virtual-model chain length for a successfully loaded model
+// (issue #62, 0x4CED50 name-increment rule via open-igi LodModelChain.cs). Existence probe:
+// in-memory ResCache hit or an on-disk model file.
+void Renderer_Objects::ResolveAndCacheLodChain(const std::string& modelId, bool isBuilding) {
+    const std::string prefix = isBuilding ? "building:" : "object:";
+    const std::string cacheKey = std::to_string(current_level_) + ":" + prefix + modelId;
+    if (lod_chain_length_.count(cacheKey)) return;
+    auto probe = [&](const std::string& candidate) {
+        if (!FindMeshData(candidate).empty()) return true;
+        return !FindModelFile(candidate, isBuilding).empty();
+    };
+    int chain_len = static_cast<int>(igi::ResolveLodChain(modelId, probe).size());
+    lod_chain_length_[cacheKey] = chain_len;
+    Logger::Get().Log(LogLevel::DEBUG,
+        "[Renderer_Objects] LOD chain for '" + modelId + "': " + std::to_string(chain_len) + " level(s)");
+}
+
+int Renderer_Objects::GetLodChainLength(const std::string& modelId, bool isBuilding) const {
+    const std::string prefix = isBuilding ? "building:" : "object:";
+    const std::string cacheKey = std::to_string(current_level_) + ":" + prefix + modelId;
+    auto it = lod_chain_length_.find(cacheKey);
+    return it != lod_chain_length_.end() ? it->second : 1;
+}
 
 float Renderer_Objects::GetMeshZOffset(const std::string& modelId, bool isBuilding) {
     std::string cacheKey = std::to_string(current_level_) + ":" + (isBuilding ? "building:" : "object:") + modelId;
@@ -58,6 +83,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
                 Mesh mesh = loadObjModelFromMemory(meshBytes, modelId);
                 ApplyTexturesToMesh(mesh, modelId);
                 mesh_cache_[cacheKey] = mesh;
+                ResolveAndCacheLodChain(modelId, isBuilding); // #62: LOD virtual-model chain (0x4CED50)
                 Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Loaded '" + modelId +
                     "' from ResCache (" + std::to_string(mesh.vertexCount) + " vertices)");
                 std::unordered_set<std::string> visited;
@@ -87,6 +113,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
         Mesh mesh = loadObjModel(filepath, "");
         ApplyTexturesToMesh(mesh, modelId);
         mesh_cache_[cacheKey] = mesh;
+        ResolveAndCacheLodChain(modelId, isBuilding); // #62: LOD virtual-model chain (0x4CED50)
         Logger::Get().Log(LogLevel::DEBUG, "[Renderer_Objects] Success: Loaded model '" + modelId +
             "' from disk " + filepath + " (" + std::to_string(mesh.vertexCount) + " vertices)");
 
