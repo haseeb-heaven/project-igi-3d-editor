@@ -279,6 +279,7 @@ target_sources(igi_tests PRIVATE
     source/renderer/anim_player.cpp
     source/renderer/ladder_preview.cpp
     source/renderer/light_fixture.cpp
+    source/renderer/light_fixture_extract.cpp
     source/renderer/light_fixture_store.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
