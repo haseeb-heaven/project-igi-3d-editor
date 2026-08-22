@@ -74,6 +74,11 @@ struct EditorAudio::Impl {
     }
 
     bool Submit(std::vector<uint8_t> bytes, bool loop) {
+        // Looping ambience replaces the previous voice — stop it BEFORE preparing/
+        // writing the replacement, otherwise waveOutReset in StopAmbienceLocked
+        // kills the just-submitted buffer and the loop never plays
+        // (review finding 3836032293).
+        if (loop && ambience) StopAmbienceLocked();
         Voice* v = new Voice();
         v->mixed = std::move(bytes);
         std::memset(&v->hdr, 0, sizeof(v->hdr));
@@ -87,7 +92,6 @@ struct EditorAudio::Impl {
             return false;
         }
         if (loop) {
-            StopAmbienceLocked();
             ambience = v;
         } else {
             voices.push_back(v);
