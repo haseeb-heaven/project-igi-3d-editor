@@ -62,7 +62,17 @@ std::string Unquote(const std::string& t) {
     if (t.size() >= 2 && t.front() == '"' && t.back() == '"') {
         std::string out;
         for (size_t i = 1; i + 1 < t.size(); ++i) {
-            if (t[i] == '\\' && i + 1 < t.size() - 1) { ++i; }
+            if (t[i] == '\\' && i + 1 < t.size() - 1) {
+                ++i;
+                // Retail scripts embed literal \n line separators between
+                // statements; keep them as real newlines so save-back editing
+                // recompiles intact statements instead of glued ones with a
+                // stray 'n' suffix (review finding 3836032333).
+                if (t[i] == 'n') out += '\n';
+                else if (t[i] == 't') out += '\t';
+                else out += t[i];
+                continue;
+            }
             out += t[i];
         }
         return out;
