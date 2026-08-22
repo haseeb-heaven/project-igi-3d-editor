@@ -17,6 +17,13 @@ struct AttachInfo {
     std::string modelId;
     float px, py, pz;           // raw game-unit position from ATTA record
     float r[9];                 // 3x3 rotation matrix (r00..r08)
+    // Magic-object table (#67): set when the attachment name hit the retail
+    // magicobj.qvm table. modelId above is then the DEFINED model (which may differ
+    // from the raw ATTA attachment name in magic_attachment_name). Placement
+    // transform is untouched — only model resolution changes, per 0x4DFA50.
+    bool from_magic_table = false;
+    std::string magic_attachment_name; // raw ATTA name looked up in the table
+    std::string magic_task_type;       // TASKTYPE_* constant, "" when unknown
 };
 
 // One pickable ATTA sub-model instance, captured during the picking pass so the
