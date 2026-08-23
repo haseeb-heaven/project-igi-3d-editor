@@ -1,0 +1,1030 @@
+#include "mcp_tools_objects.h"
+
+#include "../level/qsc_parser.h"
+#include "../level/task_schema.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <iomanip>
+#include <limits>
+#include <map>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace mcp {
+namespace {
+
+using Object = JsonValue::Object;
+
+JsonValue StringSchema() {
+    return Object{{"type", "string"}, {"minLength", 1}, {"maxLength", 256}};
+}
+
+JsonValue NumberVectorSchema() {
+    return Object{{"type", "array"}, {"minItems", 3}, {"maxItems", 3},
+                  {"items", Object{{"type", "number"}}}};
+}
+
+Object MutationProperties() {
+    return Object{
+        {"level", Object{{"type", "integer"}, {"minimum", 1}}},
+        {"expected_revision", Object{{"type", "string"}, {"minLength", 1}}},
+        {"dry_run", Object{{"type", "boolean"}}},
+        {"backup", Object{{"type", "boolean"}}},
+    };
+}
+
+JsonValue Schema(Object properties, JsonValue::Array required = {}) {
+    return Object{{"type", "object"}, {"properties", std::move(properties)},
+                  {"required", std::move(required)}, {"additionalProperties", false}};
+}
+
+bool HasOnlyKeys(const JsonValue& value,
+                 std::initializer_list<std::string_view> allowed) {
+    if (!value.is_object()) return false;
+    for (const auto& [key, ignored] : value.as_object()) {
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) return false;
+    }
+    return true;
+}
+
+bool ReadInteger(const JsonValue& value, int& result) {
+    if (!value.is_number()) return false;
+    const double number = value.as_number();
+    if (!std::isfinite(number) || std::trunc(number) != number ||
+        number < 1.0 || number > static_cast<double>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    result = static_cast<int>(number);
+    return true;
+}
+
+bool ReadNonNegativeInteger(const JsonValue& value, int& result) {
+    if (!value.is_number()) return false;
+    const double number = value.as_number();
+    if (!std::isfinite(number) || std::trunc(number) != number ||
+        number < 0.0 || number > static_cast<double>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    result = static_cast<int>(number);
+    return true;
+}
+
+bool ReadTaskId(const JsonValue& arguments, std::string& task_id) {
+    if (!arguments.is_object() || !arguments.contains("task_id") ||
+        !arguments.at("task_id").is_string()) return false;
+    task_id = arguments.at("task_id").as_string();
+    return !task_id.empty() && task_id.size() <= 128;
+}
+
+bool ReadNonEmptyString(const JsonValue& value, std::string& result) {
+    if (!value.is_string()) return false;
+    result = value.as_string();
+    if (result.empty() || result.size() > 256) return false;
+    for (const unsigned char character : result) {
+        if (character < 0x20) return false;
+    }
+    return true;
+}
+
+bool ReadMutationOptions(const JsonValue& arguments, MutationOptions& options,
+                         std::string& error) {
+    if (!arguments.is_object()) {
+        error = "invalid_arguments";
+        return false;
+    }
+    if (arguments.contains("expected_revision")) {
+        if (!arguments.at("expected_revision").is_string() ||
+            arguments.at("expected_revision").as_string().empty()) {
+            error = "invalid_arguments";
+            return false;
+        }
+        options.expected_revision = arguments.at("expected_revision").as_string();
+    }
+    if (arguments.contains("dry_run")) {
+        if (!arguments.at("dry_run").is_bool()) {
+            error = "invalid_arguments";
+            return false;
+        }
+        options.dry_run = arguments.at("dry_run").as_bool();
+    }
+    if (arguments.contains("backup")) {
+        if (!arguments.at("backup").is_bool()) {
+            error = "invalid_arguments";
+            return false;
+        }
+        options.backup = arguments.at("backup").as_bool();
+    }
+    error.clear();
+    return true;
+}
+
+bool ReadFiniteVector(const JsonValue& value, double result[3]) {
+    if (!value.is_array() || value.as_array().size() != 3) return false;
+    for (std::size_t index = 0; index < 3; ++index) {
+        if (!value.as_array()[index].is_number()) return false;
+        result[index] = value.as_array()[index].as_number();
+        if (!std::isfinite(result[index]) || std::abs(result[index]) > 1.0e12) return false;
+    }
+    return true;
+}
+
+JsonValue Failure(std::string& error, std::string_view code) {
+    error.assign(code);
+    return JsonValue(nullptr);
+}
+
+JsonValue DomainFailure(std::string& error, const std::string& domain_error) {
+    error = domain_error.empty() ? "service_error" : domain_error;
+    return JsonValue(nullptr);
+}
+
+struct ArgSpan {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+};
+
+struct CallSpan {
+    std::size_t begin = 0;
+    std::size_t open = 0;
+    std::size_t end = 0;
+    std::vector<ArgSpan> args;
+    std::string type;
+    std::string name;
+    std::string id;
+    std::string parent_id;
+};
+
+bool IsIdentifierCharacter(char value) {
+    return std::isalnum(static_cast<unsigned char>(value)) || value == '_' || value == '.';
+}
+
+std::size_t SkipString(const std::string& source, std::size_t position) {
+    ++position;
+    while (position < source.size()) {
+        if (source[position] == '\\') {
+            position += std::min<std::size_t>(2, source.size() - position);
+        } else if (source[position++] == '"') {
+            break;
+        }
+    }
+    return position;
+}
+
+std::size_t SkipTrivia(const std::string& source, std::size_t position) {
+    while (position < source.size()) {
+        if (std::isspace(static_cast<unsigned char>(source[position]))) {
+            ++position;
+        } else if (source[position] == '/' && position + 1 < source.size() &&
+                   source[position + 1] == '/') {
+            position += 2;
+            while (position < source.size() && source[position] != '\n') ++position;
+        } else if (source[position] == '/' && position + 1 < source.size() &&
+                   source[position + 1] == '*') {
+            position += 2;
+            while (position + 1 < source.size() &&
+                   !(source[position] == '*' && source[position + 1] == '/')) ++position;
+            if (position + 1 < source.size()) position += 2;
+        } else {
+            break;
+        }
+    }
+    return position;
+}
+
+bool FindClosingParen(const std::string& source, std::size_t open, std::size_t& close) {
+    int depth = 0;
+    for (std::size_t position = open; position < source.size();) {
+        if (source[position] == '"') {
+            position = SkipString(source, position);
+            continue;
+        }
+        if (source[position] == '/' && position + 1 < source.size() &&
+            source[position + 1] == '/') {
+            position = SkipTrivia(source, position);
+            continue;
+        }
+        if (source[position] == '/' && position + 1 < source.size() &&
+            source[position + 1] == '*') {
+            position = SkipTrivia(source, position);
+            continue;
+        }
+        if (source[position] == '(') ++depth;
+        if (source[position] == ')' && --depth == 0) {
+            close = position;
+            return true;
+        }
+        ++position;
+    }
+    return false;
+}
+
+std::vector<ArgSpan> SplitArguments(const std::string& source, std::size_t open,
+                                    std::size_t close) {
+    std::vector<ArgSpan> result;
+    std::size_t start = open + 1;
+    int depth = 0;
+    for (std::size_t position = start; position < close;) {
+        if (source[position] == '"') {
+            position = SkipString(source, position);
+            continue;
+        }
+        if (source[position] == '/' && position + 1 < close &&
+            (source[position + 1] == '/' || source[position + 1] == '*')) {
+            position = SkipTrivia(source, position);
+            continue;
+        }
+        if (source[position] == '(' || source[position] == '{') ++depth;
+        if (source[position] == ')' || source[position] == '}') --depth;
+        if (source[position] == ',' && depth == 0) {
+            result.push_back({start, position});
+            start = position + 1;
+        }
+        ++position;
+    }
+    if (start < close || !result.empty()) result.push_back({start, close});
+    return result;
+}
+
+std::size_t TrimLeft(const std::string& source, std::size_t begin, std::size_t end) {
+    while (begin < end && std::isspace(static_cast<unsigned char>(source[begin]))) ++begin;
+    return begin;
+}
+
+std::size_t TrimRight(const std::string& source, std::size_t begin, std::size_t end) {
+    while (end > begin && std::isspace(static_cast<unsigned char>(source[end - 1]))) --end;
+    return end;
+}
+
+struct Scalar {
+    enum class Kind { Invalid, Number, Boolean, String, Identifier } kind = Kind::Invalid;
+    double number = 0.0;
+    bool boolean = false;
+    std::string text;
+};
+
+bool ParseScalar(std::string_view text, Scalar& result) {
+    qsc::LexResult lexed = qsc::Lex(std::string(text) + ";");
+    if (!lexed.ok) return false;
+    qsc::ParseResult parsed = qsc::Parse(lexed.tokens);
+    if (!parsed.ok || !parsed.program || parsed.program->children.size() != 1 ||
+        parsed.program->children[0]->kind != qsc::NodeKind::ExprStmt) return false;
+    const qsc::Node* node = parsed.program->children[0]->children.empty()
+                                ? nullptr
+                                : parsed.program->children[0]->children[0].get();
+    if (!node) return false;
+    if (node->kind == qsc::NodeKind::IntLit || node->kind == qsc::NodeKind::FloatLit) {
+        result.kind = Scalar::Kind::Number;
+        result.number = node->kind == qsc::NodeKind::IntLit
+                            ? static_cast<double>(node->i_val)
+                            : static_cast<double>(node->f_val);
+        return std::isfinite(result.number);
+    }
+    if (node->kind == qsc::NodeKind::Unary && node->s_val == "-" &&
+        node->children.size() == 1) {
+        Scalar child;
+        if (!ParseScalar(text.substr(text.find('-') + 1), child) ||
+            child.kind != Scalar::Kind::Number) return false;
+        result.kind = Scalar::Kind::Number;
+        result.number = -child.number;
+        return std::isfinite(result.number);
+    }
+    if (node->kind == qsc::NodeKind::BoolLit) {
+        result.kind = Scalar::Kind::Boolean;
+        result.boolean = node->b_val;
+        return true;
+    }
+    if (node->kind == qsc::NodeKind::StringLit) {
+        result.kind = Scalar::Kind::String;
+        result.text = node->s_val;
+        return true;
+    }
+    if (node->kind == qsc::NodeKind::IdentLit) {
+        result.kind = Scalar::Kind::Identifier;
+        result.text = node->s_val;
+        return true;
+    }
+    return false;
+}
+
+std::string StableScalarText(const Scalar& value) {
+    if (value.kind == Scalar::Kind::Number) {
+        std::ostringstream output;
+        output << std::setprecision(9) << static_cast<float>(value.number);
+        return output.str();
+    }
+    if (value.kind == Scalar::Kind::Boolean) return value.boolean ? "true" : "false";
+    return value.text;
+}
+
+void Mix(std::uint64_t& hash, std::string_view value) {
+    for (const unsigned char character : value) {
+        hash ^= character;
+        hash *= 1099511628211ull;
+    }
+}
+
+bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
+    for (std::size_t position = 0; position < source.size();) {
+        if (source[position] == '"') {
+            position = SkipString(source, position);
+            continue;
+        }
+        if (source[position] == '/' && position + 1 < source.size() &&
+            (source[position + 1] == '/' || source[position + 1] == '*')) {
+            position = SkipTrivia(source, position);
+            continue;
+        }
+        if (!std::isalpha(static_cast<unsigned char>(source[position])) &&
+            source[position] != '_') {
+            ++position;
+            continue;
+        }
+        const std::size_t word_begin = position++;
+        while (position < source.size() && IsIdentifierCharacter(source[position])) ++position;
+        if (source.substr(word_begin, position - word_begin) != "Task_New") continue;
+        const std::size_t open = SkipTrivia(source, position);
+        if (open >= source.size() || source[open] != '(') continue;
+        std::size_t close = 0;
+        if (!FindClosingParen(source, open, close)) return false;
+        calls.push_back({word_begin, open, close, SplitArguments(source, open, close)});
+    }
+
+    std::sort(calls.begin(), calls.end(), [](const CallSpan& left, const CallSpan& right) {
+        return left.begin < right.begin;
+    });
+    std::unordered_map<std::string, int> id_counts;
+    for (std::size_t index = 0; index < calls.size(); ++index) {
+        CallSpan& call = calls[index];
+        for (std::size_t argument_index = 0; argument_index < call.args.size(); ++argument_index) {
+            const auto& argument = call.args[argument_index];
+            const std::size_t begin = TrimLeft(source, argument.begin, argument.end);
+            const std::size_t end = TrimRight(source, begin, argument.end);
+            Scalar value;
+            if (begin < end && ParseScalar(std::string_view(source).substr(begin, end - begin), value)) {
+                const std::string text = value.kind == Scalar::Kind::String ||
+                                                 value.kind == Scalar::Kind::Identifier
+                                             ? value.text : StableScalarText(value);
+                if (argument_index == 0) call.id = text.empty() ? "anonymous" : text;
+                if (argument_index == 1) call.type = text;
+                if (argument_index == 2) call.name = text;
+            }
+        }
+        std::size_t parent_end = std::numeric_limits<std::size_t>::max();
+        for (std::size_t parent = 0; parent < index; ++parent) {
+            if (calls[parent].begin < call.begin && calls[parent].end > call.end &&
+                calls[parent].end < parent_end) {
+                call.parent_id = calls[parent].id;
+                parent_end = calls[parent].end;
+            }
+        }
+        if (call.id == "-1" || call.id == "anonymous") {
+            std::uint64_t hash = 14695981039346656037ull;
+            Mix(hash, call.parent_id);
+            Mix(hash, "|");
+            Mix(hash, call.type);
+            Mix(hash, "|");
+            Mix(hash, call.name);
+            Mix(hash, "|");
+            std::ostringstream hashed;
+            hashed << "anon-" << std::hex << hash;
+            call.id = hashed.str();
+        }
+        const int occurrence = id_counts[call.id]++;
+        if (occurrence > 0) call.id += "#" + std::to_string(occurrence);
+    }
+    return true;
+}
+
+CallSpan* FindCall(std::vector<CallSpan>& calls, std::string_view task_id) {
+    for (auto& call : calls) {
+        if (call.id == task_id) return &call;
+    }
+    return nullptr;
+}
+
+struct Layout {
+    int position[3] = {-1, -1, -1};
+    int rotation[3] = {-1, -1, -1};
+    int model = -1;
+};
+
+Layout LayoutFor(const std::string& type) {
+    Layout layout;
+    layout.position[0] = 3;
+    layout.position[1] = 4;
+    layout.position[2] = 5;
+    layout.rotation[0] = 6;
+    layout.rotation[1] = 7;
+    layout.rotation[2] = 8;
+    layout.model = 9;
+    if (type == "Door") {
+        layout.rotation[0] = 9; layout.rotation[1] = 10; layout.rotation[2] = 11;
+        layout.model = 12;
+    } else if (type == "HumanSoldier" || type == "HumanSoldierFemale" ||
+               type == "HumanPlayer" || type == "HumanSoldierRPG" || type == "Cabinet") {
+        layout.rotation[0] = -1; layout.rotation[1] = -1; layout.rotation[2] = 6;
+        layout.model = 7;
+    } else if (type == "SCamera") {
+        layout.rotation[0] = 8; layout.rotation[1] = 9; layout.rotation[2] = 6;
+        layout.model = 10;
+    } else if (type == "SplineObjWaypoint") {
+        layout.position[0] = 6; layout.position[1] = 7; layout.position[2] = 8;
+        layout.rotation[0] = 3; layout.rotation[1] = 4; layout.rotation[2] = 5;
+        layout.model = 9;
+    } else if (type == "SplineObj") {
+        layout.position[0] = 9; layout.position[1] = 10; layout.position[2] = 11;
+        layout.rotation[0] = layout.rotation[1] = layout.rotation[2] = -1;
+        layout.model = -1;
+    } else if (type == "Train") {
+        layout.position[1] = layout.position[2] = -1;
+        layout.rotation[0] = layout.rotation[1] = layout.rotation[2] = -1;
+        layout.model = 6;
+    } else if (type == "Fence") {
+        layout.rotation[0] = 8; layout.rotation[1] = 9; layout.rotation[2] = 6;
+        layout.model = 7;
+    } else if (type == "Heli" || type == "Car") {
+        layout.model = 13;
+    } else if (type == "Switch") {
+        layout.model = 11;
+    } else if (type == "SCameraControl" || type == "AlarmControl" ||
+               type == "ExplodeObject") {
+        layout.model = 9;
+    }
+    return layout;
+}
+
+bool ValidArg(const CallSpan& call, int index) {
+    return index >= 0 && static_cast<std::size_t>(index) < call.args.size();
+}
+
+std::size_t ArgBegin(const std::string& source, const ArgSpan& span) {
+    return TrimLeft(source, span.begin, span.end);
+}
+
+std::size_t ArgEnd(const std::string& source, const ArgSpan& span) {
+    const std::size_t begin = ArgBegin(source, span);
+    return TrimRight(source, begin, span.end);
+}
+
+struct Replacement {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+    std::string text;
+    std::string field;
+};
+
+enum class ExpectedKind { Any, Number, Boolean, String };
+
+ExpectedKind ExpectedKindForType(std::string_view type_name) {
+    if (type_name == "Bool") return ExpectedKind::Boolean;
+    if (type_name == "String16" || type_name == "String256" || type_name == "VarString")
+        return ExpectedKind::String;
+    if (type_name == "ObjectPos" || type_name == "Real32x9" || type_name == "RGB" ||
+        type_name == "Real32x3" || type_name == "Colour" || type_name == "Real32" ||
+        type_name == "Int32" || type_name == "Int16" || type_name == "TrainPos1D")
+        return ExpectedKind::Number;
+    return ExpectedKind::Any;
+}
+
+ExpectedKind ExpectedKindForParameter(const CallSpan& call, int index) {
+    const TaskSchemaNS::TaskSchema* schema = TaskSchemaNS::GetSchema(call.type);
+    if (schema == nullptr) return ExpectedKind::Any;
+    for (const auto& field : *schema) {
+        if (index >= field.argOffset && index < field.argOffset + field.argCount)
+            return ExpectedKindForType(field.typeName);
+    }
+    return ExpectedKind::Any;
+}
+
+bool ExistingKindMatches(const Scalar& existing, ExpectedKind expected) {
+    if (expected == ExpectedKind::Any) return true;
+    if (expected == ExpectedKind::Number) return existing.kind == Scalar::Kind::Number;
+    if (expected == ExpectedKind::Boolean)
+        return existing.kind == Scalar::Kind::Boolean || existing.kind == Scalar::Kind::Identifier;
+    return existing.kind == Scalar::Kind::String || existing.kind == Scalar::Kind::Identifier;
+}
+
+bool ValueMatches(const JsonValue& value, const Scalar& existing, ExpectedKind expected) {
+    if (!ExistingKindMatches(existing, expected)) return false;
+    if (expected == ExpectedKind::Number) return value.is_number();
+    if (expected == ExpectedKind::Boolean) return value.is_bool();
+    if (expected == ExpectedKind::String) return value.is_string();
+    switch (existing.kind) {
+        case Scalar::Kind::Number: return value.is_number();
+        case Scalar::Kind::Boolean: return value.is_bool();
+        case Scalar::Kind::String: return value.is_string();
+        case Scalar::Kind::Identifier: return value.is_string() || value.is_bool();
+        default: return false;
+    }
+}
+
+bool ValidateReplacementValue(const std::string& source, const CallSpan& call, int index,
+                              const JsonValue& value, ExpectedKind expected,
+                              std::string& error) {
+    if (!ValidArg(call, index)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    const ArgSpan& span = call.args[static_cast<std::size_t>(index)];
+    const std::size_t begin = ArgBegin(source, span);
+    const std::size_t end = ArgEnd(source, span);
+    Scalar existing;
+    if (begin >= end || !ParseScalar(std::string_view(source).substr(begin, end - begin), existing) ||
+        !ValueMatches(value, existing, expected)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    return true;
+}
+
+bool AddReplacement(const std::string& source, const CallSpan& call, int index,
+                    std::string text, std::string field,
+                    std::vector<Replacement>& replacements, std::string& error,
+                    ExpectedKind expected = ExpectedKind::Any) {
+    if (!ValidArg(call, index)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    const ArgSpan& span = call.args[static_cast<std::size_t>(index)];
+    const std::size_t begin = ArgBegin(source, span);
+    const std::size_t end = ArgEnd(source, span);
+    if (begin >= end) {
+        error = "unsupported_operation";
+        return false;
+    }
+    Scalar existing;
+    if (!ParseScalar(std::string_view(source).substr(begin, end - begin), existing)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    if (!ExistingKindMatches(existing, expected)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    replacements.push_back({begin, end, std::move(text), std::move(field)});
+    return true;
+}
+
+std::string FormatNumber(double value) {
+    std::ostringstream output;
+    output << std::setprecision(9) << static_cast<float>(value);
+    return output.str();
+}
+
+std::string FormatString(std::string_view value) {
+    std::string result = "\"";
+    for (const char character : value) {
+        switch (character) {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += character; break;
+        }
+    }
+    result += '"';
+    return result;
+}
+
+bool AddVectorReplacements(const std::string& source, const CallSpan& call,
+                           const int indices[3], const double values[3],
+                           std::string_view field, std::vector<Replacement>& replacements,
+                           std::string& error) {
+    for (int component = 0; component < 3; ++component) {
+        if (indices[component] < 0) {
+            error = "unsupported_operation";
+            return false;
+        }
+        if (!AddReplacement(source, call, indices[component], FormatNumber(values[component]),
+                            std::string(field) + "[" + std::to_string(component) + "]",
+                            replacements, error, ExpectedKind::Number)) return false;
+    }
+    return true;
+}
+
+bool ApplyReplacements(std::string& source, std::vector<Replacement>& replacements,
+                       std::vector<std::string>& fields, std::string& error) {
+    std::sort(replacements.begin(), replacements.end(),
+              [](const Replacement& left, const Replacement& right) {
+                  return left.begin > right.begin;
+              });
+    for (std::size_t index = 1; index < replacements.size(); ++index) {
+        if (replacements[index - 1].begin < replacements[index].end) {
+            error = "unsupported_operation";
+            return false;
+        }
+    }
+    for (const auto& replacement : replacements) {
+        source.replace(replacement.begin, replacement.end - replacement.begin, replacement.text);
+        fields.push_back(replacement.field);
+    }
+    std::reverse(fields.begin(), fields.end());
+    error.clear();
+    return true;
+}
+
+bool CurrentLevel(GameDataService& service, const JsonValue& arguments, int& level,
+                  std::string& error) {
+    if (!service.HasOpenLevel()) {
+        error = "level_not_open";
+        return false;
+    }
+    try {
+        level = service.CurrentRevision().level;
+    } catch (...) {
+        error = "level_not_open";
+        return false;
+    }
+    if (arguments.contains("level") && (!ReadInteger(arguments.at("level"), level) ||
+                                         level != service.CurrentRevision().level)) {
+        error = "invalid_arguments";
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+JsonValue MutationResult(GameDataService& service, int level, std::string_view tool,
+                         std::string_view task_id, const JsonValue& before,
+                         const MutationOptions& options, std::string source,
+                         std::vector<Replacement> replacements, std::string& error) {
+    const LevelRevision revision_before = service.CurrentRevision();
+    std::vector<std::string> fields;
+    if (!ApplyReplacements(source, replacements, fields, error)) return JsonValue(nullptr);
+    if (!service.SaveCurrentObjectSource(source, options, error)) {
+        if (error.empty()) error = "save_failed";
+        return JsonValue(nullptr);
+    }
+
+    JsonValue after = before;
+    LevelRevision revision_after = revision_before;
+    if (!options.dry_run) {
+        revision_after = service.CurrentRevision();
+        std::string object_error;
+        after = service.GetObject(level, task_id, object_error);
+        if (!object_error.empty()) {
+            error = object_error;
+            return JsonValue(nullptr);
+        }
+    }
+    return Object{
+        {"tool", std::string(tool)},
+        {"task_id", std::string(task_id)},
+        {"dry_run", options.dry_run},
+        {"changed", true},
+        {"changed_fields", [&] {
+             JsonValue::Array values;
+             for (const auto& field : fields) values.emplace_back(field);
+             return JsonValue(values);
+         }()},
+        {"revision_before", revision_before.fingerprint},
+        {"revision_after", revision_after.fingerprint},
+        {"before", before},
+        {"after", after},
+    };
+}
+
+JsonValue ReadObject(GameDataService& service, const JsonValue& arguments,
+                     std::string_view tool, std::string& error) {
+    std::string task_id;
+    if (!ReadTaskId(arguments, task_id)) return Failure(error, "invalid_arguments");
+    int level = 0;
+    if (!CurrentLevel(service, arguments, level, error)) return JsonValue(nullptr);
+    std::string domain_error;
+    const JsonValue object = service.GetObject(level, task_id, domain_error);
+    if (!domain_error.empty()) return DomainFailure(error, domain_error);
+    if (tool == "task_get") return object;
+    return Object{{"level", level}, {"object", object}};
+}
+
+bool PrepareTarget(GameDataService& service, const JsonValue& arguments, int& level,
+                   std::string& task_id, JsonValue& before, std::string& source,
+                   CallSpan*& call, std::vector<CallSpan>& calls, MutationOptions& options,
+                   std::string& error) {
+    if (!ReadTaskId(arguments, task_id)) {
+        error = "invalid_arguments";
+        return false;
+    }
+    if (!CurrentLevel(service, arguments, level, error)) return false;
+    if (!ReadMutationOptions(arguments, options, error)) return false;
+    std::string domain_error;
+    before = service.GetObject(level, task_id, domain_error);
+    if (!domain_error.empty()) {
+        error = domain_error;
+        return false;
+    }
+    if (!service.LoadCurrentObjectSource(source, error)) return false;
+    if (!ScanTaskCalls(source, calls)) {
+        error = "qsc_parse_failed";
+        return false;
+    }
+    call = FindCall(calls, task_id);
+    if (!call) {
+        error = "unknown_task_id";
+        return false;
+    }
+    return true;
+}
+
+JsonValue UnsupportedStructural(GameDataService& service, const JsonValue& arguments,
+                                std::string_view tool, bool require_parent,
+                                std::string& error) {
+    std::string task_id;
+    if (!ReadTaskId(arguments, task_id)) return Failure(error, "invalid_arguments");
+    if (require_parent && (!arguments.contains("parent_id") ||
+                           !arguments.at("parent_id").is_string() ||
+                           arguments.at("parent_id").as_string().empty())) {
+        return Failure(error, "invalid_arguments");
+    }
+    int level = 0;
+    if (!CurrentLevel(service, arguments, level, error)) return JsonValue(nullptr);
+    MutationOptions options;
+    if (!ReadMutationOptions(arguments, options, error)) return JsonValue(nullptr);
+    std::string domain_error;
+    const JsonValue object = service.GetObject(level, task_id, domain_error);
+    if (!domain_error.empty()) return DomainFailure(error, domain_error);
+    (void)object;
+    return Failure(error, "unsupported_operation");
+}
+
+}  // namespace
+
+ToolDefinitionList ObjectToolDefinitions() {
+    Object properties = MutationProperties();
+    properties["task_id"] = StringSchema();
+
+    Object transform = MutationProperties();
+    transform["task_id"] = StringSchema();
+    transform["position"] = NumberVectorSchema();
+    transform["rotation_radians"] = NumberVectorSchema();
+    transform["scale"] = Object{{"type", "number"}};
+
+    Object update = MutationProperties();
+    update["task_id"] = StringSchema();
+    update["name"] = StringSchema();
+    update["position"] = NumberVectorSchema();
+    update["rotation_radians"] = NumberVectorSchema();
+    update["model_id"] = StringSchema();
+    update["type"] = StringSchema();
+    update["parameter_index"] = Object{{"type", "integer"}, {"minimum", 0}};
+    update["value"] = Object{};
+
+    Object create = MutationProperties();
+    create["task_id"] = StringSchema();
+    create["type"] = StringSchema();
+    create["parent_id"] = StringSchema();
+    create["name"] = StringSchema();
+
+    Object schema = Object{{"task_id", StringSchema()}, {"type", StringSchema()}};
+    return ToolDefinitionList{
+        {"task_list", Schema(Object{{"level", properties["level"]}})},
+        {"task_get", Schema(Object{{"level", properties["level"]}, {"task_id", StringSchema()}},
+                             JsonValue::Array{JsonValue("task_id")})},
+        {"task_create", Schema(create, JsonValue::Array{JsonValue("task_id"), JsonValue("type")})},
+        {"task_update", Schema(update, JsonValue::Array{JsonValue("task_id")})},
+        {"task_delete", Schema(properties, JsonValue::Array{JsonValue("task_id")})},
+        {"task_duplicate", Schema(Object{{"task_id", StringSchema()}, {"new_task_id", StringSchema()},
+                                          {"parent_id", StringSchema()},
+                                          {"expected_revision", properties["expected_revision"]},
+                                          {"dry_run", properties["dry_run"]},
+                                          {"backup", properties["backup"]}},
+                                   JsonValue::Array{JsonValue("task_id"), JsonValue("new_task_id")})},
+        {"task_reparent", Schema(Object{{"task_id", StringSchema()}, {"parent_id", StringSchema()},
+                                          {"expected_revision", properties["expected_revision"]},
+                                          {"dry_run", properties["dry_run"]},
+                                          {"backup", properties["backup"]}},
+                                   JsonValue::Array{JsonValue("task_id"), JsonValue("parent_id")})},
+        {"object_set_transform", Schema(transform, JsonValue::Array{JsonValue("task_id")})},
+        {"object_set_model", Schema(Object{{"task_id", StringSchema()}, {"model_id", StringSchema()},
+                                            {"expected_revision", properties["expected_revision"]},
+                                            {"dry_run", properties["dry_run"]},
+                                            {"backup", properties["backup"]}},
+                                     JsonValue::Array{JsonValue("task_id"), JsonValue("model_id")})},
+        {"object_set_type", Schema(Object{{"task_id", StringSchema()}, {"type", StringSchema()},
+                                           {"expected_revision", properties["expected_revision"]},
+                                           {"dry_run", properties["dry_run"]},
+                                           {"backup", properties["backup"]}},
+                                    JsonValue::Array{JsonValue("task_id"), JsonValue("type")})},
+        {"object_set_parameter", Schema(Object{{"task_id", StringSchema()},
+                                                  {"parameter_index", Object{{"type", "integer"}, {"minimum", 0}}},
+                                                  {"value", Object{}},
+                                                  {"expected_revision", properties["expected_revision"]},
+                                                  {"dry_run", properties["dry_run"]},
+                                                  {"backup", properties["backup"]}},
+                                           JsonValue::Array{JsonValue("task_id"), JsonValue("parameter_index"),
+                                                            JsonValue("value")})},
+        {"object_get_schema", Schema(schema)},
+    };
+}
+
+JsonValue CallObjectTool(GameDataService& service, std::string_view name,
+                         const JsonValue& arguments, std::string& error) {
+    error.clear();
+    try {
+        if (name == "task_list") {
+            if (!HasOnlyKeys(arguments, {"level"})) return Failure(error, "invalid_arguments");
+            int level = 0;
+            if (!CurrentLevel(service, arguments, level, error)) return JsonValue(nullptr);
+            std::string domain_error;
+            const JsonValue result = service.ListObjects(level, domain_error);
+            return domain_error.empty() ? result : DomainFailure(error, domain_error);
+        }
+
+        if (name == "task_get") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id"})) return Failure(error, "invalid_arguments");
+            return ReadObject(service, arguments, name, error);
+        }
+
+        if (name == "object_get_schema") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id", "type"}) ||
+                (arguments.contains("task_id") == arguments.contains("type"))) {
+                return Failure(error, "invalid_arguments");
+            }
+            int level = 0;
+            if (!CurrentLevel(service, arguments, level, error)) return JsonValue(nullptr);
+            std::string type;
+            std::string task_id;
+            if (arguments.contains("task_id")) {
+                if (!ReadTaskId(arguments, task_id)) return Failure(error, "invalid_arguments");
+                std::string domain_error;
+                const JsonValue object = service.GetObject(level, task_id, domain_error);
+                if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                type = object.at("type").as_string();
+            } else if (!ReadNonEmptyString(arguments.at("type"), type)) {
+                return Failure(error, "invalid_arguments");
+            }
+            return Object{
+                {"type", type},
+                {"stable_id_required", true},
+                {"persistent", true},
+                {"fields", Object{
+                    {"task_id", Object{{"type", "string"}, {"read_only", true}}},
+                    {"type", Object{{"type", "string"}, {"parameter_index", 1}}},
+                    {"name", Object{{"type", "string"}, {"parameter_index", 2}}},
+                    {"position", Object{{"type", "array"}, {"parameter_indices", JsonValue::Array{3, 4, 5}}}},
+                    {"rotation_radians", Object{{"type", "array"}, {"parameter_indices", JsonValue::Array{6, 7, 8}}}},
+                    {"model_id", Object{{"type", "string"}}},
+                    {"scale", Object{{"supported", false}, {"reason", "non_persistent"}}},
+                }},
+            };
+        }
+
+        if (name == "task_create") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id", "type", "parent_id", "name",
+                                          "expected_revision", "dry_run", "backup"})) {
+                return Failure(error, "invalid_arguments");
+            }
+            std::string task_id;
+            if (!ReadTaskId(arguments, task_id) || !arguments.contains("type")) {
+                return Failure(error, "invalid_arguments");
+            }
+            std::string type;
+            if (!ReadNonEmptyString(arguments.at("type"), type)) return Failure(error, "invalid_arguments");
+            int level = 0;
+            if (!CurrentLevel(service, arguments, level, error)) return JsonValue(nullptr);
+            MutationOptions options;
+            if (!ReadMutationOptions(arguments, options, error)) return JsonValue(nullptr);
+            return Failure(error, "unsupported_operation");
+        }
+
+        if (name == "task_delete") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id", "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+            return UnsupportedStructural(service, arguments, name, false, error);
+        }
+        if (name == "task_duplicate") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id", "new_task_id", "parent_id",
+                                          "expected_revision", "dry_run", "backup"}) ||
+                !arguments.contains("new_task_id") || !arguments.at("new_task_id").is_string() ||
+                arguments.at("new_task_id").as_string().empty()) return Failure(error, "invalid_arguments");
+            return UnsupportedStructural(service, arguments, name, false, error);
+        }
+        if (name == "task_reparent") {
+            if (!HasOnlyKeys(arguments, {"level", "task_id", "parent_id", "expected_revision",
+                                          "dry_run", "backup"})) return Failure(error, "invalid_arguments");
+            return UnsupportedStructural(service, arguments, name, true, error);
+        }
+
+        if (name == "object_set_transform" || name == "object_set_model" ||
+            name == "object_set_type" || name == "object_set_parameter" || name == "task_update") {
+            const bool update = name == "task_update";
+            if (name == "object_set_transform" &&
+                !HasOnlyKeys(arguments, {"level", "task_id", "position", "rotation_radians", "scale",
+                                          "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+            if (name == "object_set_model" &&
+                !HasOnlyKeys(arguments, {"level", "task_id", "model_id", "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+            if (name == "object_set_type" &&
+                !HasOnlyKeys(arguments, {"level", "task_id", "type", "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+            if (name == "object_set_parameter" &&
+                !HasOnlyKeys(arguments, {"level", "task_id", "parameter_index", "value",
+                                          "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+            if (update &&
+                !HasOnlyKeys(arguments, {"level", "task_id", "name", "position", "rotation_radians",
+                                          "model_id", "type", "parameter_index", "value",
+                                          "expected_revision", "dry_run", "backup"}))
+                return Failure(error, "invalid_arguments");
+
+            int level = 0;
+            std::string task_id;
+            JsonValue before;
+            std::string source;
+            std::vector<CallSpan> calls;
+            CallSpan* call = nullptr;
+            MutationOptions options;
+            if (!PrepareTarget(service, arguments, level, task_id, before, source, call, calls,
+                               options, error)) return JsonValue(nullptr);
+            std::vector<Replacement> replacements;
+
+            if (name == "object_set_transform" || update) {
+                if (arguments.contains("scale")) return Failure(error, "unsupported_operation");
+                if (arguments.contains("position")) {
+                    double values[3];
+                    if (!ReadFiniteVector(arguments.at("position"), values)) return Failure(error, "invalid_arguments");
+                    const Layout layout = LayoutFor(call->type);
+                    if (!AddVectorReplacements(source, *call, layout.position, values, "position",
+                                               replacements, error)) return JsonValue(nullptr);
+                }
+                if (arguments.contains("rotation_radians")) {
+                    double values[3];
+                    if (!ReadFiniteVector(arguments.at("rotation_radians"), values)) return Failure(error, "invalid_arguments");
+                    const Layout layout = LayoutFor(call->type);
+                    if (!AddVectorReplacements(source, *call, layout.rotation, values, "rotation_radians",
+                                               replacements, error)) return JsonValue(nullptr);
+                }
+                if (name == "object_set_transform" && !arguments.contains("position") &&
+                    !arguments.contains("rotation_radians")) return Failure(error, "invalid_arguments");
+            }
+
+            if (name == "object_set_model" || (update && arguments.contains("model_id"))) {
+                std::string model;
+                if (!ReadNonEmptyString(arguments.at("model_id"), model)) return Failure(error, "invalid_arguments");
+                const int index = LayoutFor(call->type).model;
+                if (!ValidateReplacementValue(source, *call, index, JsonValue(model),
+                                              ExpectedKind::String, error) ||
+                    !AddReplacement(source, *call, index, FormatString(model), "model_id",
+                                    replacements, error, ExpectedKind::String)) return JsonValue(nullptr);
+            }
+            if (name == "object_set_type" || (update && arguments.contains("type"))) {
+                std::string type;
+                if (!ReadNonEmptyString(arguments.at("type"), type) ||
+                    !ValidateReplacementValue(source, *call, 1, JsonValue(type),
+                                              ExpectedKind::String, error) ||
+                    !AddReplacement(source, *call, 1, FormatString(type), "type", replacements,
+                                    error, ExpectedKind::String))
+                    return JsonValue(nullptr);
+            }
+            if (update && arguments.contains("name")) {
+                std::string task_name;
+                if (!ReadNonEmptyString(arguments.at("name"), task_name) ||
+                    !ValidateReplacementValue(source, *call, 2, JsonValue(task_name),
+                                              ExpectedKind::String, error) ||
+                    !AddReplacement(source, *call, 2, FormatString(task_name), "name", replacements,
+                                    error, ExpectedKind::String))
+                    return JsonValue(nullptr);
+            }
+            if (name == "object_set_parameter" || (update && arguments.contains("parameter_index"))) {
+                int index = -1;
+                if (!ReadNonNegativeInteger(arguments.at("parameter_index"), index) ||
+                    !arguments.contains("value")) return Failure(error, "invalid_arguments");
+                if (index == 0) return Failure(error, "unsupported_operation");
+                const JsonValue& value = arguments.at("value");
+                std::string replacement;
+                if (value.is_string()) {
+                    std::string text;
+                    if (!ReadNonEmptyString(value, text)) return Failure(error, "invalid_arguments");
+                    replacement = FormatString(text);
+                }
+                else if (value.is_bool()) replacement = value.as_bool() ? "TRUE" : "FALSE";
+                else if (value.is_number() && std::isfinite(value.as_number())) replacement = FormatNumber(value.as_number());
+                else return Failure(error, "invalid_arguments");
+                const ExpectedKind expected = ExpectedKindForParameter(*call, index);
+                if (!ValidateReplacementValue(source, *call, index, value, expected, error))
+                    return JsonValue(nullptr);
+                if (!AddReplacement(source, *call, index, replacement,
+                                    "parameter[" + std::to_string(index) + "]", replacements, error,
+                                    expected))
+                    return JsonValue(nullptr);
+            }
+            if (replacements.empty()) return Failure(error, "invalid_arguments");
+            return MutationResult(service, level, name, task_id, before, options, source,
+                                  std::move(replacements), error);
+        }
+
+        return Failure(error, "unknown_tool");
+    } catch (...) {
+        return Failure(error, "service_error");
+    }
+}
+
+}  // namespace mcp
