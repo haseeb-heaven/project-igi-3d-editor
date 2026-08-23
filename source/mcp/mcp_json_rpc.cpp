@@ -24,11 +24,7 @@ JsonRpcRequest ParseJsonRpcRequest(const JsonValue& value) {
     if (!value.is_object()) Invalid("JSON-RPC request must be an object");
     const auto& object = value.as_object();
 
-    const JsonValue& version = Required(object, "jsonrpc");
-    if (!version.is_string() || version.as_string() != "2.0") Invalid("jsonrpc must be \"2.0\"");
-
     JsonRpcRequest request;
-    request.jsonrpc = version.as_string();
 
     if (const auto it = object.find("id"); it != object.end()) {
         if (!it->second.is_null() && !it->second.is_string() && !it->second.is_number())
@@ -36,6 +32,10 @@ JsonRpcRequest ParseJsonRpcRequest(const JsonValue& value) {
         request.id = it->second;
         request.has_id = true;
     }
+
+    const JsonValue& version = Required(object, "jsonrpc");
+    if (!version.is_string() || version.as_string() != "2.0") Invalid("jsonrpc must be \"2.0\"");
+    request.jsonrpc = version.as_string();
 
     const JsonValue& method = Required(object, "method");
     if (!method.is_string() || method.as_string().empty()) Invalid("method must be a non-empty string");

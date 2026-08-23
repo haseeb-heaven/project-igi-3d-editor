@@ -15,6 +15,12 @@ namespace {
 
 std::atomic_uint64_t g_transaction_sequence{0};
 
+struct CommitScope {
+    explicit CommitScope(bool& committing) : committing_(committing) { committing_ = true; }
+    ~CommitScope() { committing_ = false; }
+    bool& committing_;
+};
+
 std::string FoldPath(const std::filesystem::path& path) {
     std::string result = path.generic_string();
     std::transform(result.begin(), result.end(), result.begin(), [](unsigned char value) {
@@ -299,6 +305,7 @@ bool Transaction::Commit(std::string& error) {
         ReleaseMutationLock();
         return false;
     }
+    CommitScope commit_scope(committing_);
     if (commit_guard_ && !commit_guard_(error)) {
         ReleaseMutationLock();
         return false;
@@ -384,6 +391,10 @@ bool Transaction::Rollback(std::string& error) {
         ReleaseMutationLock();
         return false;
     }
+    if (!committing_ && rollback_guard_ && !rollback_guard_(error)) {
+        ReleaseMutationLock();
+        return false;
+    }
     bool succeeded = true;
     for (std::size_t index = staged_files_.size(); index > 0; --index) {
         if (!Restore(staged_files_[index - 1], index, error)) succeeded = false;
@@ -394,6 +405,7 @@ bool Transaction::Rollback(std::string& error) {
         return false;
     }
     committed_ = false;
+    if (commit_observer_) commit_observer_();
     ReleaseMutationLock();
     error.clear();
     return true;

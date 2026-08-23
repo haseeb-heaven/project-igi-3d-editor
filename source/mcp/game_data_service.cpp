@@ -4,6 +4,7 @@
 
 #include "../level/qsc_lexer.h"
 #include "../level/qsc_parser.h"
+#include "../level/qvm_compiler.h"
 #include "../level/qvm_decompiler.h"
 #include "../level/qvm_parser.h"
 
@@ -20,6 +21,9 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#ifdef GetObject
+#undef GetObject
+#endif
 #endif
 
 namespace mcp {
@@ -749,6 +753,87 @@ JsonValue GameDataService::ValidateLevel(int level, std::string& error) const {
     return result;
 }
 
+bool GameDataService::LoadCurrentObjectSource(std::string& source, std::string& error) const {
+    std::lock_guard<std::mutex> lock(*mutation_mutex_);
+    if (!current_revision_) {
+        error = "level_not_open";
+        return false;
+    }
+    std::filesystem::path level_directory;
+    if (!scope_.LevelDirectory(current_revision_->level, level_directory, error)) return false;
+    return LoadObjectQsc(scope_, level_directory, source, error);
+}
+
+bool GameDataService::SaveCurrentObjectSource(std::string_view source,
+                                              const MutationOptions& options,
+                                              std::string& error) {
+    const qsc::LexResult lexed = qsc::Lex(std::string(source));
+    if (!lexed.ok) {
+        error = "qsc_lex_failed";
+        return false;
+    }
+    const qsc::ParseResult parsed = qsc::Parse(lexed.tokens);
+    if (!parsed.ok || !parsed.program) {
+        error = "qsc_parse_failed";
+        return false;
+    }
+    const qvm::CompileResult compiled = qvm::Compile(*parsed.program);
+    if (!compiled.ok || compiled.binary.empty()) {
+        error = "qvm_compile_failed";
+        return false;
+    }
+
+    const LevelRevision revision = CurrentRevision();
+    if (revision.level <= 0) {
+        error = "level_not_open";
+        return false;
+    }
+    std::filesystem::path level_directory;
+    if (!scope_.LevelDirectory(revision.level, level_directory, error)) return false;
+    std::filesystem::path level_relative;
+    if (!scope_.RelativeToRoot(level_directory, level_relative, error)) return false;
+
+    auto transaction = BeginMutation(options, error);
+    if (!transaction) return false;
+    const std::vector<std::uint8_t> source_bytes(source.begin(), source.end());
+    if (!transaction->Stage(level_relative / "objects.qsc", source_bytes, error) ||
+        !transaction->Stage(level_relative / "objects.qvm", compiled.binary, error)) {
+        return false;
+    }
+    transaction->SetValidator([source = std::string(source)](const auto&, const auto&, std::string& validation_error) {
+        const qsc::LexResult check_lex = qsc::Lex(source);
+        const qsc::ParseResult check_parse = check_lex.ok ? qsc::Parse(check_lex.tokens) : qsc::ParseResult{};
+        if (!check_lex.ok || !check_parse.ok || !check_parse.program) {
+            validation_error = "qsc_validation_failed";
+            return false;
+        }
+        return true;
+    });
+    transaction->SetPostValidator([](const auto& relative_path, const auto& absolute_path,
+                                     std::string& validation_error) {
+        if (relative_path.filename() == "objects.qsc") {
+            std::string text;
+            if (!ReadBoundedText(absolute_path, text, validation_error)) return false;
+            const qsc::LexResult lexed = qsc::Lex(text);
+            const qsc::ParseResult parsed = lexed.ok ? qsc::Parse(lexed.tokens) : qsc::ParseResult{};
+            if (!lexed.ok || !parsed.ok || !parsed.program) {
+                validation_error = "qsc_post_validation_failed";
+                return false;
+            }
+            return true;
+        }
+        if (relative_path.filename() == "objects.qvm") {
+            const QVMFile qvm = QVM_Parse(absolute_path.string());
+            if (!qvm.valid) {
+                validation_error = "qvm_post_validation_failed";
+                return false;
+            }
+        }
+        return true;
+    });
+    return transaction->Commit(error);
+}
+
 std::unique_ptr<Transaction> GameDataService::BeginMutation(const MutationOptions& options,
                                                              std::string& error) {
     std::unique_lock<std::mutex> mutation_lock(*mutation_mutex_);
@@ -774,6 +859,7 @@ std::unique_ptr<Transaction> GameDataService::BeginMutation(const MutationOption
     if (!scope_.RelativeToRoot(level_directory, allowed_prefix, error)) return nullptr;
     error.clear();
     const std::string baseline_revision = current_revision_->fingerprint;
+    const auto committed_revision = std::make_shared<std::string>();
     auto transaction = std::make_unique<Transaction>(scope_, options, std::move(allowed_prefix),
                                                       mutation_mutex_, std::move(mutation_lock));
     transaction->SetCommitGuard([this, baseline_revision](std::string& guard_error) {
@@ -784,9 +870,22 @@ std::unique_ptr<Transaction> GameDataService::BeginMutation(const MutationOption
         }
         return true;
     });
-    transaction->SetCommitObserver([this]() {
+    transaction->SetCommitObserver([this, committed_revision]() {
         std::string ignored;
-        RefreshRevisionUnlocked(ignored);
+        if (RefreshRevisionUnlocked(ignored) && current_revision_)
+            *committed_revision = current_revision_->fingerprint;
+    });
+    transaction->SetRollbackGuard([this, committed_revision](std::string& rollback_error) {
+        if (committed_revision->empty()) {
+            rollback_error = "rollback_unavailable";
+            return false;
+        }
+        if (!RefreshRevisionUnlocked(rollback_error)) return false;
+        if (!current_revision_ || current_revision_->fingerprint != *committed_revision) {
+            rollback_error = "stale_revision";
+            return false;
+        }
+        return true;
     });
     return transaction;
 }

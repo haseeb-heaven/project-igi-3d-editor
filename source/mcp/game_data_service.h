@@ -9,6 +9,10 @@
 #include <string>
 #include <string_view>
 
+#ifdef GetObject
+#undef GetObject
+#endif
+
 namespace mcp {
 
 class Transaction;
@@ -57,6 +61,9 @@ public:
     JsonValue ListObjects(int level, std::string& error) const;
     JsonValue GetObject(int level, std::string_view task_id, std::string& error) const;
     JsonValue ValidateLevel(int level, std::string& error) const;
+    bool LoadCurrentObjectSource(std::string& source, std::string& error) const;
+    bool SaveCurrentObjectSource(std::string_view source, const MutationOptions& options,
+                                 std::string& error);
     std::unique_ptr<Transaction> BeginMutation(const MutationOptions& options,
                                                std::string& error);
 

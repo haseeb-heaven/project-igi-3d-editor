@@ -22,6 +22,7 @@ public:
                                              std::string& error)>;
     using CommitGuard = std::function<bool(std::string& error)>;
     using CommitObserver = std::function<void()>;
+    using RollbackGuard = std::function<bool(std::string& error)>;
 
     Transaction(ProjectScope scope, MutationOptions options,
                 std::filesystem::path allowed_prefix = {},
@@ -35,6 +36,7 @@ public:
     void SetPostValidator(PostValidator validator) { post_validator_ = std::move(validator); }
     void SetCommitGuard(CommitGuard guard) { commit_guard_ = std::move(guard); }
     void SetCommitObserver(CommitObserver observer) { commit_observer_ = std::move(observer); }
+    void SetRollbackGuard(RollbackGuard guard) { rollback_guard_ = std::move(guard); }
     bool Commit(std::string& error);
     bool Rollback(std::string& error);
 
@@ -68,11 +70,13 @@ private:
     PostValidator post_validator_;
     CommitGuard commit_guard_;
     CommitObserver commit_observer_;
+    RollbackGuard rollback_guard_;
     std::vector<StagedFile> staged_files_;
     std::filesystem::path backup_directory_;
     std::vector<std::filesystem::path> temporary_files_;
     std::vector<std::uintptr_t> filesystem_locks_;
     bool committed_ = false;
+    bool committing_ = false;
 };
 
 }  // namespace mcp
