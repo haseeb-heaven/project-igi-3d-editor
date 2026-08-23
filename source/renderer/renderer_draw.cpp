@@ -6,6 +6,7 @@
 #include "renderer_internal.h"
 #include "graph_overlay.h"
 #include "object_lightmap.h"
+#include "../pause_menu_layout.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
@@ -1430,8 +1431,8 @@ void Renderer::Draw(const draw_params_s &params,
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
     if (task_tree_view.pause_mode_) {
-      const int menu_w = 460;
-      const int menu_h = 790; // +38*3 for Weather rows (Enabled/Style/Speed) after Lightmaps (plus prior Fog/Lightmaps additions)
+      const int menu_w = igi::kPauseMenuWidth;
+      const int menu_h = igi::kPauseMenuHeight; // shared with app_input_mouse.cpp hit-test (#64)
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
