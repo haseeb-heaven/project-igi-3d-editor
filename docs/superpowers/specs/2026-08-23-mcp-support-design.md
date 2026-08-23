@@ -16,7 +16,7 @@ The server must support deterministic inspection and mutation of game data, safe
 
 - Level/project discovery, load, reload, validate, save, backup, restore, dry-run, and revision reporting.
 - Task-tree and `LevelObject` inspection and mutation: create, duplicate, delete, rename, parent/child changes, type/parameter updates, and game-affecting transforms.
-- Model identifiers, object type, scale, position, Euler orientation, building/prop/door/vehicle/train/spline/camera/terminal fields, and serialized task parameters.
+- Model identifiers, object type, position, Euler orientation, building/prop/door/vehicle/train/spline/camera/terminal fields, and serialized task parameters. Persistent scale is excluded until a game-file representation exists; the editor's current scale field is render/snap state only.
 - AI soldiers and related tasks: AI type, team, graph binding, patrol/script content, script compile/validation, weapon and ammunition child tasks, and authored animation/behavior fields.
 - Objectives and mission/task data that are serialized into the game level.
 - Navigation graph nodes, links, node position/radius/material/criteria, and graph persistence.
