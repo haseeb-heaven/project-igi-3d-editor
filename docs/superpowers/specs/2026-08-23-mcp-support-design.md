@@ -22,7 +22,7 @@ The server must support deterministic inspection and mutation of game data, safe
 - Navigation graph nodes, links, node position/radius/material/criteria, and graph persistence.
 - Terrain edits and game-affecting lightmap/object-lightmap operations that have an existing safe persistence path.
 - Game asset inspection and existing converter-backed operations where the result is consumed by the game (`DAT`, `MTP`, `RES`, `TEX`, `MEF`, `QSC`, `QVM`, `FNT`, terrain, and graph data).
-- Read-only MCP resources for project manifest, level manifest, object snapshots, graph snapshots, validation reports, and operation history.
+- Read-only MCP resources for project manifest, level manifest, object snapshots, graph snapshots, and validation reports.
 
 ### Out of scope
 
@@ -141,8 +141,6 @@ Expose read-only resources with stable URIs:
 - `igi://level/{level}/objects`
 - `igi://level/{level}/graphs`
 - `igi://level/{level}/validation`
-- `igi://operation/{transaction_id}`
-
 Resources contain structured data and redacted diagnostics. They do not expose arbitrary local files.
 
 ## Validation and transaction rules

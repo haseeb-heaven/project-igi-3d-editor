@@ -26,6 +26,8 @@ protected:
         std::ofstream(level / "objects.qsc", std::ios::binary)
             << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
                "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
+               "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
+               "Task_New(102, \"UnknownTask\", \"Unknown\", 1, 2, 3, 0, 0, 0, \"303_01_1\");\n"
                "DefineComputerObjective(1, 0, 0, \"TRUE\", \"obj.text\", 100, \"TRUE\", \"FALSE\");\n";
         std::string open_error;
         scope_ = mcp::ProjectScope::Open(root_, open_error);
@@ -96,6 +98,45 @@ TEST_F(McpDomainToolsTest, ExposesAiMissionGraphAndAssetReadOnlyOperations) {
         *service_, "asset_list", mcp::JsonValue::Object{}, error);
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_TRUE(assets.at("assets").is_array());
+}
+
+TEST_F(McpDomainToolsTest, UsesListedAnonymousIdsAndRejectsUnknownMutationLayouts) {
+    std::string error;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+
+    std::string anonymous_id;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("type").as_string() == "Building" &&
+            object.at("id").as_string().starts_with("anon-")) {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+
+    const auto anonymous_update = mcp::CallObjectTool(
+        *service_, "object_set_model",
+        mcp::JsonValue::Object{{"task_id", anonymous_id}, {"model_id", "304_01_1"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(anonymous_update.is_null());
+
+    const auto unknown_update = mcp::CallObjectTool(
+        *service_, "object_set_transform",
+        mcp::JsonValue::Object{{"task_id", "102"},
+                               {"position", mcp::JsonValue::Array{11.0, 12.0, 13.0}}}, error);
+    EXPECT_TRUE(unknown_update.is_null());
+    EXPECT_EQ(error, "unsupported_operation");
+}
+
+TEST_F(McpDomainToolsTest, ReportsTypeSpecificObjectLayoutIndices) {
+    std::string error;
+    const auto schema = mcp::CallObjectTool(
+        *service_, "object_get_schema", mcp::JsonValue::Object{{"type", "Door"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(schema.at("fields").at("position").at("parameter_indices").as_array()[0].as_number(), 3);
+    EXPECT_EQ(schema.at("fields").at("rotation_radians").at("parameter_indices").as_array()[0].as_number(), 9);
+    EXPECT_EQ(schema.at("fields").at("model_id").at("parameter_index").as_number(), 12);
 }
 
 }  // namespace

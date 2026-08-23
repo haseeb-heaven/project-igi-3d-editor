@@ -68,6 +68,19 @@ TEST_F(McpServerTest, ListsToolsAndHandlesProjectInfoWithStatelessMetadata) {
     }
     EXPECT_EQ(names.size(), 46u);
 
+    bool found_loadout = false;
+    for (const auto& tool : response.at("result").at("tools").as_array()) {
+        if (tool.at("name").as_string() != "ai_set_weapon_loadout") continue;
+        found_loadout = true;
+        const auto& item_schema = tool.at("inputSchema").at("properties")
+                                      .at("loadout").at("items");
+        EXPECT_EQ(item_schema.at("type").as_string(), "object");
+        EXPECT_FALSE(item_schema.at("additionalProperties").as_bool());
+        ASSERT_TRUE(item_schema.at("required").is_array());
+        EXPECT_EQ(item_schema.at("required").as_array().size(), 2u);
+    }
+    EXPECT_TRUE(found_loadout);
+
     auto info_request = Request("tools/call", mcp::JsonValue::Object{
         {"name", "project_info"}, {"arguments", mcp::JsonValue::Object{}}});
     AddMetadata(info_request);
@@ -100,6 +113,16 @@ TEST_F(McpServerTest, PreservesCandidateIdForMalformedJsonRpcRequests) {
     });
     EXPECT_EQ(response.at("error").at("code").as_number(), mcp::kInvalidRequest);
     EXPECT_EQ(response.at("id").as_number(), 7);
+}
+
+TEST_F(McpServerTest, ReturnsNullIdForStructurallyInvalidRequestWithoutId) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    const auto response = server.Handle(mcp::JsonValue::Object{
+        {"jsonrpc", "2.0"},
+    });
+    EXPECT_EQ(response.at("error").at("code").as_number(), mcp::kInvalidRequest);
+    EXPECT_TRUE(response.at("id").is_null());
 }
 
 }  // namespace

@@ -13,6 +13,11 @@
 - Explicitly reject unsupported structural, graph, terrain, lightmap, script
   file, converter, and asset-packing writes instead of guessing or invoking
   arbitrary commands.
+- Hardened MCP review boundaries: `level_validate` now matches its advertised
+  level argument, weapon-loadout item schemas enforce their object shape,
+  anonymous task IDs are shared between snapshots and mutations, unknown task
+  layouts are rejected, type-specific object indices are reported, and
+  structurally invalid JSON-RPC requests return a null-id error.
 
 ## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
 

@@ -7,6 +7,7 @@
 #include "../level/qvm_compiler.h"
 #include "../level/qvm_decompiler.h"
 #include "../level/qvm_parser.h"
+#include "mcp_task_id.h"
 
 #include <algorithm>
 #include <cctype>
@@ -258,13 +259,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         std::string id = ChildString(node, 0);
         if (id.empty()) id = "anonymous";
         if (id == "-1" || id == "anonymous") {
-            std::string key = parent_id + "|" + ChildString(node, 1) + "|" +
-                              ChildString(node, 2) + "|" + ScalarStableText(node);
-            std::uint64_t hash = 14695981039346656037ull;
-            Mix(hash, key);
-            std::ostringstream hashed;
-            hashed << "anon-" << std::hex << hash;
-            id = hashed.str();
+            id = AnonymousTaskId(parent_id, ChildString(node, 1), ChildString(node, 2));
         }
         const int occurrence = id_counts[id]++;
         if (occurrence > 0) id += "#" + std::to_string(occurrence);

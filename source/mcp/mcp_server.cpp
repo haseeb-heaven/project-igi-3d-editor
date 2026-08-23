@@ -76,6 +76,20 @@ bool CandidateRequestId(const JsonValue& value, JsonValue& id) {
     return true;
 }
 
+bool IsStructurallyInvalidRequest(const JsonValue& value) {
+    if (!value.is_object()) return true;
+    const auto& object = value.as_object();
+    const auto version = object.find("jsonrpc");
+    if (version == object.end() || !version->second.is_string() ||
+        version->second.as_string() != "2.0") return true;
+    const auto method = object.find("method");
+    if (method == object.end() || !method->second.is_string() ||
+        method->second.as_string().empty()) return true;
+    const auto id = object.find("id");
+    return id != object.end() && !id->second.is_null() &&
+           !id->second.is_string() && !id->second.is_number();
+}
+
 }  // namespace
 
 std::vector<McpServer::RegisteredTool> McpServer::RegisteredTools() const {
@@ -231,12 +245,16 @@ JsonValue McpServer::Handle(const JsonValue& value) {
         JsonValue id;
         const bool has_id = request.has_id || CandidateRequestId(value, id);
         if (request.has_id) id = request.id;
+        if (!has_id && IsStructurallyInvalidRequest(value))
+            return MakeJsonRpcError(JsonValue(nullptr), exception.code(), exception.what(), exception.data());
         return has_id ? MakeJsonRpcError(id, exception.code(), exception.what(), exception.data())
                       : JsonValue(nullptr);
     } catch (const std::exception&) {
         JsonValue id;
         const bool has_id = request.has_id || CandidateRequestId(value, id);
         if (request.has_id) id = request.id;
+        if (!has_id && IsStructurallyInvalidRequest(value))
+            return MakeJsonRpcError(JsonValue(nullptr), kInternalError, "internal error");
         return has_id ? MakeJsonRpcError(id, kInternalError, "internal error") : JsonValue(nullptr);
     }
 }

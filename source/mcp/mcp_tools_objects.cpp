@@ -2,6 +2,7 @@
 
 #include "../level/qsc_parser.h"
 #include "../level/task_schema.h"
+#include "mcp_task_id.h"
 
 #include <algorithm>
 #include <cctype>
@@ -322,13 +323,6 @@ std::string StableScalarText(const Scalar& value) {
     return value.text;
 }
 
-void Mix(std::uint64_t& hash, std::string_view value) {
-    for (const unsigned char character : value) {
-        hash ^= character;
-        hash *= 1099511628211ull;
-    }
-}
-
 bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
     for (std::size_t position = 0; position < source.size();) {
         if (source[position] == '"') {
@@ -384,16 +378,7 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
             }
         }
         if (call.id == "-1" || call.id == "anonymous") {
-            std::uint64_t hash = 14695981039346656037ull;
-            Mix(hash, call.parent_id);
-            Mix(hash, "|");
-            Mix(hash, call.type);
-            Mix(hash, "|");
-            Mix(hash, call.name);
-            Mix(hash, "|");
-            std::ostringstream hashed;
-            hashed << "anon-" << std::hex << hash;
-            call.id = hashed.str();
+            call.id = AnonymousTaskId(call.parent_id, call.type, call.name);
         }
         const int occurrence = id_counts[call.id]++;
         if (occurrence > 0) call.id += "#" + std::to_string(occurrence);
@@ -730,6 +715,10 @@ bool PrepareTarget(GameDataService& service, const JsonValue& arguments, int& le
         error = "unknown_task_id";
         return false;
     }
+    if (TaskSchemaNS::GetSchema(call->type) == nullptr) {
+        error = "unsupported_operation";
+        return false;
+    }
     return true;
 }
 
@@ -860,19 +849,40 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             } else if (!ReadNonEmptyString(arguments.at("type"), type)) {
                 return Failure(error, "invalid_arguments");
             }
+            if (TaskSchemaNS::GetSchema(type) == nullptr)
+                return Failure(error, "unsupported_operation");
+            const Layout layout = LayoutFor(type);
+            const auto indices = [](const int values[3]) {
+                JsonValue::Array result;
+                for (std::size_t index = 0; index < 3; ++index) {
+                    const int value = values[index];
+                    if (value >= 0) result.emplace_back(value);
+                }
+                return JsonValue(result);
+            };
+            Object fields{
+                {"task_id", Object{{"type", "string"}, {"read_only", true}}},
+                {"type", Object{{"type", "string"}, {"parameter_index", 1}}},
+                {"name", Object{{"type", "string"}, {"parameter_index", 2}}},
+                {"scale", Object{{"supported", false}, {"reason", "non_persistent"}}},
+            };
+            if (layout.position[0] >= 0) {
+                fields["position"] = Object{{"type", "array"},
+                                              {"parameter_indices", indices(layout.position)}};
+            }
+            if (layout.rotation[0] >= 0) {
+                fields["rotation_radians"] = Object{{"type", "array"},
+                                                      {"parameter_indices", indices(layout.rotation)}};
+            }
+            if (layout.model >= 0) {
+                fields["model_id"] = Object{{"type", "string"},
+                                              {"parameter_index", layout.model}};
+            }
             return Object{
                 {"type", type},
                 {"stable_id_required", true},
                 {"persistent", true},
-                {"fields", Object{
-                    {"task_id", Object{{"type", "string"}, {"read_only", true}}},
-                    {"type", Object{{"type", "string"}, {"parameter_index", 1}}},
-                    {"name", Object{{"type", "string"}, {"parameter_index", 2}}},
-                    {"position", Object{{"type", "array"}, {"parameter_indices", JsonValue::Array{3, 4, 5}}}},
-                    {"rotation_radians", Object{{"type", "array"}, {"parameter_indices", JsonValue::Array{6, 7, 8}}}},
-                    {"model_id", Object{{"type", "string"}}},
-                    {"scale", Object{{"supported", false}, {"reason", "non_persistent"}}},
-                }},
+                {"fields", std::move(fields)},
             };
         }
 
@@ -978,6 +988,7 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             if (name == "object_set_type" || (update && arguments.contains("type"))) {
                 std::string type;
                 if (!ReadNonEmptyString(arguments.at("type"), type) ||
+                    TaskSchemaNS::GetSchema(type) == nullptr ||
                     !ValidateReplacementValue(source, *call, 1, JsonValue(type),
                                               ExpectedKind::String, error) ||
                     !AddReplacement(source, *call, 1, FormatString(type), "type", replacements,

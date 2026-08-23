@@ -456,9 +456,11 @@ ToolDefinitionList AiToolDefinitions() {
     JsonValue::Object validate_script{{"source", StringSchema()}};
     JsonValue::Object compile_script{{"level", JsonValue::Object{{"type", JsonValue("integer")}, {"minimum", JsonValue(1)}}}, {"source", StringSchema()}, {"expected_revision", StringSchema()}};
     JsonValue::Object list_weapons{{"level", JsonValue::Object{{"type", JsonValue("integer")}, {"minimum", JsonValue(1)}}}};
-    JsonValue::Object loadout_item{{"task_id", StringSchema()}, {"weapon_id", StringSchema()}};
+    const JsonValue loadout_item = ObjectSchema(
+        JsonValue::Object{{"task_id", StringSchema()}, {"weapon_id", StringSchema()}},
+        {"task_id", "weapon_id"});
     JsonValue::Object loadout{{"task_id", StringSchema()}, {"loadout", JsonValue::Object{
-        {"type", JsonValue("array")}, {"items", JsonValue(std::move(loadout_item))}}}};
+        {"type", JsonValue("array")}, {"items", loadout_item}}}};
     AddMutationSchemaProperties(loadout);
     JsonValue::Object pickup{{"task_id", StringSchema()}, {"fields", FieldsSchema({"weapon_id", "ammo_id", "count"})}};
     AddMutationSchemaProperties(pickup);

@@ -65,7 +65,7 @@ TEST_F(McpSessionToolsTest, OpensReloadsAndValidatesTheCurrentLevel) {
     EXPECT_FALSE(reload.at("changed_externally").as_bool());
 
     const auto validation = mcp::CallSessionTool(
-        service, "level_validate", mcp::JsonValue::Object{}, error);
+        service, "level_validate", mcp::JsonValue::Object{{"level", 1}}, error);
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_FALSE(validation.at("valid").as_bool());
 }

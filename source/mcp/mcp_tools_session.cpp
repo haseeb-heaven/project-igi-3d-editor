@@ -151,9 +151,8 @@ JsonValue CallSessionTool(GameDataService& service, std::string_view name,
         }
 
         if (name == "level_validate") {
-            if (!RequireObjectWithoutArguments(arguments)) return Failure(error, "invalid_arguments");
-            if (!service.HasOpenLevel()) return DomainFailure(error, "level_not_open");
-            const int level = service.CurrentRevision().level;
+            int level = 0;
+            if (!ReadLevel(arguments, level)) return Failure(error, "invalid_arguments");
 
             std::string domain_error;
             const JsonValue result = service.ValidateLevel(level, domain_error);
