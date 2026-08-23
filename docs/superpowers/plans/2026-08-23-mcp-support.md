@@ -6,7 +6,7 @@
 
 **Architecture:** A dependency-free strict JSON layer feeds a transport-neutral JSON-RPC/MCP server. A file-backed GameDataService owns project scope, level snapshots, typed mutations, revision checks, backups, atomic persistence, and validation; stdio and HTTP call the same service. The GUI remains out of network-thread state, and visual verification launches the existing editor against persisted output.
 
-**Tech Stack:** C++17, CMake, MSVC Win32, GoogleTest, Winsock2 on Windows, existing QSC/QVM/graph/terrain/converter code.
+**Tech Stack:** C++20, CMake, MSVC Win32, GoogleTest, Winsock2 on Windows, existing QSC/QVM/graph/terrain/converter code.
 
 **Spec:** docs/superpowers/specs/2026-08-23-mcp-support-design.md
 
@@ -14,6 +14,7 @@
 
 - Build targets are Win32 because the editor and game are 32-bit.
 - MCP stdio stdout contains only one valid newline-delimited JSON-RPC message per line; diagnostics go to stderr.
+- The protocol profile is pinned to MCP 2026-07-28: no mandatory initialize/initialized handshake or session identifier; requests carry `MCP-Protocol-Version` and `_meta` metadata, and HTTP uses `Mcp-Method` plus `Mcp-Name`.
 - HTTP is opt-in, binds only to 127.0.0.1, requires bearer authentication, and validates localhost Origin values.
 - Only configured project-root game data is addressable; arbitrary filesystem, shell, network, and UI-preference operations are not exposed.
 - Every mutation validates arguments and cross-references, supports dry-run and stale-revision rejection, creates a backup before writing, atomically replaces files, reparses output, and returns before/after data.
@@ -41,7 +42,7 @@
 - mcp::JsonRpcRequest ParseJsonRpcRequest(const JsonValue& value) validates jsonrpc, id, method, and object params.
 - JsonValue MakeJsonRpcResult(const JsonValue& id, JsonValue result) and MakeJsonRpcError(...) build responses.
 
-- [ ] Step 1: Add failing JSON tests. Cover scalar/array/object round trips, escapes, duplicate-key rejection, trailing-input rejection, depth/size limits, non-finite-number rejection, and deterministic serialization. Add JSON-RPC initialize, notification, invalid-request, invalid-params, and error-response assertions.
+- [ ] Step 1: Add failing JSON tests. Cover scalar/array/object round trips, escapes, duplicate-key rejection, trailing-input rejection, depth/size limits, non-finite-number rejection, and deterministic serialization. Add stateless request metadata, invalid-request, invalid-params, and error-response assertions.
 - [ ] Step 2: Run the focused tests and confirm the failure is from missing MCP types/functions.
 
 ~~~powershell
@@ -49,7 +50,7 @@ cmake --build build-mcp --config Release --target igi_tests -- /m:1
 .\build-mcp\Release\igi_tests.exe --gtest_filter="McpJson*:McpJsonRpc*"
 ~~~
 
-- [ ] Step 3: Implement the smallest bounded parser/writer and JSON-RPC constructors. Enforce a maximum message size of 8 MiB and maximum nesting depth of 64; use C++17 storage and reject duplicate object keys.
+- [ ] Step 3: Implement the smallest bounded parser/writer and JSON-RPC constructors. Enforce a maximum message size of 8 MiB and maximum nesting depth of 64; use C++20 storage and reject duplicate object keys.
 - [ ] Step 4: Re-run the focused tests and confirm all new tests pass.
 - [ ] Step 5: Commit.
 
@@ -210,14 +211,14 @@ git commit -m "feat: expose MCP graph terrain and asset operations"
 - Modify: CMakeLists.txt
 
 **Interfaces:**
-- McpServer::Handle(const JsonValue& request) handles initialize, notifications/initialized, tools/list, tools/call, resources/list, and resources/read.
+- McpServer::Handle(const JsonValue& request) handles optional server/discover, tools/list, tools/call, resources/list, and resources/read using the stateless MCP 2026-07-28 contract.
 - McpServer::ToolDefinitions() returns deterministic schemas for all tools from Tasks 3–6.
 - StdioTransport::Run(McpServer&) reads one line, emits one JSON-RPC line, and logs only to stderr.
 - igi_mcp --stdio --project <root> starts the service and rejects missing/invalid project roots before accepting requests.
 
-- [ ] Step 1: Add failing registry/lifecycle/stdout-purity integration tests. Spawn the binary, initialize with protocol version 2025-06-18, assert tool/resource names and schemas, call project_info, and verify malformed requests return JSON-RPC errors without process termination.
+- [ ] Step 1: Add failing registry/stdout-purity integration tests. Spawn the binary, send stateless MCP 2026-07-28 requests, assert tool/resource names and schemas, call project_info, and verify malformed requests return JSON-RPC errors without process termination.
 - [ ] Step 2: Run the tests and observe missing-server/transport failures.
-- [ ] Step 3: Implement registry dispatch, resource URIs, lifecycle/capability responses, and the line-oriented stdio loop. Do not write banners or logs to stdout.
+- [ ] Step 3: Implement registry dispatch, optional discovery, resource URIs, and the line-oriented stdio loop. Do not write banners or logs to stdout.
 - [ ] Step 4: Run protocol tests with a real spawned executable and existing unit tests.
 - [ ] Step 5: Commit.
 
@@ -241,10 +242,10 @@ git commit -m "feat: add MCP server and stdio transport"
 - HttpTransport::HandlePost(...) accepts the MCP endpoint and returns JSON or event-stream responses with correct content negotiation and negotiated protocol headers.
 - HttpTransport::ValidateRequest(...) enforces bearer token, Origin, content type, message size, and method/path rules.
 
-- [ ] Step 1: Add failing socket-level tests for valid initialize/list/call, missing token, wrong token, invalid Origin, non-loopback bind, oversized body, malformed JSON, and session/protocol-header behavior.
+- [ ] Step 1: Add failing socket-level tests for valid discover/list/call, missing token, wrong token, invalid Origin, non-loopback bind, oversized body, malformed JSON, and stateless protocol-header behavior.
 - [ ] Step 2: Run the HTTP filters and confirm red failures.
-- [ ] Step 3: Implement bounded Winsock HTTP parsing with one /mcp endpoint, localhost binding, bearer token, Origin validation, JSON responses, and optional SSE only when required by the negotiated request.
-- [ ] Step 4: Run HTTP tests against a real listening server; assert LISTENING, preserve Mcp-Session-Id when returned, and make a real tools/call.
+- [ ] Step 3: Implement bounded Winsock HTTP parsing with one /mcp endpoint, localhost binding, bearer token, Origin validation, `Mcp-Method`/`Mcp-Name` and `MCP-Protocol-Version` checks, JSON responses, and optional event streams only when required by the request.
+- [ ] Step 4: Run HTTP tests against a real listening server; assert LISTENING, verify there is no session-state requirement, and make a real tools/call.
 - [ ] Step 5: Commit.
 
 ~~~powershell
@@ -271,7 +272,7 @@ git commit -m "feat: add secure opt-in MCP HTTP transport"
 
 ~~~powershell
 cmake -S . -B build-mcp -G "Visual Studio 17 2022" -A Win32 -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=D:/Code/project-igi-editor/build/_deps/googletest-src
-cmake --build build-mcp --config Release --target igi_mcp igi_tests igi1ed -- /m:1
+cmake --build build-mcp --config Release --target igi_mcp igi_tests igi-editor -- /m:1
 ~~~
 
 - [ ] Step 5: Run MCP unit/protocol/security tests, the complete existing igi_tests.exe suite with documented level bounds, and the PowerShell protocol smoke test.

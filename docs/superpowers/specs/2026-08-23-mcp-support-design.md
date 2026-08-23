@@ -35,7 +35,7 @@ The server must support deterministic inspection and mutation of game data, safe
 The implementation has four layers with narrow interfaces:
 
 1. **`McpJson`** — a small strict JSON value/parser/writer used for JSON-RPC and tool arguments. It supports objects, arrays, strings, finite numbers, booleans, and null; rejects duplicate keys, malformed UTF-8/escapes, excessive nesting, and oversized messages. It has no logging side effects.
-2. **`McpProtocol`** — JSON-RPC 2.0 lifecycle, deterministic `tools/list`, `resources/list/read`, structured tool results, protocol errors, and capability negotiation. It is transport-neutral and writes no diagnostics to stdout.
+2. **`McpProtocol`** — the stateless MCP 2026-07-28 request contract over JSON-RPC, deterministic `tools/list`, `resources/list/read`, structured tool results, protocol errors, and optional `server/discover`. Each request carries its protocol metadata in `_meta`; there is no mandatory initialize/initialized handshake or session identifier. It is transport-neutral and writes no diagnostics to stdout.
 3. **`GameDataService`** — the validated game-data application layer. It owns an allowlisted project session, maps stable task/object identifiers to existing `LevelObjects`, QSC/QVM, graph, terrain, and converter APIs, performs revision checks and atomic save transactions, and returns before/after records. It must not depend on GLUT or renderer UI state.
 4. **Transports** — newline-delimited stdio for MCP clients and an opt-in localhost Streamable HTTP endpoint. Both call the same protocol/server object and therefore expose identical tools and schemas.
 
@@ -55,7 +55,8 @@ Rules:
 - `--stdio` is the default and is the recommended client integration.
 - `--http` is explicit opt-in. It binds to `127.0.0.1` only; `0.0.0.0` is rejected.
 - Port `0` selects an available local port and reports the endpoint and generated bearer token only on stderr.
-- HTTP requires `Authorization: Bearer <token>`, validates `Origin` when present against the configured localhost origins, and returns safe JSON-RPC errors without filesystem paths, stack traces, or secrets.
+- HTTP requires `Authorization: Bearer <token>`, validates `Origin` when present against the configured localhost origins, requires `Mcp-Method` and `Mcp-Name` headers, and returns safe JSON-RPC errors without filesystem paths, stack traces, or secrets.
+- The protocol profile is pinned to MCP 2026-07-28: requests include `MCP-Protocol-Version` and `_meta` metadata, list responses may include `ttlMs` and `cacheScope`, and the server does not issue or require `Mcp-Session-Id`.
 - stdio stdout contains only one valid JSON-RPC message per line. Logs go to stderr.
 - The project root and game root are canonicalized once at startup. Operations may address only the configured root and known level/asset subdirectories.
 
@@ -63,7 +64,7 @@ Rules:
 
 Tool names are stable, sorted, and grouped by domain. Every mutating tool accepts `dry_run`, `expected_revision`, and `backup` where applicable. Mutations return a transaction id, changed paths, revision before/after, and concise before/after summaries.
 
-### Session and validation tools
+### Project and validation tools
 
 - `project_info`
 - `project_list_levels`
@@ -176,15 +177,15 @@ Use JSON-RPC errors for protocol/argument failures and successful tool results w
 
 ### Integration tests
 
-- Spawn `igi_mcp --stdio`, send initialize/initialized, list tools/resources, call read-only and mutating tools, and assert stdout contains only valid MCP messages.
+- Spawn `igi_mcp --stdio`, list tools/resources, call read-only and mutating tools with MCP 2026-07-28 metadata, and assert stdout contains only valid MCP messages.
 - Run an end-to-end level edit, save, reopen/reparse, and compare the expected serialized fields and unchanged-byte regions.
 - Compile a valid and invalid AI script and prove invalid output leaves the original QVM/QSC intact.
-- Start HTTP on an ephemeral localhost port, reject missing/invalid bearer tokens and Origin values, perform initialize/list/call with the negotiated protocol headers, and reuse any returned session header as required by the selected MCP revision.
+- Start HTTP on an ephemeral localhost port, reject missing/invalid bearer tokens and Origin values, require the MCP 2026-07-28 request headers, and perform discover/list/call without session state.
 - Exercise concurrent read requests and serialized write conflict behavior.
 
 ### Existing regression/build tests
 
-- Build `igi_mcp`, `igi_tests`, and `igi1ed` for Win32 Release.
+- Build the `igi_mcp` and `igi_tests` targets plus the `igi-editor` target (which emits `igi1ed.exe`) for Win32 Release.
 - Run the MCP-focused tests, then the complete existing unit/parser suite, then the level/QVM verification suite with its documented bounds.
 - Run sanitizer/static checks available for the selected toolchain and a secret/path scan of the final diff.
 
