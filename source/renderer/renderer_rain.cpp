@@ -182,9 +182,19 @@ std::string FmtRainFrag() {
 }
 std::string FmtSnowVert() {
     char buf[4096];
-    snprintf(buf, sizeof(buf), SNOW_VERT_SRC_FMT,
+    // Six placeholders: min/range speed pair + drift freq/seed pairs for X and Y
+    // (open-igi SnowRenderer.cs sway constants from weather_math.h).
+    const int written = snprintf(buf, sizeof(buf), SNOW_VERT_SRC_FMT,
              (double)igi::weather::kSnowMinSpeedMul,
-             (double)igi::weather::kSnowMaxSpeedMul - (double)igi::weather::kSnowMinSpeedMul);
+             (double)igi::weather::kSnowMaxSpeedMul - (double)igi::weather::kSnowMinSpeedMul,
+             (double)igi::weather::kSnowDriftFreqX,
+             (double)igi::weather::kSnowSeedFreqX,
+             (double)igi::weather::kSnowDriftFreqY,
+             (double)igi::weather::kSnowSeedFreqY);
+    if (written < 0 || static_cast<size_t>(written) >= sizeof(buf)) {
+        // Never hand a truncated/garbage shader to the GL compiler.
+        return std::string();
+    }
     return buf;
 }
 std::string FmtSnowFrag() {

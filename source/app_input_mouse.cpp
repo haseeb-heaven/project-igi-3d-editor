@@ -326,7 +326,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				}
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
 				const int menu_w = 460;
-				const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
+				const int menu_h = 790; // MUST match renderer_draw.cpp: +38*3 Weather rows (Enabled/Style/Speed) after Lightmaps — was 676, bottom 114px click-dead (#61 round-2)
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
 				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
 
@@ -422,7 +422,14 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 					}
 					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
-					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
+					else if (btn_hit2(LIGHTMAPS_ROW)) {
+						// Cycle Baked/Hybrid/Dynamic/Off AND persist (#61 round-2:
+						// mode previously desynced from config across restarts).
+						igi::ObjectLightmapManager::Get().CycleRenderMode();
+						Config::Get().lightmapMode = static_cast<int>(
+						    igi::ObjectLightmapManager::Get().GetRenderMode());
+						Config::Save();
+					}
 					else if (btn_hit2(WEATHER_ENABLED_ROW)) {
 						Config::Get().weatherEnabled = !Config::Get().weatherEnabled;
 						SetWeatherSettings(Config::Get().weatherEnabled, Config::Get().weatherStyle, Config::Get().weatherSpeed);

@@ -118,6 +118,22 @@ set_source_files_properties(
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
   source/renderer/object_lightmap.cpp
+  # Round-2 PCH opt-outs: heavy new translation units (MSVC Release OOM risk
+  # per this block's own comment). Editor GLOB picks these up; listed here only
+  # for the PCH exemption.
+  source/renderer/menu_qvm.cpp
+  source/renderer/menu_qvm_runtime.cpp
+  source/renderer/menu_qvm_render.cpp
+  source/renderer/menu_qvm_edit.cpp
+  source/renderer/anim_player.cpp
+  source/renderer/lightmap_baker.cpp
+  source/renderer/light_fixture.cpp
+  source/renderer/light_fixture_extract.cpp
+  source/renderer/light_fixture_level.cpp
+  source/renderer/spline_placement.cpp
+  source/renderer/pickup_preview.cpp
+  source/editor_audio/sound_bank.cpp
+  source/editor_audio/ilsf_sound.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
