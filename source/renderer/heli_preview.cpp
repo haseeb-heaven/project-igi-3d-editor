@@ -120,7 +120,15 @@ float ResolveCollectiveFromTokens(const LevelObject& heliObj, int valueOffset) {
     try {
         std::string tok = heliObj.argTokens[valueOffset];
         tok.erase(std::remove(tok.begin(), tok.end(), '"'), tok.end());
-        return std::stof(tok);
+        // Full-token parse only (round-1 [MINOR][CRITIC]): std::stof happily
+        // converts a leading prefix, so a mis-resolved model-id token like
+        // "100_01_1" would yield 100.0f -> clamp to 1.0 and silently spin
+        // rotors at full speed. Require the WHOLE token to be numeric;
+        // anything else takes the documented -1 safe fallback.
+        size_t consumed = 0;
+        const float value = std::stof(tok, &consumed);
+        if (consumed != tok.size()) return -1.0f;
+        return value;
     } catch (...) {
         return -1.0f;
     }

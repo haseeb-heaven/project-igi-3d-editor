@@ -107,6 +107,25 @@ TEST(HeliPreviewTest, LookupAuthoredCollectiveResolvesByName) {
     EXPECT_FLOAT_EQ(LookupAuthoredCollective(&objects, objects[1], cache), 0.75f);
 }
 
+// Round-1 [MINOR][CRITIC] regression: a mis-resolved offset pointing at a
+// model-id token ("100_01_1") must NOT parse as 100.0f via partial stof
+// conversion — the whole token must be numeric, else the -1 safe fallback.
+TEST(HeliPreviewTest, PartialParseTokensTakeSafeFallback) {
+    DeclarationIndex cache;
+    std::vector<LevelObject> objects = {
+        MakeDecl({"Heli", "Position", "ObjectPos", "Heading", "Real32",
+                  "Original Thrust", "Real32", "Model", "String16"}),
+        // ObjectPos=3 + heading(1) -> Original Thrust lands at token index 7,
+        // which here holds a MODEL-ID string instead of a number.
+        MakeHeli({"1500", "\"Heli\"", "\"heli_1\"", "100", "200", "300",
+                  "0", "\"100_01_1\"", "\"709_01_1\""}),
+    };
+    const float thrust = LookupAuthoredCollective(&objects, objects[1], cache);
+    EXPECT_EQ(thrust, -1.0f)
+        << "partial-parse of a model-id token must take the safe fallback, "
+           "not clamp to 1.0 and spin rotors at full speed";
+}
+
 TEST(HeliPreviewTest, LookupAuthoredCollectiveMissingDeclarationReturnsUnknown) {
     DeclarationIndex cache;
     std::vector<LevelObject> objects = { MakeHeli({"1", "\"Heli\"", "\"x\""}) };
