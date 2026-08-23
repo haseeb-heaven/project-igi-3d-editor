@@ -243,6 +243,9 @@ add_executable(igi_tests
     tests/test_mcp_transaction.cpp
     tests/test_mcp_game_snapshot.cpp
     tests/test_mcp_session_tools.cpp
+    tests/test_mcp_server.cpp
+    tests/test_mcp_domain_tools.cpp
+    tests/test_mcp_http.cpp
     tests/test_qsc_lexer.cpp
     tests/test_qsc_parser.cpp
     tests/test_qvm_roundtrip.cpp
@@ -294,7 +297,7 @@ if (WIN32)
     set(TESTS_GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x86")
   endif()
   target_link_directories(igi_tests PRIVATE ${TESTS_GL_LIB_DIR})
-  target_link_libraries(igi_tests PRIVATE gtest_main winmm freeglut glew32 OpenGL32)
+  target_link_libraries(igi_tests PRIVATE gtest_main winmm ws2_32 bcrypt freeglut glew32 OpenGL32)
 else()
   target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 endif()
@@ -304,6 +307,14 @@ target_sources(igi_tests PRIVATE
     source/mcp/game_data_service.cpp
     source/mcp/mcp_transaction.cpp
     source/mcp/mcp_tools_session.cpp
+    source/mcp/mcp_server.cpp
+    source/mcp/mcp_transport_stdio.cpp
+    source/mcp/mcp_transport_http.cpp
+    source/mcp/mcp_tools_objects.cpp
+    source/mcp/mcp_tools_ai.cpp
+    source/mcp/mcp_tools_mission.cpp
+    source/mcp/mcp_tools_graph.cpp
+    source/mcp/mcp_tools_assets.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
@@ -388,6 +399,38 @@ target_precompile_headers(igi_tests PRIVATE source/pch.h)
 
 include(GoogleTest)
 gtest_discover_tests(igi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+add_executable(igi_mcp
+    source/mcp/mcp_main.cpp
+    source/mcp/mcp_server.cpp
+    source/mcp/mcp_transport_stdio.cpp
+    source/mcp/mcp_transport_http.cpp
+    source/mcp/mcp_json.cpp
+    source/mcp/mcp_json_rpc.cpp
+    source/mcp/game_data_service.cpp
+    source/mcp/mcp_transaction.cpp
+    source/mcp/mcp_tools_session.cpp
+    source/mcp/mcp_tools_objects.cpp
+    source/mcp/mcp_tools_ai.cpp
+    source/mcp/mcp_tools_mission.cpp
+    source/mcp/mcp_tools_graph.cpp
+    source/mcp/mcp_tools_assets.cpp
+    source/mcp/mcp_logger_stub.cpp
+    source/level/qsc_lexer.cpp
+    source/level/qsc_parser.cpp
+    source/level/qvm_parser.cpp
+    source/level/qvm_compiler.cpp
+    source/level/qvm_decompiler.cpp
+    source/level/task_schema.cpp
+)
+target_include_directories(igi_mcp PRIVATE source)
+if (WIN32)
+    target_link_libraries(igi_mcp PRIVATE ws2_32 bcrypt)
+    set_target_properties(igi_mcp PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 # Copy test fixtures next to igi_tests.exe so tests work from any directory
 add_custom_command(TARGET igi_tests POST_BUILD
