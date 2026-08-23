@@ -239,6 +239,8 @@ enable_testing()
 add_executable(igi_tests
     tests/test_mcp_json.cpp
     tests/test_mcp_json_rpc.cpp
+    tests/test_mcp_paths.cpp
+    tests/test_mcp_transaction.cpp
     tests/test_qsc_lexer.cpp
     tests/test_qsc_parser.cpp
     tests/test_qvm_roundtrip.cpp
@@ -297,6 +299,8 @@ endif()
 target_sources(igi_tests PRIVATE
     source/mcp/mcp_json.cpp
     source/mcp/mcp_json_rpc.cpp
+    source/mcp/game_data_service.cpp
+    source/mcp/mcp_transaction.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp

@@ -1,0 +1,63 @@
+#pragma once
+
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+
+namespace mcp {
+
+class Transaction;
+
+struct LevelRevision {
+    int level = 0;
+    std::string fingerprint;
+};
+
+struct MutationOptions {
+    bool dry_run = false;
+    bool backup = true;
+    std::optional<std::string> expected_revision;
+};
+
+class ProjectScope {
+public:
+    static std::optional<ProjectScope> Open(const std::filesystem::path& project_root,
+                                            std::string& error);
+
+    const std::filesystem::path& root() const noexcept { return root_; }
+    bool ResolveRelative(const std::filesystem::path& relative_path,
+                         std::filesystem::path& resolved_path, std::string& error) const;
+    bool RelativeToRoot(const std::filesystem::path& path,
+                        std::filesystem::path& relative_path, std::string& error) const;
+    bool LevelDirectory(int level, std::filesystem::path& level_directory,
+                        std::string& error) const;
+
+private:
+    explicit ProjectScope(std::filesystem::path root) : root_(std::move(root)) {}
+
+    std::filesystem::path root_;
+};
+
+class GameDataService {
+public:
+    explicit GameDataService(ProjectScope scope) : scope_(std::move(scope)) {}
+
+    bool OpenLevel(int level, std::string& error);
+    LevelRevision CurrentRevision() const;
+    bool RefreshRevision(std::string& error);
+    std::unique_ptr<Transaction> BeginMutation(const MutationOptions& options,
+                                               std::string& error);
+
+private:
+    bool RefreshRevisionUnlocked(std::string& error);
+    bool CalculateRevision(int level, const std::filesystem::path& level_directory,
+                           LevelRevision& revision, std::string& error) const;
+
+    ProjectScope scope_;
+    std::optional<LevelRevision> current_revision_;
+    std::shared_ptr<std::mutex> mutation_mutex_ = std::make_shared<std::mutex>();
+};
+
+}  // namespace mcp
