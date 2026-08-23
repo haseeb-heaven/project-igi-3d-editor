@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "utils_igi1conv.h"
+#include "renderer/object_lightmap.h"
 #include <mmsystem.h>
 #include <future>
 #include <set>
@@ -185,6 +186,8 @@ void App::LoadLevel(int level_no) {
 		renderer_.SetSplineTerrainQuery([this](double x, double y, float& z) {
 			return level_.GetTerrainZ(x, y, z);
 		});
+
+		igi::ObjectLightmapManager::Get().LoadLevelLightmaps(level_no);
 
 		Level::load_params_s level_load_params_s = {
 			.level_no_ = level_no,

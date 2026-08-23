@@ -921,14 +921,22 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 		// the child at the highest local Z (top of fuselage); the tail rotor is
 		// at the most-negative local Y (far tail). modelType-3 ATTA children are
 		// typically the rotor blades; fall through for any other children.
+		// Issue #60: a child whose model id matches a known retail rotor model
+		// (physicsobj/helis/{bell,mil}/HELI.QVM strings) is always treated as a
+		// rotor even if the geometric heuristic misses.
 		if (current_draw_obj_type_ == "Heli") {
 			float maxZ = att.pz, minY = att.py;
 			for (const auto& sib : attsR) {
 				if (sib.pz > maxZ) maxZ = sib.pz;
 				if (sib.py < minY) minY = sib.py;
 			}
+			// Issue #60: children whose model id matches a known retail rotor model
+			// (physicsobj/helis/{bell,mil}/HELI.QVM strings, see heli_preview.h) spin
+			// even when the geometric heuristic misses them (e.g. mid-hull MIL rotor).
+			const bool knownRotor = heli_preview::IsKnownRotorModel(att.modelId);
 			const bool isMainRotor = (att.pz >= maxZ - 1.0f);
 			const bool isTailRotor = (!isMainRotor && att.py <= minY + 1.0f);
+			const bool isSideRotor = (!isMainRotor && !isTailRotor && knownRotor);
 
 			// Rebuild the placed transform from static ATTA data every frame.
 			// Hub is locked. Yaw constant, pitch animates for main rotor (2 orientation axes fixed by locking shaft column, 1 moving).
@@ -945,7 +953,11 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				glm::vec3 n = base[0];
 				if (glm::length(n) > 0.0001f) n = glm::normalize(n); else n = glm::vec3(1,0,0);
 
-				float angle = elapsed_time_secs_ * 15.0f;  // positive; flip if blades spin opposite to expected
+				// Issue #60: collective-driven preview speed — see the tail-rotor note
+				// below for the retail semantics (RotorPhase += Thrust per tick).
+				const float collective = (current_heli_collective_ >= 0.0f)
+				                             ? current_heli_collective_ : 1.0f;
+				float angle = heli_preview::MainRotorAngularSpeed(collective) * elapsed_time_secs_;
 				glm::mat4 Rloc = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(1,0,0)); // local X (pitch)
 				glm::mat3 spun = base * glm::mat3(Rloc);
 				spun[0] = n;  // keep shaft axis fixed (yaw constant, disk plane tilt fixed)
@@ -954,8 +966,9 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				childWorldMat[1] = glm::vec4(spun[1], 0.0f);
 				childWorldMat[2] = glm::vec4(spun[2], 0.0f);
 				childWorldMat[3] = glm::vec4(hub, 1.0f);
-			} else if (isTailRotor) {
-				// Tail rotor spins around its own placed lateral axis.
+			} else if (isTailRotor || isSideRotor) {
+				// Tail rotor spins around its own placed lateral axis. Side rotors
+				// (verified MIL third rotor model) reuse the tail-style spin.
 				int best = 0;
 				float bestAbs = glm::abs(base[0].x);
 				for (int c = 1; c < 3; ++c) {
@@ -963,7 +976,14 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				}
 				glm::vec3 n = glm::normalize(base[best]);
 
-				float angle = -elapsed_time_secs_ * 25.0f;
+				// Issue #60: collective-driven preview speed. Retail advances rotor
+				// phase by the collective every 30 Hz tick (RotorPhase += Thrust,
+				// CutsceneRuntime.cs ~1143; Heli::ReadChannels 0x431B70 restores the
+				// authored value at tick zero), so an authored thrust of 0 leaves the
+				// rotors stopped. Unknown collective (-1) previews at full speed.
+				const float collective = (current_heli_collective_ >= 0.0f)
+				                             ? current_heli_collective_ : 1.0f;
+				float angle = heli_preview::TailRotorAngularSpeed(collective) * elapsed_time_secs_;
 				glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, n);
 
 				glm::mat3 spun = glm::mat3(R) * base;

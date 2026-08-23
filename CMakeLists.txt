@@ -116,6 +116,7 @@ set_source_files_properties(
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
+  source/renderer/object_lightmap.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -245,6 +246,7 @@ add_executable(igi_tests
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
     tests/test_mef_native_lightmap.cpp
+    tests/test_heli_preview.cpp
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
 )
@@ -260,10 +262,9 @@ target_include_directories(igi_tests PRIVATE source)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
-target_link_libraries(igi_tests PRIVATE gtest_main)
+target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
+    source/renderer/heli_preview.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
@@ -289,6 +290,7 @@ target_sources(igi_tests PRIVATE
     source/level/terrain_files.cpp
     source/renderer/mef_native.cpp
     source/utils_igi1conv.cpp
+    source/renderer/object_lightmap.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies
