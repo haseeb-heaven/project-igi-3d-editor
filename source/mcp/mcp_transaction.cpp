@@ -321,6 +321,38 @@ bool Transaction::Commit(std::string& error) {
         }
     }
     if (options_.dry_run) {
+        if (post_validator_) {
+            std::error_code temp_directory_error;
+            const std::filesystem::path temp_directory =
+                std::filesystem::temp_directory_path(temp_directory_error);
+            if (temp_directory_error) {
+                error = "validation_failed";
+                ReleaseMutationLock();
+                return false;
+            }
+            for (std::size_t index = 0; index < staged_files_.size(); ++index) {
+                const std::filesystem::path temporary = temp_directory /
+                    ("igi-mcp-dry-run-" + UniqueSuffix(index) + "-" +
+                     staged_files_[index].relative_path.filename().string());
+                if (!WriteBytes(temporary, staged_files_[index].bytes)) {
+                    std::error_code cleanup_error;
+                    std::filesystem::remove(temporary, cleanup_error);
+                    error = "validation_failed";
+                    ReleaseMutationLock();
+                    return false;
+                }
+                std::string validation_error;
+                const bool valid = post_validator_(staged_files_[index].relative_path,
+                                                   temporary, validation_error);
+                std::error_code cleanup_error;
+                std::filesystem::remove(temporary, cleanup_error);
+                if (!valid || cleanup_error) {
+                    error = "validation_failed";
+                    ReleaseMutationLock();
+                    return false;
+                }
+            }
+        }
         committed_ = true;
         ReleaseMutationLock();
         error.clear();

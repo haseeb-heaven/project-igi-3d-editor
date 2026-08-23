@@ -26,6 +26,8 @@ protected:
         std::ofstream(level / "objects.qsc", std::ios::binary)
             << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
                "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
+               "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
+               "Task_New(-1, \"HumanSoldier\", \"Anonymous guard\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n"
                "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
                "Task_New(102, \"UnknownTask\", \"Unknown\", 1, 2, 3, 0, 0, 0, \"303_01_1\");\n"
                "DefineComputerObjective(1, 0, 0, \"TRUE\", \"obj.text\", 100, \"TRUE\", \"FALSE\");\n";
@@ -137,6 +139,85 @@ TEST_F(McpDomainToolsTest, ReportsTypeSpecificObjectLayoutIndices) {
     EXPECT_EQ(schema.at("fields").at("position").at("parameter_indices").as_array()[0].as_number(), 3);
     EXPECT_EQ(schema.at("fields").at("rotation_radians").at("parameter_indices").as_array()[0].as_number(), 9);
     EXPECT_EQ(schema.at("fields").at("model_id").at("parameter_index").as_number(), 12);
+}
+
+TEST_F(McpDomainToolsTest, DerivesTransformAndModelLayoutsFromSchemas) {
+    std::string error;
+    const auto camera = mcp::CallObjectTool(
+        *service_, "object_get_schema", mcp::JsonValue::Object{{"type", "SCamera"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(camera.at("fields").at("rotation_radians").at("parameter_indices").as_array()[0].as_number(), 6);
+    EXPECT_EQ(camera.at("fields").at("model_id").at("parameter_index").as_number(), 10);
+
+    for (const std::string type : {"Fence", "Car", "Heli"}) {
+        const auto schema = mcp::CallObjectTool(
+            *service_, "object_get_schema", mcp::JsonValue::Object{{"type", type}}, error);
+        ASSERT_TRUE(error.empty()) << error;
+        EXPECT_FALSE(schema.at("fields").contains("rotation_radians")) << type;
+    }
+
+    const auto train = mcp::CallObjectTool(
+        *service_, "object_get_schema", mcp::JsonValue::Object{{"type", "Train"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(train.at("fields").contains("position"));
+    EXPECT_FALSE(train.at("fields").contains("rotation_radians"));
+    EXPECT_EQ(train.at("fields").at("model_id").at("parameter_index").as_number(), 6);
+}
+
+TEST_F(McpDomainToolsTest, RejectsIncompatibleTypeMigration) {
+    std::string error;
+    const auto result = mcp::CallObjectTool(
+        *service_, "object_set_type",
+        mcp::JsonValue::Object{{"task_id", "100"}, {"type", "Door"}}, error);
+    EXPECT_TRUE(result.is_null());
+    EXPECT_EQ(error, "unsupported_operation");
+
+    const auto object = service_->GetObject(1, "100", error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(object.at("type").as_string(), "Building");
+}
+
+TEST_F(McpDomainToolsTest, EnforcesSchemaTypesForParameterMutation) {
+    std::string error;
+    const auto fractional_team = mcp::CallObjectTool(
+        *service_, "object_set_parameter",
+        mcp::JsonValue::Object{{"task_id", "101"}, {"parameter_index", 8}, {"value", 1.5}}, error);
+    EXPECT_TRUE(fractional_team.is_null());
+    EXPECT_EQ(error, "unsupported_operation");
+
+    const auto unknown_field = mcp::CallObjectTool(
+        *service_, "object_set_parameter",
+        mcp::JsonValue::Object{{"task_id", "101"}, {"parameter_index", 11}, {"value", 1}}, error);
+    EXPECT_TRUE(unknown_field.is_null());
+    EXPECT_EQ(error, "unsupported_operation");
+}
+
+TEST_F(McpDomainToolsTest, ResolvesAnonymousAndDuplicateAiIds) {
+    std::string error;
+    const auto duplicate = mcp::CallAiTool(
+        *service_, "ai_update",
+        mcp::JsonValue::Object{{"task_id", "101#1"},
+                               {"fields", mcp::JsonValue::Object{{"team", 2}}}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(duplicate.is_null());
+
+    std::string anonymous_id;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("type").as_string() == "HumanSoldier" &&
+            object.at("id").as_string().starts_with("anon-")) {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+    const auto anonymous = mcp::CallAiTool(
+        *service_, "ai_update",
+        mcp::JsonValue::Object{{"task_id", anonymous_id},
+                               {"fields", mcp::JsonValue::Object{{"team", 3}}}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(anonymous.is_null());
 }
 
 }  // namespace

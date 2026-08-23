@@ -401,45 +401,20 @@ struct Layout {
 
 Layout LayoutFor(const std::string& type) {
     Layout layout;
-    layout.position[0] = 3;
-    layout.position[1] = 4;
-    layout.position[2] = 5;
-    layout.rotation[0] = 6;
-    layout.rotation[1] = 7;
-    layout.rotation[2] = 8;
-    layout.model = 9;
-    if (type == "Door") {
-        layout.rotation[0] = 9; layout.rotation[1] = 10; layout.rotation[2] = 11;
-        layout.model = 12;
-    } else if (type == "HumanSoldier" || type == "HumanSoldierFemale" ||
-               type == "HumanPlayer" || type == "HumanSoldierRPG" || type == "Cabinet") {
-        layout.rotation[0] = -1; layout.rotation[1] = -1; layout.rotation[2] = 6;
-        layout.model = 7;
-    } else if (type == "SCamera") {
-        layout.rotation[0] = 8; layout.rotation[1] = 9; layout.rotation[2] = 6;
-        layout.model = 10;
-    } else if (type == "SplineObjWaypoint") {
-        layout.position[0] = 6; layout.position[1] = 7; layout.position[2] = 8;
-        layout.rotation[0] = 3; layout.rotation[1] = 4; layout.rotation[2] = 5;
-        layout.model = 9;
-    } else if (type == "SplineObj") {
-        layout.position[0] = 9; layout.position[1] = 10; layout.position[2] = 11;
-        layout.rotation[0] = layout.rotation[1] = layout.rotation[2] = -1;
-        layout.model = -1;
-    } else if (type == "Train") {
-        layout.position[1] = layout.position[2] = -1;
-        layout.rotation[0] = layout.rotation[1] = layout.rotation[2] = -1;
-        layout.model = 6;
-    } else if (type == "Fence") {
-        layout.rotation[0] = 8; layout.rotation[1] = 9; layout.rotation[2] = 6;
-        layout.model = 7;
-    } else if (type == "Heli" || type == "Car") {
-        layout.model = 13;
-    } else if (type == "Switch") {
-        layout.model = 11;
-    } else if (type == "SCameraControl" || type == "AlarmControl" ||
-               type == "ExplodeObject") {
-        layout.model = 9;
+    const TaskSchemaNS::TaskSchema* schema = TaskSchemaNS::GetSchema(type);
+    if (schema == nullptr) return layout;
+    for (const auto& field : *schema) {
+        if (field.typeName == "ObjectPos" && field.argCount == 3) {
+            for (int component = 0; component < 3; ++component)
+                layout.position[component] = field.argOffset + component;
+        } else if (field.typeName == "Real32x9" && field.argCount == 3) {
+            for (int component = 0; component < 3; ++component)
+                layout.rotation[component] = field.argOffset + component;
+        } else if (field.name == "Model" && field.argCount == 1 &&
+                   (field.typeName == "String16" || field.typeName == "String256" ||
+                    field.typeName == "VarString")) {
+            layout.model = field.argOffset;
+        }
     }
     return layout;
 }
@@ -467,8 +442,10 @@ struct Replacement {
 enum class ExpectedKind { Any, Number, Boolean, String };
 
 ExpectedKind ExpectedKindForType(std::string_view type_name) {
-    if (type_name == "Bool") return ExpectedKind::Boolean;
-    if (type_name == "String16" || type_name == "String256" || type_name == "VarString")
+    if (type_name == "Bool" || type_name == "bool8" || type_name == "Boolean")
+        return ExpectedKind::Boolean;
+    if (type_name == "String16" || type_name == "String256" || type_name == "VarString" ||
+        type_name == "String")
         return ExpectedKind::String;
     if (type_name == "ObjectPos" || type_name == "Real32x9" || type_name == "RGB" ||
         type_name == "Real32x3" || type_name == "Colour" || type_name == "Real32" ||
@@ -477,14 +454,14 @@ ExpectedKind ExpectedKindForType(std::string_view type_name) {
     return ExpectedKind::Any;
 }
 
-ExpectedKind ExpectedKindForParameter(const CallSpan& call, int index) {
+const TaskSchemaNS::FieldDef* FieldForParameter(const CallSpan& call, int index) {
     const TaskSchemaNS::TaskSchema* schema = TaskSchemaNS::GetSchema(call.type);
-    if (schema == nullptr) return ExpectedKind::Any;
+    if (schema == nullptr) return nullptr;
     for (const auto& field : *schema) {
         if (index >= field.argOffset && index < field.argOffset + field.argCount)
-            return ExpectedKindForType(field.typeName);
+            return &field;
     }
-    return ExpectedKind::Any;
+    return nullptr;
 }
 
 bool ExistingKindMatches(const Scalar& existing, ExpectedKind expected) {
@@ -507,6 +484,65 @@ bool ValueMatches(const JsonValue& value, const Scalar& existing, ExpectedKind e
         case Scalar::Kind::Identifier: return value.is_string() || value.is_bool();
         default: return false;
     }
+}
+
+bool IsIntegerType(std::string_view type_name) {
+    return type_name == "Int8" || type_name == "Int16" || type_name == "Int32" ||
+           type_name == "Integer";
+}
+
+bool SchemaFieldValueMatches(const JsonValue& value, const Scalar& existing,
+                             const TaskSchemaNS::FieldDef& field) {
+    const ExpectedKind expected = ExpectedKindForType(field.typeName);
+    if (expected == ExpectedKind::Any || !ValueMatches(value, existing, expected)) return false;
+    if (!value.is_number()) return true;
+    const double number = value.as_number();
+    if (!std::isfinite(number)) return false;
+    if (!IsIntegerType(field.typeName)) return true;
+    if (std::trunc(number) != number) return false;
+    if (field.typeName == "Int8") return number >= -128.0 && number <= 127.0;
+    if (field.typeName == "Int16") return number >= -32768.0 && number <= 32767.0;
+    return number >= static_cast<double>(std::numeric_limits<std::int32_t>::min()) &&
+           number <= static_cast<double>(std::numeric_limits<std::int32_t>::max());
+}
+
+bool SchemaAcceptsCall(const std::string& source, const CallSpan& call,
+                       const TaskSchemaNS::TaskSchema& schema) {
+    for (const auto& field : schema) {
+        if (ExpectedKindForType(field.typeName) == ExpectedKind::Any) return false;
+        for (int offset = 0; offset < field.argCount; ++offset) {
+            const int index = field.argOffset + offset;
+            if (!ValidArg(call, index)) return false;
+            const ArgSpan& span = call.args[static_cast<std::size_t>(index)];
+            const std::size_t begin = ArgBegin(source, span);
+            const std::size_t end = ArgEnd(source, span);
+            Scalar existing;
+            if (begin >= end || !ParseScalar(std::string_view(source).substr(begin, end - begin), existing) ||
+                !ExistingKindMatches(existing, ExpectedKindForType(field.typeName))) return false;
+        }
+    }
+    return true;
+}
+
+bool ValidateSchemaParameterValue(const std::string& source, const CallSpan& call, int index,
+                                  const JsonValue& value, const TaskSchemaNS::FieldDef*& field,
+                                  ExpectedKind& expected, std::string& error) {
+    field = FieldForParameter(call, index);
+    if (field == nullptr || index < 3 || !ValidArg(call, index)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    const ArgSpan& span = call.args[static_cast<std::size_t>(index)];
+    const std::size_t begin = ArgBegin(source, span);
+    const std::size_t end = ArgEnd(source, span);
+    Scalar existing;
+    if (begin >= end || !ParseScalar(std::string_view(source).substr(begin, end - begin), existing) ||
+        !SchemaFieldValueMatches(value, existing, *field)) {
+        error = "unsupported_operation";
+        return false;
+    }
+    expected = ExpectedKindForType(field->typeName);
+    return true;
 }
 
 bool ValidateReplacementValue(const std::string& source, const CallSpan& call, int index,
@@ -987,9 +1023,12 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             }
             if (name == "object_set_type" || (update && arguments.contains("type"))) {
                 std::string type;
-                if (!ReadNonEmptyString(arguments.at("type"), type) ||
-                    TaskSchemaNS::GetSchema(type) == nullptr ||
-                    !ValidateReplacementValue(source, *call, 1, JsonValue(type),
+                const TaskSchemaNS::TaskSchema* destination_schema = nullptr;
+                if (!ReadNonEmptyString(arguments.at("type"), type)) return Failure(error, "invalid_arguments");
+                destination_schema = TaskSchemaNS::GetSchema(type);
+                if (destination_schema == nullptr || !SchemaAcceptsCall(source, *call, *destination_schema))
+                    return Failure(error, "unsupported_operation");
+                if (!ValidateReplacementValue(source, *call, 1, JsonValue(type),
                                               ExpectedKind::String, error) ||
                     !AddReplacement(source, *call, 1, FormatString(type), "type", replacements,
                                     error, ExpectedKind::String))
@@ -1019,8 +1058,9 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                 else if (value.is_bool()) replacement = value.as_bool() ? "TRUE" : "FALSE";
                 else if (value.is_number() && std::isfinite(value.as_number())) replacement = FormatNumber(value.as_number());
                 else return Failure(error, "invalid_arguments");
-                const ExpectedKind expected = ExpectedKindForParameter(*call, index);
-                if (!ValidateReplacementValue(source, *call, index, value, expected, error))
+                const TaskSchemaNS::FieldDef* field = nullptr;
+                ExpectedKind expected = ExpectedKind::Any;
+                if (!ValidateSchemaParameterValue(source, *call, index, value, field, expected, error))
                     return JsonValue(nullptr);
                 if (!AddReplacement(source, *call, index, replacement,
                                     "parameter[" + std::to_string(index) + "]", replacements, error,

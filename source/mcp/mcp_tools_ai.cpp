@@ -2,6 +2,7 @@
 
 #include "../level/qsc_lexer.h"
 #include "../level/qsc_parser.h"
+#include "mcp_task_id.h"
 
 #include <algorithm>
 #include <cctype>
@@ -27,6 +28,9 @@ struct CallSpan {
     std::string name;
     SourceSpan full;
     std::vector<SourceSpan> arguments;
+    std::string id;
+    std::string parent_id;
+    std::string type;
 };
 
 struct Patch {
@@ -190,6 +194,9 @@ SourceSpan TrimSpan(std::string_view source, SourceSpan span) {
     return span;
 }
 
+std::string Unquote(std::string value);
+std::string TrimmedText(std::string_view source, SourceSpan span);
+
 std::vector<CallSpan> ScanCalls(std::string_view source) {
     std::vector<CallSpan> calls;
     for (std::size_t position = 0; position < source.size();) {
@@ -242,6 +249,29 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
         if (last.begin != last.end || !arguments.empty()) arguments.push_back(last);
         calls.push_back({name, {name_begin, close + 1}, std::move(arguments)});
     }
+    std::map<std::string, int> id_counts;
+    for (std::size_t index = 0; index < calls.size(); ++index) {
+        CallSpan& call = calls[index];
+        if (call.name != "Task_New" || call.arguments.size() < 2) continue;
+        call.id = Unquote(TrimmedText(source, call.arguments[0]));
+        call.type = Unquote(TrimmedText(source, call.arguments[1]));
+        const std::string task_name = call.arguments.size() > 2
+                                          ? Unquote(TrimmedText(source, call.arguments[2]))
+                                          : std::string{};
+        if (call.id.empty()) call.id = "anonymous";
+        std::size_t parent_end = std::numeric_limits<std::size_t>::max();
+        for (std::size_t parent = 0; parent < index; ++parent) {
+            if (calls[parent].name == "Task_New" && calls[parent].full.begin < call.full.begin &&
+                calls[parent].full.end > call.full.end && calls[parent].full.end < parent_end) {
+                call.parent_id = calls[parent].id;
+                parent_end = calls[parent].full.end;
+            }
+        }
+        if (call.id == "-1" || call.id == "anonymous")
+            call.id = AnonymousTaskId(call.parent_id, call.type, task_name);
+        const int occurrence = id_counts[call.id]++;
+        if (occurrence > 0) call.id += "#" + std::to_string(occurrence);
+    }
     return calls;
 }
 
@@ -272,23 +302,10 @@ std::string Unquote(std::string value) {
     return result;
 }
 
-bool IsNumericTaskId(std::string_view task_id) {
-    if (task_id.empty()) return false;
-    std::size_t index = task_id.front() == '-' ? 1 : 0;
-    if (index == task_id.size()) return false;
-    for (; index < task_id.size(); ++index) {
-        if (task_id[index] < '0' || task_id[index] > '9') return false;
-    }
-    return true;
-}
-
-const CallSpan* FindTaskCallInSource(const std::vector<CallSpan>& calls, std::string_view source,
+const CallSpan* FindTaskCallInSource(const std::vector<CallSpan>& calls,
                                      std::string_view task_id, std::string_view task_type) {
-    if (!IsNumericTaskId(task_id)) return nullptr;
     for (const auto& call : calls) {
-        if (call.name != "Task_New" || call.arguments.size() < 2) continue;
-        if (TrimmedText(source, call.arguments[0]) == task_id &&
-            Unquote(TrimmedText(source, call.arguments[1])) == task_type) {
+        if (call.name == "Task_New" && call.id == task_id && call.type == task_type) {
             return &call;
         }
     }
@@ -585,7 +602,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::string source;
             if (!service.LoadCurrentObjectSource(source, domain_error)) return DomainFailure(error, domain_error);
             const auto calls = ScanCalls(source);
-            const CallSpan* call = FindTaskCallInSource(calls, source, task_id, type);
+            const CallSpan* call = FindTaskCallInSource(calls, task_id, type);
             if (!call) return Failure(error, "unsupported_operation");
             std::vector<Patch> patches;
             for (const auto& [field, value] : arguments.at("fields").as_object()) {
@@ -655,7 +672,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                 if (!domain_error.empty()) return DomainFailure(error, domain_error);
                 if (child.at("parent_id").is_null() || child.at("parent_id").as_string() != parent_id ||
                     !child.at("type").as_string().starts_with("Gun")) return Failure(error, "unsupported_operation");
-                const CallSpan* call = FindTaskCallInSource(calls, source, child_id, child.at("type").as_string());
+                const CallSpan* call = FindTaskCallInSource(calls, child_id, child.at("type").as_string());
                 if (!call) return Failure(error, "unsupported_operation");
                 std::size_t weapon_argument = call->arguments.size();
                 for (std::size_t index = 3; index < call->arguments.size(); ++index) {
@@ -699,7 +716,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::string source;
             if (!service.LoadCurrentObjectSource(source, domain_error)) return DomainFailure(error, domain_error);
             const auto calls = ScanCalls(source);
-            const CallSpan* call = FindTaskCallInSource(calls, source, task_id, type);
+            const CallSpan* call = FindTaskCallInSource(calls, task_id, type);
             if (!call) return Failure(error, "unsupported_operation");
             std::vector<Patch> patches;
             for (const auto& [field, value] : arguments.at("fields").as_object()) {

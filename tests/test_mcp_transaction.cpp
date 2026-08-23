@@ -62,6 +62,28 @@ TEST_F(McpTransactionTest, DryRunStagesWithoutWritingOrCreatingBackups) {
     EXPECT_TRUE(transaction.backup_directory().empty());
 }
 
+TEST_F(McpTransactionTest, DryRunRunsPostValidationWithoutChangingTarget) {
+    mcp::MutationOptions options;
+    options.dry_run = true;
+    std::string error;
+    bool post_validated = false;
+    mcp::Transaction transaction(*scope_, options);
+    ASSERT_TRUE(transaction.Stage("missions/location0/level1/objects.qvm", Bytes("updated"), error))
+        << error;
+    transaction.SetPostValidator([&](const fs::path&, const fs::path& path,
+                                     std::string&) {
+        post_validated = true;
+        EXPECT_NE(path, target_);
+        EXPECT_TRUE(fs::exists(path));
+        return true;
+    });
+
+    ASSERT_TRUE(transaction.Commit(error)) << error;
+    EXPECT_TRUE(post_validated);
+    EXPECT_EQ(ReadText(target_), "original");
+    EXPECT_TRUE(transaction.backup_directory().empty());
+}
+
 TEST_F(McpTransactionTest, BacksUpAndAtomicallyReplacesAStagedFile) {
     std::string error;
     mcp::Transaction transaction(*scope_, {});
