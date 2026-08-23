@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "utils_igi1conv.h"
+#include "renderer/object_lightmap.h"
 #include <mmsystem.h>
 #include <future>
 #include <set>
@@ -175,7 +176,7 @@ void App::LoadLevel(int level_no) {
 		// The renderer GL caches are torn down by BeginLoadLevel()/ClearCaches().
 		// BeginLoadLevel also calls ClearResCache(), so LoadResCache must come AFTER it.
 		renderer_.SetLevel(level_no);
-		renderer_.SetRainEffect(false, 0, 0, 0); // reset rain — prevent carryover from previous level
+		renderer_.SetRainEffect(false, false, 0.0f, 0.0f, 0.0f); // reset rain — prevent carryover from previous level
 		renderer_.BeginLoadLevel();
 		// Build in-memory .res index AFTER BeginLoadLevel so ClearCaches() doesn't wipe it.
 		renderer_.LoadResCache(level_no, Utils::GetIGIRootPath());
@@ -185,6 +186,8 @@ void App::LoadLevel(int level_no) {
 		renderer_.SetSplineTerrainQuery([this](double x, double y, float& z) {
 			return level_.GetTerrainZ(x, y, z);
 		});
+
+		igi::ObjectLightmapManager::Get().LoadLevelLightmaps(level_no);
 
 		Level::load_params_s level_load_params_s = {
 			.level_no_ = level_no,
@@ -412,7 +415,7 @@ void App::LoadLevel(int level_no) {
 		// [4]=TracelineStart(meters),[5]=TracelineEnd(meters),
 		// [6]=IsActive(quoted VarString "0"/"1"),[7]=RainAlpha.
 		{
-			bool rainActive = false;
+			bool isRain = true, isActive = false;
 			float rainStartM = 0.0f, rainEndM = 0.0f, rainAlpha = 0.0f;
 			bool foundRainEffect = false;
 			for (const auto& re : objects) {
@@ -423,17 +426,16 @@ void App::LoadLevel(int level_no) {
 					std::string isRainTok = re.argTokens[3];
 					if (!isRainTok.empty() && isRainTok.front() == '"')
 						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
-					bool isRain = (isRainTok == "TRUE" || isRainTok == "true");
+					isRain = (isRainTok == "TRUE" || isRainTok == "true");
 					std::string isActiveTok = re.argTokens[6];
 					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
 						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
-					bool isActive = !isActiveTok.empty() && isActiveTok != "0";
+					isActive = !isActiveTok.empty() && isActiveTok != "0";
 					rainStartM = std::stof(re.argTokens[4]);
 					rainEndM = std::stof(re.argTokens[5]);
 					rainAlpha = std::stof(re.argTokens[7]);
-					rainActive = isRain && isActive;
 					Logger::Get().Log(LogLevel::INFO, "[App] RainEffect resolved: active=" +
-						std::to_string(rainActive) + " isRain=" + isRainTok +
+						std::to_string(isActive) + " isRain=" + isRainTok +
 						" isActive=" + isActiveTok +
 						" start=" + std::to_string(rainStartM) +
 						"m end=" + std::to_string(rainEndM) + "m alpha=" + std::to_string(rainAlpha));
@@ -443,8 +445,8 @@ void App::LoadLevel(int level_no) {
 				break; // first RainEffect task only
 			}
 			if (!foundRainEffect)
-				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — rain disabled");
-			renderer_.SetRainEffect(rainActive, rainStartM, rainEndM, rainAlpha);
+				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — weather disabled");
+			renderer_.SetRainEffect(isActive, isRain, rainStartM, rainEndM, rainAlpha);
 		}
 
 		// Log all loaded objects for verification script

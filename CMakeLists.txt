@@ -41,6 +41,7 @@ file(GLOB SOURCES "source/*.h" "source/*.cpp")
 file(GLOB SOURCES_LEVEL "source/level/*.*")
 file(GLOB SOURCES_RENDERER "source/renderer/*.*")
 file(GLOB SOURCES_CLI "source/cli/*.*")
+file(GLOB SOURCES_EDITOR_AUDIO "source/editor_audio/*.*")
 file(GLOB SHADERS_41 "shaders/41/*.*")
 file(GLOB SHADERS_45 "shaders/45/*.*")
 
@@ -55,7 +56,7 @@ source_group("cli" FILES ${SOURCES_CLI})
 source_group("shaders/41" FILES ${SHADERS_41})
 source_group("shaders/45" FILES ${SHADERS_45})
 
-add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
+add_executable(igi-editor ${SOURCES} ${SOURCES_LEVEL} ${SOURCES_RENDERER} ${SOURCES_EDITOR_AUDIO} ${SOURCES_CLI} ${SHADERS_41} ${SHADERS_45})
 
 if (WIN32)
   set_target_properties(igi-editor PROPERTIES
@@ -116,6 +117,23 @@ set_source_files_properties(
   source/cli/cli_tests.cpp
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
+  source/renderer/object_lightmap.cpp
+  # Round-2 PCH opt-outs: heavy new translation units (MSVC Release OOM risk
+  # per this block's own comment). Editor GLOB picks these up; listed here only
+  # for the PCH exemption.
+  source/renderer/menu_qvm.cpp
+  source/renderer/menu_qvm_runtime.cpp
+  source/renderer/menu_qvm_render.cpp
+  source/renderer/menu_qvm_edit.cpp
+  source/renderer/anim_player.cpp
+  source/renderer/lightmap_baker.cpp
+  source/renderer/light_fixture.cpp
+  source/renderer/light_fixture_extract.cpp
+  source/renderer/light_fixture_level.cpp
+  source/renderer/spline_placement.cpp
+  source/renderer/pickup_preview.cpp
+  source/editor_audio/sound_bank.cpp
+  source/editor_audio/ilsf_sound.cpp
   PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -245,7 +263,24 @@ add_executable(igi_tests
     tests/test_res_model_set.cpp
     tests/test_res_stream_append.cpp
     tests/test_mef_native_lightmap.cpp
+    tests/test_heli_preview.cpp
     tests/test_igi1conv_lightmap.cpp
+    tests/test_lod_chain.cpp
+    tests/test_fog_presets.cpp
+    tests/test_magic_object_registry.cpp
+    tests/test_anim_player.cpp
+    tests/test_menu_qvm.cpp
+    tests/test_menu_qvm_edit.cpp
+    tests/test_ladder_preview.cpp
+    tests/test_lod_chain.cpp
+    tests/test_spline_placement.cpp
+    tests/test_railroad_path.cpp
+    tests/test_menu_runtime.cpp
+    tests/test_light_fixture.cpp
+    tests/test_pickup_preview.cpp
+    tests/test_editor_audio.cpp
+    tests/test_lightmap_baker.cpp
+    tests/test_interactables.cpp
     tests/test_debug_command_parser.cpp
 )
 
@@ -260,10 +295,28 @@ target_include_directories(igi_tests PRIVATE source)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
-target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
-target_link_libraries(igi_tests PRIVATE gtest_main)
+target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
+    source/renderer/heli_preview.cpp
+    source/renderer/railroad_path.cpp
+    source/renderer/menu_qvm.cpp
+    source/renderer/menu_qvm_edit.cpp
+    source/renderer/menu_qvm_runtime.cpp
+    source/renderer/fog_presets.cpp
+    source/renderer/magic_object_registry.cpp
+    source/renderer/anim_player.cpp
+    source/renderer/lod_model_chain.cpp
+    source/renderer/spline_placement.cpp
+    source/renderer/ladder_preview.cpp
+    source/renderer/light_fixture.cpp
+    source/renderer/light_fixture_extract.cpp
+    source/renderer/pickup_preview.cpp
+    source/editor_audio/ilsf_sound.cpp
+    source/editor_audio/wav_pcm.cpp
+    source/editor_audio/sound_bank.cpp
+    source/editor_audio/audio_out.cpp
+    source/renderer/light_fixture_store.cpp
+    source/renderer/lightmap_baker.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp
@@ -289,6 +342,8 @@ target_sources(igi_tests PRIVATE
     source/level/terrain_files.cpp
     source/renderer/mef_native.cpp
     source/utils_igi1conv.cpp
+    source/renderer/object_lightmap.cpp
+    tests/test_weather_params.cpp
 )
 
 # level_objects.cpp (and its pch.h header graph: app.h, renderer, level.h) relies

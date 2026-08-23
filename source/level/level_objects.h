@@ -58,6 +58,11 @@ struct LevelObject {
     std::string secondaryModelId;  // For SCamera (Camera body)
     std::string lensModelId;       // For SCamera (Lens)
     std::string splineTaskId;      // For Train (RailroadQTaskID)
+    // Wire (zipline): second anchor from Task_New args 6-8 (retail "End position").
+    // Issue #42: previously dropped by the parser, so the wire's far end was invisible
+    // and uneditable. wire_end_original mirrors original_pos semantics for round-trip.
+    glm::dvec3 wire_end = glm::dvec3(0.0);
+    glm::dvec3 wire_end_original = glm::dvec3(0.0);
     bool linearSegments = false;   // If true, straight lines; if false, curved
     int splineSegmentCount = 20;   // Number of sub-segments per waypoint segment
     glm::dmat3 orientationMatrix = glm::dmat3(1.0); // 3x3 rotation matrix for Splines/Joints

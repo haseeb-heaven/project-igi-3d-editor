@@ -1,4 +1,5 @@
 #include "renderer_objects_internal.h"
+#include "object_lightmap.h"
 
 
 
@@ -346,6 +347,10 @@ void Renderer_Objects::ClearCaches() {
     // on each level load in app_level.cpp), so clear it here too.
     ClearAllLightmaps();
     indoor_ambient_by_task_.clear();
+    // heli_thrust_decls_ caches the "Heli" Task_DeclareParameters Original-Thrust
+    // token offset (#60), which is per-level — a different mission may declare a
+    // different layout, so a stale entry would silently mis-read collective.
+    heli_thrust_decls_.clear();
     Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Cleared per-task lightmap caches on level switch");
     ClearResCache();
 }
@@ -928,10 +933,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
 
                     if (sub.textureID > 0) {
-                        // Textured submesh: fixed neutral-bright lighting so the texture
-                        // reads naturally and the object is lit evenly from all sides.
-                        glUniform3f(loc_dirlight, kDefDirlight.r, kDefDirlight.g, kDefDirlight.b);
-                        glUniform3f(loc_ambient,  kDefAmbient.r,  kDefAmbient.g,  kDefAmbient.b);
+                        // Textured submesh: neutral lighting so the texture looks natural.
+                        // Windows/glass keep their transparency (alpha 0.4 above) but render
+                        // with the SAME normal lighting as everything else, so glass stays
+                        // clear and see-through.
+                        auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                        float dirI = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                        float ambI = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirI = 0.6f; ambI = 0.6f; }
+
+                        glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                        glUniform3f(loc_ambient,  ambI, ambI, ambI);
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
@@ -943,17 +955,19 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
                             color = glm::vec3(0.6f, 0.6f, 0.6f);
                         }
-                        glUniform3f(loc_dirlight, color.r * kDefDirlight.r, color.g * kDefDirlight.g, color.b * kDefDirlight.b);
-                        glUniform3f(loc_ambient,  color.r * kDefAmbient.r,  color.g * kDefAmbient.g,  color.b * kDefAmbient.b);
+                        auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                        float dirMult = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                        float ambMult = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirMult = 0.6f; ambMult = 0.6f; }
+
+                        glUniform3f(loc_dirlight, color.r * dirMult, color.g * dirMult, color.b * dirMult);
+                        glUniform3f(loc_ambient,  color.r * ambMult, color.g * ambMult, color.b * ambMult);
                         glUniform1i(loc_useTex, 0);
                     }
 
-                    // Lightmap: bind unit 1 if this submesh has a baked lightmap. It is
-                    // applied as a STATIC bake, scaled LIVE by u_lightmapScale = how much
-                    // this block's surface now faces the sun vs at bake time — so moving/
-                    // rotating the object adjusts its lighting smoothly instead of deleting
-                    // the lightmap. When unmoved the scale is 1.0 (the original bake).
-                    if (hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
+                    // Lightmap: bind unit 1 if this submesh has a baked lightmap and mode is not Off.
+                    auto curMode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                    if (curMode != igi::LightmapRenderMode::Off && hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
                         glm::vec3 scale = blockScale(sub.avgNormal);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
@@ -975,13 +989,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 glBindVertexArray(0);
             } else {
                 // Legacy single-texture path (e.g. old OBJ models)
+                auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                float dirI = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                float ambI = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+
                 bool hasTexture = (mesh.textureID > 0);
                 if (hasTexture) {
-                    glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                    glUniform3f(loc_ambient,  global_ambient_.r, global_ambient_.g, global_ambient_.b);
+                    glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                    glUniform3f(loc_ambient,  ambI, ambI, ambI);
                 } else {
-                    glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
-                    glUniform3f(loc_ambient,  r * global_ambient_.r, g * global_ambient_.g, b * global_ambient_.b);
+                    glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                    glUniform3f(loc_ambient,  r * ambI, g * ambI, b * ambI);
                 }
                 if (mesh.textureID > 0) {
                     glUniform1i(loc_useTex, 1);
@@ -1036,6 +1054,12 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 rootWorldMat = rootWorldMat * parentRot;
 
                 current_draw_obj_type_ = obj.type;  // tells DrawAttachmentsRecursive if parent is Heli (rotor spin)
+                // Issue #60: resolve the authored "Original Thrust" collective so the
+                // rotor preview spins with retail collective-driven semantics
+                // (Heli::ReadChannels 0x431B70 restores live+target collective from
+                // this value at tick zero; RotorPhase += Thrust per 30 Hz tick).
+                current_heli_collective_ = heli_preview::LookupAuthoredCollective(
+                    &objects, obj, heli_thrust_decls_);
                 std::unordered_set<std::string> drawn;
                 DrawAttachmentsRecursive(obj.modelId, obj.modelId, obj.isBuilding, rootWorldMat, isTransparentPass,
                                           loc_model, loc_dirlight, loc_ambient,
@@ -1071,6 +1095,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     if (show_magic_obj_spheres) {
         DrawMagicObjSpheres(objects, ubo_mats);
     }
+    // Issue #42: Wire anchor/line + AIStationaryGunHolder viewcone gizmos (cheap,
+    // only touches the two interactable types; kept unconditional for discoverability).
+    DrawInteractableGizmos(objects, ubo_mats);
 }
 
 bool Renderer_Objects::IsVehicleType(const std::string& type) {

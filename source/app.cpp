@@ -1,4 +1,5 @@
 #include "app_internal.h"
+#include "renderer/object_lightmap.h"
 
 // GameMonitorParam, GameMonitorProc, and HOTKEY_ID_TOGGLE_GAME live in
 // app_internal.h (shared with app_editor.cpp's LaunchGame). The mutable window
@@ -96,8 +97,12 @@ bool App::Init(int argc, char** argv) {
 	ConfigData& cfg = Config::Get();
 
 	renderer_.SetLightmapsEnabled(cfg.enableLightmaps);
+	// Restore the Escape-menu lightmap render mode (Baked/Hybrid/Dynamic/Off).
+	int lm = cfg.lightmapMode < 0 ? 0 : (cfg.lightmapMode > 3 ? 3 : cfg.lightmapMode);
+	igi::ObjectLightmapManager::Get().SetRenderMode(static_cast<igi::LightmapRenderMode>(lm));
 	renderer_.SetFogEnabled(cfg.enableFog);
 	renderer_.SetFogIntensity(cfg.fogIntensity);
+	renderer_.SetWeatherSettings(cfg.weatherEnabled, cfg.weatherStyle, cfg.weatherSpeed);
 
 	auto_save_enabled_ = cfg.auto_save_enabled;
 	auto_save_interval_seconds_ = cfg.auto_save_interval_seconds;
@@ -246,6 +251,10 @@ void App::SetFogEnabled(bool enabled) {
 
 void App::SetFogIntensity(int intensity) {
     renderer_.SetFogIntensity(intensity);
+}
+
+void App::SetWeatherSettings(bool enabled, int style, int speedPercent) {
+    renderer_.SetWeatherSettings(enabled, style, speedPercent);
 }
 
 void App::ToggleTerrainModOption(int opt) {

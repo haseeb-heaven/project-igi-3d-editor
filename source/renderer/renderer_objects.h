@@ -5,6 +5,7 @@
 #include "../level/level_objects.h"
 #include "dat_writer.h"
 #include "res_writer.h"
+#include "heli_preview.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -16,6 +17,13 @@ struct AttachInfo {
     std::string modelId;
     float px, py, pz;           // raw game-unit position from ATTA record
     float r[9];                 // 3x3 rotation matrix (r00..r08)
+    // Magic-object table (#67): set when the attachment name hit the retail
+    // magicobj.qvm table. modelId above is then the DEFINED model (which may differ
+    // from the raw ATTA attachment name in magic_attachment_name). Placement
+    // transform is untouched — only model resolution changes, per 0x4DFA50.
+    bool from_magic_table = false;
+    std::string magic_attachment_name; // raw ATTA name looked up in the table
+    std::string magic_task_type;       // TASKTYPE_* constant, "" when unknown
 };
 
 // One pickable ATTA sub-model instance, captured during the picking pass so the
@@ -83,6 +91,11 @@ public:
     std::vector<uint8_t> FindTextureData(const std::string& textureId) const;
     std::vector<uint8_t> FindMeshData(const std::string& modelId) const;
 
+    // Material-slot -> texture-name map for a model (DAT lookup with variant/global
+    // fallbacks). Public for the light-fixture extractor (#63), which resolves each
+    // render block's emitter material the same way ApplyTexturesToMesh does.
+    std::vector<std::string> GetTextureIdsForModel(const std::string& modelId);
+
     // Pre-fill the attachment cache from already-parsed geometry (avoids re-reading
     // MEF bytes that were already loaded for mesh creation in GetOrLoadMesh).
     void PrePopulateAttaFromParsed(const std::string& modelId, bool isBuilding,
@@ -90,6 +103,9 @@ public:
 
     // Diagnostics: live cache occupancy (for level-switch logging).
     size_t GetMeshCacheCount() const { return mesh_cache_.size(); }
+    // LOD chain length for a loaded model (1..5). Returns 1 when unknown/not loaded.
+    int GetLodChainLength(const std::string& modelId, bool isBuilding) const;
+    void ResolveAndCacheLodChain(const std::string& modelId, bool isBuilding);
     size_t GetTextureCacheCount() const { return texture_cache_.size(); }
 
     void Draw(GLuint ubo_mats, bool overlay_wireframe, const std::vector<LevelObject>& objects, int selected_object_index, int hover_object_index, int draw_parts, const glm::vec3& camera_pos, bool show_magic_obj_spheres = false, const std::unordered_set<int>* skip_static_draw_indices = nullptr);
@@ -228,6 +244,11 @@ private:
 	bool fog_enabled_ = true;
 	float elapsed_time_secs_ = 0.0f;      // rotor animation accumulator (Heli main/tail)
 	std::string current_draw_obj_type_; // set before DrawAttachmentsRecursive for Heli rotor spin
+	float current_heli_collective_ = -1.0f; // authored "Original Thrust" of the Heli being drawn (-1 = unknown)
+	// per-level Task_DeclareParameters offsets cache ("Heli" -> argTokens offset or -1);
+	// mirrors heli_preview::DeclarationIndex (kept as the raw map type to break the
+	// pch.h -> renderer_objects.h -> heli_preview.h include cycle)
+	std::map<std::string, int> heli_thrust_decls_;
 	std::map<std::string, glm::vec3> indoor_ambient_by_task_; // taskId -> LightmapInfo "Indoors ambient light"
     struct BakePose {
         glm::dvec3 pos;
@@ -236,6 +257,9 @@ private:
     };
     std::map<std::string, BakePose> lightmap_bake_pose_by_task_;
     std::map<std::string, Mesh> mesh_cache_;
+    // LOD virtual-model chain length per cacheKey (0x4CED50 name-increment rule, max 5).
+    // Decides how many per-LOD .olm entries an object contributes to lightmaps.res (#62).
+    std::map<std::string, int> lod_chain_length_;
     std::map<std::string, GLuint> texture_cache_;
     std::map<std::string, std::vector<std::string>> model_texture_map_cache_;
     mutable std::map<std::string, std::vector<std::string>> global_texture_map_;
@@ -267,6 +291,7 @@ private:
     GLuint ubo_binding_point_;
     GLuint selection_vao_, selection_vbo_;
     GLuint selection_shader_ = 0;
+    GLuint gizmo_line_vao_ = 0, gizmo_line_vbo_ = 0;
     std::unordered_set<std::string> logged_draw_buildings_;
     std::set<std::string> window_model_ids_;
     bool window_ids_loaded_ = false;
@@ -325,6 +350,9 @@ private:
     void InitSphereMesh();
     void DrawMagicObjSpheres(const std::vector<LevelObject>& objects, GLuint ubo_mats);
     void DrawSelectionBox(const LevelObject& obj, GLuint ubo_mats, const glm::vec4& color);
+    // Issue #42: Wire (zipline) anchor/line gizmos + AIStationaryGunHolder viewcone.
+    void DrawInteractableGizmos(const std::vector<LevelObject>& objects, GLuint ubo_mats);
+    bool EnsureSelectionShader();
     Mesh CreateCubeMesh();
     Mesh CreateTextMesh(const std::string& text);
     void AddCharacterVertices(std::vector<float>& vertices, char c, float x, float y, float scale);
@@ -335,7 +363,6 @@ private:
     void LoadDatIntoMap(const std::string& datPath, std::map<std::string, std::vector<std::string>>& outMap);
     void EnsureTextureMapLoaded();
     void EnsureGlobalTextureMapLoaded() const;
-    std::vector<std::string> GetTextureIdsForModel(const std::string& modelId);
     GLuint GetOrLoadTexture(const std::string& textureId);
     void ApplyTexturesToMesh(Mesh& mesh, const std::string& modelId, const std::string& parentModelId = "");
     void InitSelectionBox();

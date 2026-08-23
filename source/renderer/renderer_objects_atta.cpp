@@ -5,6 +5,47 @@
  *          Split from renderer_objects.cpp; shares renderer_objects_internal.h.
  *****************************************************************************/
 #include "renderer_objects_internal.h"
+#include "magic_object_registry.h"
+
+namespace {
+
+// Resolve one ATTA attachment into an AttachInfo, consulting the retail magic-object
+// table (#67, open-igi 0x4DFA50 walk): when the attachment name is defined in
+// magicobj.qvm, the spawned child carries the DEFINED model (which may differ from
+// the attachment name) plus TASKTYPE metadata. Placement transform is untouched.
+// Unmatched names are logged once each at DEBUG so gaps stay visible without spam.
+AttachInfo ResolveAttachInfo(const std::string& aname,
+                             float px, float py, float pz,
+                             const float* r) {
+    AttachInfo info;
+    info.modelId = aname;
+    info.px = px; info.py = py; info.pz = pz;
+    for (int i = 0; i < 9; ++i) info.r[i] = r[i];
+
+    igi::MagicObjectRegistry& reg = igi::MagicObjectRegistry::Get();
+    reg.EnsureLoaded();
+    igi::MagicObjectDefinition def;
+    if (reg.TryGet(aname, def)) {
+        info.from_magic_table = true;
+        info.magic_attachment_name = aname;
+        info.magic_task_type = def.task_type_name;
+        if (def.model != aname) {
+            Logger::Get().Log(LogLevel::INFO,
+                "[MagicObjects] attachment '" + aname + "' -> magic model '" + def.model + "'" +
+                (def.task_type_name.empty() ? "" : " (" + def.task_type_name + ")"));
+            info.modelId = def.model;
+        }
+    } else if (reg.Loaded()) {
+        static std::set<std::string> unmatched_logged;
+        if (unmatched_logged.insert(aname).second) {
+            Logger::Get().Log(LogLevel::DEBUG,
+                "[MagicObjects] attachment name not in table: '" + aname + "'");
+        }
+    }
+    return info;
+}
+
+} // namespace
 
 std::string Renderer_Objects::AttaOccupancyKey(const std::string& modelId, const glm::vec3& worldPos) {
     char buf[160];
@@ -682,13 +723,8 @@ void Renderer_Objects::PrePopulateAttaFromParsed(const std::string& modelId, boo
     for (const auto& a : mefAttachments) {
         std::string aname(a.name, strnlen(a.name, 16));
         if (aname.empty()) continue;
-        AttachInfo info;
-        info.modelId = aname;
-        info.px = a.px; info.py = a.py; info.pz = a.pz;
-        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
-        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
-        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
-        attaches.push_back(info);
+        const float r[9] = {a.r00, a.r01, a.r02, a.r03, a.r04, a.r05, a.r06, a.r07, a.r08};
+        attaches.push_back(ResolveAttachInfo(aname, a.px, a.py, a.pz, r));
     }
     attachment_cache_[cacheKey] = std::move(attaches);
 }
@@ -775,78 +811,78 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
         std::string aname(a.name, strnlen(a.name, 16));
         if (aname.empty()) continue;
 
-        AttachInfo info;
-        info.modelId = aname;
-        info.px = a.px; info.py = a.py; info.pz = a.pz;
-        info.r[0]=a.r00; info.r[1]=a.r01; info.r[2]=a.r02;
-        info.r[3]=a.r03; info.r[4]=a.r04; info.r[5]=a.r05;
-        info.r[6]=a.r06; info.r[7]=a.r07; info.r[8]=a.r08;
+        const float r[9] = {a.r00, a.r01, a.r02, a.r03, a.r04, a.r05, a.r06, a.r07, a.r08};
+        AttachInfo info = ResolveAttachInfo(aname, a.px, a.py, a.pz, r);
         attaches.push_back(info);
 
         // Pre-warm the sub-model mesh — try res cache first, disk fallback.
+        // Uses the RESOLVED model id (magic-object table may define a different
+        // model than the raw attachment name — #67).
         std::string subKey = std::to_string(current_level_) + ":" +
-                             (isBuilding ? "building:" : "object:") + aname;
+                             (isBuilding ? "building:" : "object:") + info.modelId;
         if (mesh_cache_.find(subKey) == mesh_cache_.end()) {
             bool loaded = false;
-            std::vector<uint8_t> subBytes = FindMeshData(aname);
+            const std::string& resolvedId = info.modelId;
+            std::vector<uint8_t> subBytes = FindMeshData(resolvedId);
             if (!subBytes.empty()) {
                 try {
-                    Mesh subMesh = loadObjModelFromMemory(subBytes, aname);
-                    ApplyTexturesToMesh(subMesh, aname, modelId);
+                    Mesh subMesh = loadObjModelFromMemory(subBytes, resolvedId);
+                    ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                     mesh_cache_[subKey] = subMesh;
                     Logger::Get().Log(LogLevel::INFO,
-                        "[Renderer_Objects] ATTA sub-model loaded from ResCache: " + aname +
+                        "[Renderer_Objects] ATTA sub-model loaded from ResCache: " + resolvedId +
                         " (" + std::to_string(subMesh.vertexCount) + " verts)");
                     loaded = true;
                 } catch (const std::exception& se) {
                     Logger::Get().Log(LogLevel::WARNING,
-                        "[Renderer_Objects] ATTA ResCache parse failed for " + aname + ": " + se.what());
+                        "[Renderer_Objects] ATTA ResCache parse failed for " + resolvedId + ": " + se.what());
                 }
             }
             if (!loaded) {
-                std::string subFile = FindModelFile(aname, isBuilding);
+                std::string subFile = FindModelFile(resolvedId, isBuilding);
                 if (subFile.empty()) {
                     // FindModelFile may have lazily indexed a cross-level .res as a side
                     // effect (its cross-level lookup block) -- retry the ResCache now that
                     // the owning level's models.res is indexed, before giving up.
-                    std::vector<uint8_t> lazyBytes = FindMeshData(aname);
+                    std::vector<uint8_t> lazyBytes = FindMeshData(resolvedId);
                     if (!lazyBytes.empty()) {
                         try {
-                            Mesh subMesh = loadObjModelFromMemory(lazyBytes, aname);
-                            ApplyTexturesToMesh(subMesh, aname, modelId);
+                            Mesh subMesh = loadObjModelFromMemory(lazyBytes, resolvedId);
+                            ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                             mesh_cache_[subKey] = subMesh;
                             Logger::Get().Log(LogLevel::INFO,
-                                "[Renderer_Objects] ATTA sub-model loaded from ResCache (lazy): " + aname +
+                                "[Renderer_Objects] ATTA sub-model loaded from ResCache (lazy): " + resolvedId +
                                 " (" + std::to_string(subMesh.vertexCount) + " verts)");
                             loaded = true;
                         } catch (const std::exception& se) {
                             Logger::Get().Log(LogLevel::WARNING,
-                                "[Renderer_Objects] ATTA lazy ResCache parse failed for " + aname + ": " + se.what());
+                                "[Renderer_Objects] ATTA lazy ResCache parse failed for " + resolvedId + ": " + se.what());
                         }
                     }
                     if (!loaded) {
                         Logger::Get().Log(LogLevel::WARNING,
-                            "[Renderer_Objects] ATTA sub-model NOT FOUND: " + aname);
+                            "[Renderer_Objects] ATTA sub-model NOT FOUND: " + resolvedId);
                         Mesh empty; mesh_cache_[subKey] = empty;
                     }
                 } else {
                     try {
                         Mesh subMesh = loadObjModel(subFile, "");
-                        ApplyTexturesToMesh(subMesh, aname, modelId);
+                        ApplyTexturesToMesh(subMesh, resolvedId, modelId);
                         mesh_cache_[subKey] = subMesh;
                         Logger::Get().Log(LogLevel::INFO,
-                            "[Renderer_Objects] ATTA sub-model loaded from disk: " + aname +
+                            "[Renderer_Objects] ATTA sub-model loaded from disk: " + resolvedId +
                             " (" + std::to_string(subMesh.vertexCount) + " verts)");
                     } catch (const std::exception& se) {
                         Logger::Get().Log(LogLevel::ERR,
-                            "[Renderer_Objects] ATTA sub-model load FAILED: " + aname + ": " + se.what());
+                            "[Renderer_Objects] ATTA sub-model load FAILED: " + resolvedId + ": " + se.what());
                         Mesh empty; mesh_cache_[subKey] = empty;
                     }
                 }
             }
         }
-        // Recurse: parse this child's own ATTA section
-        LoadAttachmentsRecursive(aname, isBuilding, visited);
+        // Recurse: parse this child's own ATTA section. Retail 0x4DFA50 walks the
+        // spawned model's own attachments too, so use the RESOLVED model id (#67).
+        LoadAttachmentsRecursive(info.modelId, isBuilding, visited);
     }
 
     attachment_cache_[cacheKey] = std::move(attaches);
@@ -921,14 +957,22 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 		// the child at the highest local Z (top of fuselage); the tail rotor is
 		// at the most-negative local Y (far tail). modelType-3 ATTA children are
 		// typically the rotor blades; fall through for any other children.
+		// Issue #60: a child whose model id matches a known retail rotor model
+		// (physicsobj/helis/{bell,mil}/HELI.QVM strings) is always treated as a
+		// rotor even if the geometric heuristic misses.
 		if (current_draw_obj_type_ == "Heli") {
 			float maxZ = att.pz, minY = att.py;
 			for (const auto& sib : attsR) {
 				if (sib.pz > maxZ) maxZ = sib.pz;
 				if (sib.py < minY) minY = sib.py;
 			}
+			// Issue #60: children whose model id matches a known retail rotor model
+			// (physicsobj/helis/{bell,mil}/HELI.QVM strings, see heli_preview.h) spin
+			// even when the geometric heuristic misses them (e.g. mid-hull MIL rotor).
+			const bool knownRotor = heli_preview::IsKnownRotorModel(att.modelId);
 			const bool isMainRotor = (att.pz >= maxZ - 1.0f);
 			const bool isTailRotor = (!isMainRotor && att.py <= minY + 1.0f);
+			const bool isSideRotor = (!isMainRotor && !isTailRotor && knownRotor);
 
 			// Rebuild the placed transform from static ATTA data every frame.
 			// Hub is locked. Yaw constant, pitch animates for main rotor (2 orientation axes fixed by locking shaft column, 1 moving).
@@ -945,7 +989,11 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				glm::vec3 n = base[0];
 				if (glm::length(n) > 0.0001f) n = glm::normalize(n); else n = glm::vec3(1,0,0);
 
-				float angle = elapsed_time_secs_ * 15.0f;  // positive; flip if blades spin opposite to expected
+				// Issue #60: collective-driven preview speed — see the tail-rotor note
+				// below for the retail semantics (RotorPhase += Thrust per tick).
+				const float collective = (current_heli_collective_ >= 0.0f)
+				                             ? current_heli_collective_ : 1.0f;
+				float angle = heli_preview::MainRotorAngularSpeed(collective) * elapsed_time_secs_;
 				glm::mat4 Rloc = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(1,0,0)); // local X (pitch)
 				glm::mat3 spun = base * glm::mat3(Rloc);
 				spun[0] = n;  // keep shaft axis fixed (yaw constant, disk plane tilt fixed)
@@ -954,8 +1002,9 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				childWorldMat[1] = glm::vec4(spun[1], 0.0f);
 				childWorldMat[2] = glm::vec4(spun[2], 0.0f);
 				childWorldMat[3] = glm::vec4(hub, 1.0f);
-			} else if (isTailRotor) {
-				// Tail rotor spins around its own placed lateral axis.
+			} else if (isTailRotor || isSideRotor) {
+				// Tail rotor spins around its own placed lateral axis. Side rotors
+				// (verified MIL third rotor model) reuse the tail-style spin.
 				int best = 0;
 				float bestAbs = glm::abs(base[0].x);
 				for (int c = 1; c < 3; ++c) {
@@ -963,7 +1012,14 @@ void Renderer_Objects::DrawAttachmentsRecursive(
 				}
 				glm::vec3 n = glm::normalize(base[best]);
 
-				float angle = -elapsed_time_secs_ * 25.0f;
+				// Issue #60: collective-driven preview speed. Retail advances rotor
+				// phase by the collective every 30 Hz tick (RotorPhase += Thrust,
+				// CutsceneRuntime.cs ~1143; Heli::ReadChannels 0x431B70 restores the
+				// authored value at tick zero), so an authored thrust of 0 leaves the
+				// rotors stopped. Unknown collective (-1) previews at full speed.
+				const float collective = (current_heli_collective_ >= 0.0f)
+				                             ? current_heli_collective_ : 1.0f;
+				float angle = heli_preview::TailRotorAngularSpeed(collective) * elapsed_time_secs_;
 				glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, n);
 
 				glm::mat3 spun = glm::mat3(R) * base;

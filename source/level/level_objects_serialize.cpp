@@ -356,6 +356,12 @@ void LevelObjects::UpdateCoordinatesInLine(LevelObject& obj) {
             setToken(3, FormatQscDouble(obj.pos.x));
             setToken(4, FormatQscDouble(obj.pos.y));
             setToken(5, FormatQscDouble(saveZ));
+            // Issue #42: retail "End position" anchor (args 6-8). Written like the start
+            // position so moving either end round-trips. The end anchor is not terrain-
+            // snapped (snap_z_offset applies to the object's own pos only).
+            setToken(6, FormatQscDouble(obj.wire_end.x));
+            setToken(7, FormatQscDouble(obj.wire_end.y));
+            setToken(8, FormatQscDouble(obj.wire_end.z));
             if (!obj.modelId.empty() || obj.argTokens.size() > 9) setStringToken(9, obj.modelId);
         } else if (obj.type == "Building" || obj.type == "EditRigidObj" || obj.type == "Terminal") {
             setToken(3, FormatQscDouble(obj.pos.x));

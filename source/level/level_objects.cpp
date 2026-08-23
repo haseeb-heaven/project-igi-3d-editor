@@ -284,6 +284,11 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
                 case 3: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.x = cur_a->dbl_; obj.original_pos.x = cur_a->dbl_; } break;
                 case 4: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.y = cur_a->dbl_; obj.original_pos.y = cur_a->dbl_; } break;
                 case 5: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.pos.z = cur_a->dbl_; obj.original_pos.z = cur_a->dbl_; } break;
+                // Issue #42: args 6-8 are the retail "End position" anchor — previously
+                // dropped, leaving the wire's far end invisible and uneditable.
+                case 6: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.wire_end.x = cur_a->dbl_; obj.wire_end_original.x = cur_a->dbl_; } break;
+                case 7: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.wire_end.y = cur_a->dbl_; obj.wire_end_original.y = cur_a->dbl_; } break;
+                case 8: if (cur_a->type_ == QSC::arg_s::type_t::DBL) { obj.wire_end.z = cur_a->dbl_; obj.wire_end_original.z = cur_a->dbl_; } break;
                 case 9: if (cur_a->type_ == QSC::arg_s::type_t::STR) obj.modelId = Utils::Trim(cur_a->str_); break;
             }
         } else if (isSpline) {

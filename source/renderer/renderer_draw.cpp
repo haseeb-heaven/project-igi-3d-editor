@@ -5,6 +5,10 @@
  *****************************************************************************/
 #include "renderer_internal.h"
 #include "graph_overlay.h"
+#include "object_lightmap.h"
+#include "menu_assets.h"
+#include "menu_qvm_render.h"
+#include "../utils.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
@@ -1428,13 +1432,31 @@ void Renderer::Draw(const draw_params_s &params,
 
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
+    // QVM-driven retail menu (#74): when the game's ingamemenu.qvm resolves, it
+    // replaces the hand-drawn fallback entirely (draw + click handling via the
+    // legacy pause_active_input_ flag, consumed here).
+    bool qvm_menu_handled = false;
     if (task_tree_view.pause_mode_) {
+      if (igi::MenuRender::Get().EnsureLoaded(Utils::GetIGIRootPath())) {
+        qvm_menu_handled = igi::MenuRender::Get().Draw(
+            params.view_define_->viewport_width_, params.view_define_->viewport_height_,
+            task_tree_view.mouse_x_, task_tree_view.mouse_y_);
+      }
+    }
+
+    if (task_tree_view.pause_mode_ && !qvm_menu_handled) {
       const int menu_w = 460;
-      const int menu_h = 676; // +38 for Fog Intensity row inside expanded Terrain Options (plus prior Fog/Lightmaps additions)
+      const int menu_h = 790; // +38*3 for Weather rows (Enabled/Style/Speed) after Lightmaps (plus prior Fog/Lightmaps additions)
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
       const int viewport_h = params.view_define_->viewport_height_;
 
+      // Authentic igi.exe backdrop is owned by the QVM menu renderer (#74): screen
+      // 900 has no authored background (retail draws menus over live gameplay) and
+      // screens 901-903 use mainmenu.pic via MenuAssets there. The old
+      // GetSprite("pausemenubg") branch here named a sprite that exists in no pack
+      // and was dead code — removed (review finding 3836032446).
+      {
       // Glassmorphism-style background
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1463,6 +1485,7 @@ void Renderer::Draw(const draw_params_s &params,
       glVertex2i(menu_x + menu_w - 10, menu_y + menu_h - 45);
       glEnd();
       glLineWidth(1.0f);
+      } // end fallback skin (authentic sprite drawn above when available)
 
       int screen_menu_top = (viewport_h - menu_h) / 2;
       // Title — centered, bright green
@@ -1479,6 +1502,10 @@ void Renderer::Draw(const draw_params_s &params,
       char font_btn_label[32];
       snprintf(font_btn_label, sizeof(font_btn_label), "Font: %s",
                Config::Get().useEditorFont ? "Editor" : "System");
+      char lightmap_btn_label[64];
+      snprintf(lightmap_btn_label, sizeof(lightmap_btn_label), "Lightmap: [%s]",
+               igi::ObjectLightmapManager::Get().GetRenderModeName());
+
       int mods = task_tree_view.terrain_mod_options_;
       bool tex = (mods & TERRAIN_TEXTURE_MOD) != 0;
       bool hgt = (mods & TERRAIN_HEIGHT_MOD) != 0;
@@ -1506,7 +1533,13 @@ void Renderer::Draw(const draw_params_s &params,
       const int MUSIC_ROW = btn_labels.size();
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
-      btn_labels.push_back("Lightmaps");
+      btn_labels.push_back(lightmap_btn_label);
+      const int WEATHER_ENABLED_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "[X] Weather" — label built at draw time
+      const int WEATHER_STYLE_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "Weather: [Auto]" — label built at draw time
+      const int WEATHER_SPEED_ROW = btn_labels.size();
+      btn_labels.push_back(""); // "Weather Speed  [-] [N%] [+]" spinner
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
       bool exp = task_tree_view.pause_terrain_expanded_;
@@ -1668,6 +1701,61 @@ void Renderer::Draw(const draw_params_s &params,
           int lmtw = (int)strlen(lmbuf) * 6;
           draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lmbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_ENABLED_ROW) {
+          // Weather on/off checkbox: "[X] Weather" — same checkbox layout as Lightmaps row.
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          char wbuf[24];
+          snprintf(wbuf, sizeof(wbuf), "[%c] Weather", Config::Get().weatherEnabled ? 'X' : ' ');
+          int wtw = (int)strlen(wbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - wtw) / 2, screen_btn_y, wbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_STYLE_ROW) {
+          // Weather style: "Weather: [Auto]" — cycles Auto -> Rain -> Snow (r_weather_kind).
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          const char* style_name = Config::Get().weatherStyle == Renderer_Rain::kStyleRain ? "Rain"
+                                 : Config::Get().weatherStyle == Renderer_Rain::kStyleSnow ? "Snow" : "Auto";
+          char sbuf[32];
+          snprintf(sbuf, sizeof(sbuf), "Weather: [%s]", style_name);
+          int stw = (int)strlen(sbuf) * 6;
+          draw_text_sys(menu_x + (menu_w - stw) / 2, screen_btn_y, sbuf,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == WEATHER_SPEED_ROW) {
+          // Weather Speed: "Weather Speed  [-] [N%] [+]" — same spinner layout as Fog Intensity.
+          const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
+          const char* lbl = "Weather Speed";
+          int label_px = (int)strlen(lbl) * 6;
+          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
+          int gx = menu_x + (menu_w - group_w) / 2;
+          draw_text_sys(gx, screen_btn_y, lbl,
+                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+          int minus_x = gx + label_px + label_gap;
+          int box_x   = minus_x + btn_w + gap;
+          int plus_x  = box_x + val_w + gap;
+          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          char wsbuf[8];
+          snprintf(wsbuf, sizeof(wsbuf), "%d%%", Config::Get().weatherSpeed);
+          sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
+          sbox(box_x,   val_w, wsbuf,  rt, rb, screen_btn_y);
+          sbox(plus_x,  btn_w, "+",    rt, rb, screen_btn_y);
 
         } else if (i == TERRAIN_HEADER_ROW) {
           draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),

@@ -4,6 +4,7 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "renderer/railroad_path.h"
 
 static bool containsIgnoreCase(const std::string& str, const std::string& substr) {
     if (substr.empty()) return true;
@@ -381,6 +382,10 @@ void App::EvaluateTrainTrackPositions() {
 		std::vector<glm::dvec3> pts;
 		std::vector<double> cumDist;
 		double totalLen = 0.0;
+		// Retail-faith Hermite evaluation (open-igi RailroadPath.cs, sub_4E4530 waypoint
+		// frame tangents). Only built when spline waypoints carry authored orientations;
+		// otherwise nullopt and the legacy linear path below is used (#59).
+		std::optional<igi::RailroadPath> hermite;
 	};
 	std::map<std::string, SplineData> splineCache;
 
@@ -398,12 +403,45 @@ void App::EvaluateTrainTrackPositions() {
 		for (int i = 1; i < (int)sd.pts.size(); ++i)
 			sd.cumDist[i] = sd.cumDist[i-1] + glm::length(sd.pts[i] - sd.pts[i-1]);
 		sd.totalLen = sd.cumDist.back();
+		// Build the retail Hermite spline when at least one waypoint has a non-zero
+		// authored orientation (the retail engine reads each waypoint's orientation frame
+		// for its tangent). All-zero orientations would give +X tangents everywhere —
+		// wrong for curved rails — so fall back to linear interpolation there.
+		{
+			bool any_oriented = false;
+			std::vector<igi::RailroadWaypoint> wps;
+			wps.reserve(spline.childrenIndices.size());
+			for (int ci : spline.childrenIndices) {
+				const auto& c = objects[ci];
+				igi::RailroadWaypoint wp;
+				wp.position = c.pos;
+				wp.alpha = static_cast<float>(c.rot.x); // editor X == engine alpha (pitch)
+				wp.beta = static_cast<float>(c.rot.y);  // editor Y == engine beta
+				wp.gamma = static_cast<float>(c.rot.z); // editor Z == engine gamma (yaw)
+				if (c.rot != glm::dvec3(0.0)) any_oriented = true;
+				wps.push_back(wp);
+			}
+			if (any_oriented)
+				sd.hermite = igi::RailroadPath::Build(wps, false, 0.0, 0.0, 0.0);
+		}
 		splineCache[id] = sd;
 		return &splineCache[id];
 	};
 
 	// Evaluate world position+rotation for a given arc distance on a spline
 	auto evalOnSpline = [](const SplineData& sd, double arcLen, glm::dvec3& outPos, glm::dvec3& outRot) {
+		// Retail-faith path: Hermite evaluation with the zero-roll frame from the curve
+		// derivative (open-igi RailroadPath.cs Evaluate). Used when the spline's waypoints
+		// carry authored orientations; the frame's forward column drives train yaw/pitch.
+		if (sd.hermite) {
+			glm::dmat3 orient;
+			sd.hermite->Evaluate(arcLen, outPos, orient);
+			const glm::dvec3 fwd = orient[0]; // local X down the rail
+			outRot.z = atan2(-fwd.y, -fwd.x); // face opposite to arc direction (cab toward trainyard)
+			outRot.x = asin(glm::clamp(-fwd.z, -1.0, 1.0));
+			outRot.y = 0.0;
+			return;
+		}
 		double clamped = glm::clamp(arcLen, 0.0, sd.totalLen);
 		int seg = 0;
 		for (int i = 1; i < (int)sd.cumDist.size(); ++i) {
