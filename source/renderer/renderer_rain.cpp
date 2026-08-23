@@ -182,9 +182,16 @@ std::string FmtRainFrag() {
 }
 std::string FmtSnowVert() {
     char buf[4096];
+    // Six %.9g directives: speed pair (min, max-min) + driftX pair (freq, seedFreq)
+    // + driftY pair (freq, seedFreq). All four drift constants come from
+    // weather_math.h so the shader stays single-source-of-truth with the CPU math.
     snprintf(buf, sizeof(buf), SNOW_VERT_SRC_FMT,
              (double)igi::weather::kSnowMinSpeedMul,
-             (double)igi::weather::kSnowMaxSpeedMul - (double)igi::weather::kSnowMinSpeedMul);
+             (double)igi::weather::kSnowMaxSpeedMul - (double)igi::weather::kSnowMinSpeedMul,
+             (double)igi::weather::kSnowDriftFreqX,
+             (double)igi::weather::kSnowSeedFreqX,
+             (double)igi::weather::kSnowDriftFreqY,
+             (double)igi::weather::kSnowSeedFreqY);
     return buf;
 }
 std::string FmtSnowFrag() {
