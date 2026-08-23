@@ -1,4 +1,5 @@
 #include "renderer_objects_internal.h"
+#include "object_lightmap.h"
 
 
 
@@ -928,10 +929,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
 
                     if (sub.textureID > 0) {
-                        // Textured submesh: fixed neutral-bright lighting so the texture
-                        // reads naturally and the object is lit evenly from all sides.
-                        glUniform3f(loc_dirlight, kDefDirlight.r, kDefDirlight.g, kDefDirlight.b);
-                        glUniform3f(loc_ambient,  kDefAmbient.r,  kDefAmbient.g,  kDefAmbient.b);
+                        // Textured submesh: neutral lighting so the texture looks natural.
+                        // Windows/glass keep their transparency (alpha 0.4 above) but render
+                        // with the SAME normal lighting as everything else, so glass stays
+                        // clear and see-through.
+                        auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                        float dirI = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                        float ambI = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirI = 0.6f; ambI = 0.6f; }
+
+                        glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                        glUniform3f(loc_ambient,  ambI, ambI, ambI);
                         glUniform1i(loc_useTex, 1);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, sub.textureID);
@@ -943,17 +951,19 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                         if (color.r >= 0.99f && color.g >= 0.99f && color.b >= 0.99f) {
                             color = glm::vec3(0.6f, 0.6f, 0.6f);
                         }
-                        glUniform3f(loc_dirlight, color.r * kDefDirlight.r, color.g * kDefDirlight.g, color.b * kDefDirlight.b);
-                        glUniform3f(loc_ambient,  color.r * kDefAmbient.r,  color.g * kDefAmbient.g,  color.b * kDefAmbient.b);
+                        auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                        float dirMult = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                        float ambMult = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+                        if (mode == igi::LightmapRenderMode::Off) { dirMult = 0.6f; ambMult = 0.6f; }
+
+                        glUniform3f(loc_dirlight, color.r * dirMult, color.g * dirMult, color.b * dirMult);
+                        glUniform3f(loc_ambient,  color.r * ambMult, color.g * ambMult, color.b * ambMult);
                         glUniform1i(loc_useTex, 0);
                     }
 
-                    // Lightmap: bind unit 1 if this submesh has a baked lightmap. It is
-                    // applied as a STATIC bake, scaled LIVE by u_lightmapScale = how much
-                    // this block's surface now faces the sun vs at bake time — so moving/
-                    // rotating the object adjusts its lighting smoothly instead of deleting
-                    // the lightmap. When unmoved the scale is 1.0 (the original bake).
-                    if (hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
+                    // Lightmap: bind unit 1 if this submesh has a baked lightmap and mode is not Off.
+                    auto curMode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                    if (curMode != igi::LightmapRenderMode::Off && hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
                         glm::vec3 scale = blockScale(sub.avgNormal);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
@@ -975,13 +985,17 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 glBindVertexArray(0);
             } else {
                 // Legacy single-texture path (e.g. old OBJ models)
+                auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();
+                float dirI = (mode == igi::LightmapRenderMode::Baked) ? 0.15f : (mode == igi::LightmapRenderMode::Hybrid ? 0.6f : 0.8f);
+                float ambI = (mode == igi::LightmapRenderMode::Baked) ? 0.85f : (mode == igi::LightmapRenderMode::Hybrid ? 0.4f : 0.3f);
+
                 bool hasTexture = (mesh.textureID > 0);
                 if (hasTexture) {
-                    glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
-                    glUniform3f(loc_ambient,  global_ambient_.r, global_ambient_.g, global_ambient_.b);
+                    glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                    glUniform3f(loc_ambient,  ambI, ambI, ambI);
                 } else {
-                    glUniform3f(loc_dirlight, 0.7f, 0.7f, 0.7f);
-                    glUniform3f(loc_ambient,  r * global_ambient_.r, g * global_ambient_.g, b * global_ambient_.b);
+                    glUniform3f(loc_dirlight, dirI, dirI, dirI);
+                    glUniform3f(loc_ambient,  r * ambI, g * ambI, b * ambI);
                 }
                 if (mesh.textureID > 0) {
                     glUniform1i(loc_useTex, 1);
