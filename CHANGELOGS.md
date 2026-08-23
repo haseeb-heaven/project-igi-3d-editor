@@ -1,5 +1,19 @@
 # Changelogs
 
+## Unreleased — MCP game-data integration
+
+- Added the Win32 `igi_mcp.exe` headless MCP server with stateless
+  `2026-07-28` JSON-RPC over stdio and authenticated loopback HTTP.
+- Added project/level resources and game-data tools for task/object snapshots,
+  persistent transform/model/type/parameter edits, AI and weapon fields,
+  mission objectives, and graph/terrain/lightmap/asset inspection.
+- Added revision guards, dry-run QSC/QVM validation, transactional backups,
+  rollback, reparse-point checks, bounded requests, and redacted structured
+  errors.
+- Explicitly reject unsupported structural, graph, terrain, lightmap, script
+  file, converter, and asset-packing writes instead of guessing or invoking
+  arbitrary commands.
+
 ## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
 
 ### 🐛 Bug Fixes

@@ -130,7 +130,7 @@ git commit -m "feat: expose MCP project and level snapshots"
 
 **Interfaces:**
 - CallObjectTool(GameDataService&, std::string_view name, const JsonValue& arguments) implements task_list, task_get, task_create, task_update, task_delete, task_duplicate, task_reparent, object_set_transform, object_set_model, object_set_type, object_set_parameter, and object_get_schema.
-- Transform input is {position:[x,y,z], rotation_radians:[a,b,g], scale:number} with per-field optionality and finite/range validation.
+- Transform input is {position:[x,y,z], rotation_radians:[a,b,g]} with per-field optionality and finite/range validation; scale is explicitly rejected because it is editor-only render/snap state.
 - Every object mutation resolves the target by stable task id, updates the existing LevelObject/QSC argument representation, records the changed serialized fields, and leaves unrelated objects unchanged.
 
 - [ ] Step 1: Add failing tests for building movement/rotation, model-ID replacement, creation/deletion, parent-child compatibility, typed parameter ranges, schema lookup, dry-run, and stale revision conflicts.

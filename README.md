@@ -186,6 +186,20 @@ The **IGI Editor** can be run as both a fully featured interactive 3D graphical 
 For a comprehensive list of all CLI commands, export options, selective rendering bitmask combinations, keyboard hotkeys, and hands-on examples, please check our detailed guide:
 👉 **[CLI & GUI Reference Guide](docs/CLI.md)**
 
+### Model Context Protocol (MCP)
+
+The Win32 build also produces `igi_mcp.exe`, a headless MCP server for safe
+inspection and controlled editing of Project IGI game data. It supports
+newline-delimited stdio by default and authenticated loopback HTTP when
+requested. The server covers tasks and objects, transforms, model IDs, AI and
+weapons, mission objectives, graph/terrain/lightmap metadata, and assets. It
+uses revision checks, dry-run validation, backups, rollback, and root-relative
+path confinement for persistent writes. Editor-only settings are outside its
+scope.
+
+See the complete tool list, transport requirements, and intentionally
+unsupported mutation boundaries in **[MCP game-data integration](docs/MCP.md)**.
+
 And for detailed information about file formats of IGI game 👉 **[IGI File Formats](docs/file-formats.md)**
 
 ---

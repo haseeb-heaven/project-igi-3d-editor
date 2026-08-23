@@ -17,6 +17,22 @@ $env:IGI_TEST_LEVEL="1"; .\igi_tests.exe
 .\igi_tests.exe --gtest_filter="-AllLevels/VerifyLevelIntegration*"
 ```
 
+## MCP Verification
+
+The MCP additions are included in `igi_tests.exe` and can be focused with:
+
+```powershell
+$env:IGI_GAME_PATH="D:\IGI1"
+$env:Path = (Join-Path (Get-Location) 'assets/dlls/x86') + ';' + $env:Path
+.\igi_tests.exe --gtest_filter="Mcp*" --gtest_color=no
+```
+
+The focused MCP run contains 52 tests: 51 passed and one Windows symlink
+containment test skipped because the test account lacks symlink privilege. The
+full Win32 Release run against `D:\IGI1` completed 535 tests: 526 passed and 9
+skipped. The other eight skips are the existing lightmap and vanilla-fixture
+prerequisites documented below.
+
 ---
 
 ## Controlling Which Levels Are Tested

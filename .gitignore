@@ -69,6 +69,7 @@ Release/
 x64/
 x86/
 build/
+build-mcp/
 vcbuild/
 bin/Debug/
 bin/Release/

@@ -62,7 +62,7 @@ Rules:
 
 ## MCP surface
 
-Tool names are stable, sorted, and grouped by domain. Every mutating tool accepts `dry_run`, `expected_revision`, and `backup` where applicable. Mutations return a transaction id, changed paths, revision before/after, and concise before/after summaries.
+Tool names are stable, sorted, and grouped by domain. Every implemented mutating tool accepts `dry_run`, `expected_revision`, and `backup` where applicable. Mutation results include revision before/after and concise before/after summaries; filesystem paths and transaction internals are not exposed.
 
 ### Project and validation tools
 
@@ -71,12 +71,6 @@ Tool names are stable, sorted, and grouped by domain. Every mutating tool accept
 - `level_open`
 - `level_reload`
 - `level_validate`
-- `level_save`
-- `level_backup`
-- `level_restore`
-- `level_undo`
-- `level_redo`
-- `operation_get`
 
 ### Task/object tools
 
@@ -93,7 +87,7 @@ Tool names are stable, sorted, and grouped by domain. Every mutating tool accept
 - `object_set_parameter`
 - `object_get_schema`
 
-Transforms use explicit native game units and radians/degrees as documented by the existing field schema; the response includes normalized position/orientation/scale and the exact serialized fields changed. A task id is never inferred from a natural-language query or array position.
+Transforms use explicit native game units and radians/degrees as documented by the existing field schema; the response includes normalized position/orientation and the exact serialized fields changed. Scale is rejected because it has no persisted game-data representation. A task id is never inferred from a natural-language query or array position.
 
 ### AI, weapon, and mission tools
 
@@ -125,7 +119,7 @@ Scripts are parsed and compiled through the existing QSC/QVM pipeline. Compilati
 - `lightmap_get`
 - `lightmap_rebuild_or_clear`
 
-Graph updates reuse the existing graph serializer and adjacency-table regeneration. Terrain mutation is restricted to the existing supported HMP/LMP/CTR edit operations and must reject edits outside the loaded level bounds.
+Graph, terrain, and lightmap operations currently expose manifest-level inspection and validation. Binary graph/terrain/lightmap mutation is deferred until the existing serializer and bounds-validation seams can be reused without weakening transaction guarantees.
 
 ### Asset tools
 
@@ -158,7 +152,7 @@ Resources contain structured data and redacted diagnostics. They do not expose a
 - Use a monotonic in-memory revision plus a content fingerprint of relevant source files. Reject stale `expected_revision` with a conflict error instead of overwriting another edit.
 - Create a timestamped backup before the first write in a transaction. Write each changed file to a same-directory temporary file, flush it, then atomically replace the destination. Preserve the prior file if serialization, compile, or post-write validation fails.
 - Reparse/reload the changed representation and validate it before reporting success.
-- Keep an operation journal containing transaction id, operation name, level, changed paths relative to the configured root, and redacted result status. Do not log raw request payloads or secrets.
+- Keep redacted transaction status internal to the transaction implementation. Do not log raw request payloads, absolute paths, or secrets. Cross-process crash recovery is deferred until a durable journal can be added without automatically overwriting edits made while the editor is offline.
 - Serialize mutations per project session. Read-only resources may run concurrently only when they observe an immutable snapshot.
 - Never expose editor-only settings in `tools/list`; a contract test will reject forbidden tool names/fields.
 
