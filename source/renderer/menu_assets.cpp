@@ -56,17 +56,18 @@ MenuSpriteData LoadMenuSpriteDataFromPack(const std::string& pack_path, const st
             std::string bare = entry_name;
             const size_t slash = bare.find_last_of("/\\");
             if (slash != std::string::npos) bare = bare.substr(slash + 1);
-            // Menusystem packs prefix their NAME chunks with flag/length words,
-            // so RES_ForEachEntry names may carry junk bytes — match by stem
-            // substring instead of exact equality.
-            if (bare.find(name + ".spr") != std::string::npos ||
-                entry_name.find(name + ".spr") != std::string::npos) {
-                FILE* f = fopen(scratch.string().c_str(), "wb");
-                if (f) {
-                    fwrite(data, 1, size, f);
-                    fclose(f);
-                    found = true;
-                }
+            // Menu art ships as .spr (widgets) and .pic (full-screen tiled
+            // backgrounds); both are LOOP containers TEX_Parse handles.
+            if (bare.find(name + ".spr") == std::string::npos &&
+                bare.find(name + ".pic") == std::string::npos &&
+                entry_name.find(name + ".spr") == std::string::npos &&
+                entry_name.find(name + ".pic") == std::string::npos)
+                return;
+            FILE* f = fopen(scratch.string().c_str(), "wb");
+            if (f) {
+                fwrite(data, 1, size, f);
+                fclose(f);
+                found = true;
             }
         }, res_error);
     if (!found) return {};
@@ -111,10 +112,24 @@ MenuSpriteData LoadMenuSpriteDataFromPack(const std::string& pack_path, const st
 
         auto decode_img = [&](const TEXImage& img) {
             std::vector<uint8_t> px(static_cast<size_t>(img.width) * img.height * 4);
-            for (size_t p = 0; p < px.size(); p += 4) {
+            // Input stride differs from output: mode 2 = RGB565 (2 B/px), modes
+            // 3/67 = ARGB8888 (4 B/px). Index source and destination independently
+            // — reusing the RGBA stride on the raw input over-reads 2 B/px buffers
+            // ([CRITIC] round-1 finding, 24 menusystem sprites affected).
+            const size_t src_bpp = (img.mode == 2) ? 2u : 4u;
+            const size_t src_required = static_cast<size_t>(img.width) * img.height * src_bpp;
+            if (img.pixels.size() < src_required) {
+                Logger::Get().Log(LogLevel::WARNING,
+                    "[MenuAssets] truncated pixel buffer: have " +
+                    std::to_string(img.pixels.size()) + " need " +
+                    std::to_string(src_required));
+                return std::vector<uint8_t>{}; // caller treats empty as failure
+            }
+            size_t src = 0;
+            for (size_t p = 0; p + 4 <= px.size(); p += 4, src += src_bpp) {
                 if (img.mode == 2) {
                     const uint16_t v = static_cast<uint16_t>(
-                        img.pixels[p] | (img.pixels[p + 1] << 8));
+                        img.pixels[src] | (img.pixels[src + 1] << 8));
                     const uint8_t r5 = static_cast<uint8_t>((v >> 11) & 0x1F);
                     const uint8_t g6 = static_cast<uint8_t>((v >> 5) & 0x3F);
                     const uint8_t b5 = static_cast<uint8_t>(v & 0x1F);
@@ -123,10 +138,10 @@ MenuSpriteData LoadMenuSpriteDataFromPack(const std::string& pack_path, const st
                     px[p + 2] = static_cast<uint8_t>((b5 << 3) | (b5 >> 2));
                     px[p + 3] = 0xFF;
                 } else { // 3 / 67 = ARGB8888 stored BGRA byte order
-                    px[p + 0] = img.pixels[p + 2];
-                    px[p + 1] = img.pixels[p + 1];
-                    px[p + 2] = img.pixels[p + 0];
-                    px[p + 3] = img.pixels[p + 3];
+                    px[p + 0] = img.pixels[src + 2];
+                    px[p + 1] = img.pixels[src + 1];
+                    px[p + 2] = img.pixels[src + 0];
+                    px[p + 3] = img.pixels[src + 3];
                 }
             }
             return px;
@@ -151,15 +166,27 @@ MenuSpriteData LoadMenuSpriteDataFromPack(const std::string& pack_path, const st
                             (static_cast<size_t>(r) * columns + col) * 16;
                         if (cell + 16 > raw.size()) break;
                         const uint8_t frame_no = raw[cell + 12];
-                        if (frame_no >= tex.images.size()) continue;
-                        const auto px = decode_img(tex.images[frame_no]);
-                        for (int y = 0; y < cell_h; ++y) {
+                        // Tile-grid frame numbers are 1-BASED (verified: slide_1.spr
+                        // has frameCount=1 and its single cell references frame 1).
+                        if (frame_no == 0 || frame_no > tex.images.size()) continue;
+                        const auto px = decode_img(tex.images[frame_no - 1]);
+                        // [CRITIC] clamp to each frame's real extent — a grid cell
+                        // whose frame decodes smaller than frame 0 must not over-read
+                        // its buffer (retail grids are uniform; this is the
+                        // malformed-input guard).
+                        const TEXImage& cell_img = tex.images[frame_no - 1];
+                        const int safe_w = std::min<int>(cell_w, static_cast<int>(cell_img.width));
+                        const int safe_h = std::min<int>(cell_h, static_cast<int>(cell_img.height));
+                        if (safe_w <= 0 || safe_h <= 0 ||
+                            px.size() < static_cast<size_t>(safe_w) * safe_h * 4)
+                            continue;
+                        for (int y = 0; y < safe_h; ++y) {
                             const size_t dst =
                                 ((static_cast<size_t>(r) * cell_h + y) * out_w +
                                  static_cast<size_t>(col) * cell_w) * 4;
-                            const size_t src = static_cast<size_t>(y) * cell_w * 4;
+                            const size_t src = static_cast<size_t>(y) * safe_w * 4;
                             std::memcpy(assembled.data() + dst, px.data() + src,
-                                        static_cast<size_t>(cell_w) * 4);
+                                        static_cast<size_t>(safe_w) * 4);
                         }
                     }
                 }
