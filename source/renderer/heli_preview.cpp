@@ -23,6 +23,25 @@ bool IsKnownRotorModel(const std::string& modelId) {
     for (const char* m : kRotorModels) {
         if (modelId == m) return true;
     }
+    // LOD-variant tolerance (#75 review, ties into #62's 0x4CED50 chain rule):
+    // lower detail levels are the same physical rotor with an incremented final
+    // segment ("711_01_2".."711_01_5"). Match on the shared base id so a LOD
+    // variant keeps the verified-model override instead of falling through to
+    // the geometric heuristic.
+    const size_t us = modelId.rfind('_');
+    if (us == std::string::npos || us + 1 >= modelId.size()) return false;
+    bool ends_in_digit = true;
+    for (size_t i = us + 1; i < modelId.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(modelId[i]))) { ends_in_digit = false; break; }
+    }
+    if (!ends_in_digit) return false;
+    const std::string base = modelId.substr(0, us);
+    for (const char* m : kRotorModels) {
+        const std::string known(m);
+        const size_t kus = known.rfind('_');
+        if (kus == std::string::npos) continue;
+        if (known.compare(0, kus, base) == 0) return true;
+    }
     return false;
 }
 

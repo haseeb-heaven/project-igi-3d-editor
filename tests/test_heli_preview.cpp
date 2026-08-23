@@ -26,6 +26,16 @@ TEST(HeliPreviewTest, PhysicsRecordMatchesRetailQvmValues) {
     EXPECT_FLOAT_EQ(rec.low_collective_step, 0.003f);
 }
 
+TEST(HeliPreviewTest, RotorModelMatchesLodVariants) {
+    // #75 review: LOD variants share the verified rotor's base id (0x4CED50 chain).
+    EXPECT_TRUE(IsKnownRotorModel("711_01_2"));
+    EXPECT_TRUE(IsKnownRotorModel("700_03_3"));
+    // Non-digit tail is NOT a LOD variant.
+    EXPECT_FALSE(IsKnownRotorModel("711_01_x"));
+    // Different base id stays unknown.
+    EXPECT_FALSE(IsKnownRotorModel("999_01_1"));
+}
+
 TEST(HeliPreviewTest, KnownRetailRotorAndBodyModels) {
     // Model ids embedded in the retail physicsobj QVM scripts.
     EXPECT_TRUE(IsKnownRotorModel("711_01_1"));
