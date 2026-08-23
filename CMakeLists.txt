@@ -241,6 +241,8 @@ add_executable(igi_tests
     tests/test_mcp_json_rpc.cpp
     tests/test_mcp_paths.cpp
     tests/test_mcp_transaction.cpp
+    tests/test_mcp_game_snapshot.cpp
+    tests/test_mcp_session_tools.cpp
     tests/test_qsc_lexer.cpp
     tests/test_qsc_parser.cpp
     tests/test_qvm_roundtrip.cpp
@@ -301,6 +303,7 @@ target_sources(igi_tests PRIVATE
     source/mcp/mcp_json_rpc.cpp
     source/mcp/game_data_service.cpp
     source/mcp/mcp_transaction.cpp
+    source/mcp/mcp_tools_session.cpp
     source/level/qsc_lexer.cpp
     source/level/qsc_parser.cpp
     source/level/qvm_parser.cpp

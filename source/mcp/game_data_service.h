@@ -1,10 +1,13 @@
 #pragma once
 
+#include "mcp_json.h"
+
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace mcp {
 
@@ -45,8 +48,15 @@ public:
     explicit GameDataService(ProjectScope scope) : scope_(std::move(scope)) {}
 
     bool OpenLevel(int level, std::string& error);
+    bool HasOpenLevel() const;
     LevelRevision CurrentRevision() const;
     bool RefreshRevision(std::string& error);
+    JsonValue ProjectInfo() const;
+    JsonValue ListLevels(std::string& error) const;
+    JsonValue LevelManifest(int level, std::string& error) const;
+    JsonValue ListObjects(int level, std::string& error) const;
+    JsonValue GetObject(int level, std::string_view task_id, std::string& error) const;
+    JsonValue ValidateLevel(int level, std::string& error) const;
     std::unique_ptr<Transaction> BeginMutation(const MutationOptions& options,
                                                std::string& error);
 
