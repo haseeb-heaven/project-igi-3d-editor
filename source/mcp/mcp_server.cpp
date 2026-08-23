@@ -238,6 +238,9 @@ JsonValue McpServer::Handle(const JsonValue& value) {
             std::string error;
             const JsonValue result = CallTool(name_it->second.as_string(), arguments, error);
             if (error == "unknown_tool") throw JsonRpcException(kMethodNotFound, "tool not found");
+            if (error == "invalid_arguments") {
+                throw JsonRpcException(kInvalidParams, "tool arguments are invalid", SafeToolError(error));
+            }
             return request.has_id ? MakeJsonRpcResult(request.id, DomainResult(result, error)) : JsonValue(nullptr);
         }
         throw JsonRpcException(kMethodNotFound, "method not found");

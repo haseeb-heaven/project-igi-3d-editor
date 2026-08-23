@@ -125,4 +125,20 @@ TEST_F(McpServerTest, ReturnsNullIdForStructurallyInvalidRequestWithoutId) {
     EXPECT_TRUE(response.at("id").is_null());
 }
 
+TEST_F(McpServerTest, ReturnsInvalidParamsForToolArgumentFailures) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    auto request = Request("tools/call", mcp::JsonValue::Object{
+        {"name", "project_info"},
+        {"arguments", mcp::JsonValue::Object{{"unexpected", true}}},
+    });
+    AddMetadata(request);
+
+    const auto response = server.Handle(request);
+    ASSERT_TRUE(response.contains("error")) << "tool argument failures must be JSON-RPC errors";
+    EXPECT_EQ(response.at("error").at("code").as_number(), mcp::kInvalidParams);
+    EXPECT_EQ(response.at("id").as_number(), 1);
+    EXPECT_EQ(response.at("error").at("data").at("code").as_string(), "invalid_arguments");
+}
+
 }  // namespace
