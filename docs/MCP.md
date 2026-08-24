@@ -24,10 +24,12 @@ For local integrations, loopback HTTP is available:
 ```
 
 The endpoint and a cryptographically random bearer token are printed to
-stderr. HTTP is restricted to `127.0.0.1`, `POST /mcp`, JSON content, an
+stderr. HTTP is restricted to `127.0.0.1`, `POST /mcp`, JSON request/response
+content, an
 `Authorization: Bearer ...` header, the `MCP-Protocol-Version: 2026-07-28`
 header, the `Mcp-Method` and `Mcp-Name` headers, and the bounded request
-body. Allowed origins are loopback only.
+body. Allowed origins are loopback only. Event-stream negotiation is not part
+of this release; requests advertising `text/event-stream` are rejected.
 
 ## Game-data scope
 
@@ -60,6 +62,10 @@ The following boundaries are intentional and return the stable
 - terrain edits and lightmap rebuild/clear;
 - asset conversion and packing.
 
+Client-visible save, backup, and restore commands are not part of this release.
+Mutation backups and rollback are internal transaction safeguards; they are not
+exposed as a restore API.
+
 Graph, terrain, lightmap, and asset inspection currently report manifest-level
 data; they do not claim to parse or rewrite binary graph or terrain payloads.
 Object scale is also excluded because it is not a persisted game-data field in
@@ -78,10 +84,13 @@ offline.
 | --- | --- |
 | Session | `project_info`, `project_list_levels`, `level_open`, `level_reload`, `level_validate` |
 | Objects/tasks | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_duplicate`, `task_reparent`, `object_set_transform`, `object_set_model`, `object_set_type`, `object_set_parameter`, `object_get_schema` |
-| AI/weapons | `ai_get`, `ai_update`, `ai_set_script`, `ai_validate_script`, `ai_compile_script`, `ai_list_weapons`, `ai_set_weapon_loadout`, `pickup_create_or_update` |
+| AI/weapons | `ai_get`, `ai_update`, `ai_validate_script`, `ai_compile_script`, `ai_list_weapons`, `ai_set_weapon_loadout`, `pickup_create_or_update` |
+| AI/weapons (deferred) | `ai_set_script` |
 | Mission | `mission_objective_list`, `mission_objective_update` |
-| Graph/terrain | `graph_list`, `graph_get`, `graph_validate`, `graph_node_create`, `graph_node_update`, `graph_node_delete`, `graph_link_create`, `graph_link_update`, `graph_link_delete`, `terrain_get_metadata`, `terrain_apply_edit`, `terrain_validate`, `lightmap_get`, `lightmap_rebuild_or_clear` |
-| Assets | `asset_list`, `asset_inspect`, `asset_validate`, `asset_convert`, `asset_pack_or_update` |
+| Graph/terrain | `graph_list`, `graph_get`, `graph_validate`, `terrain_get_metadata`, `terrain_validate`, `lightmap_get` |
+| Graph/terrain (deferred) | `graph_node_create`, `graph_node_update`, `graph_node_delete`, `graph_link_create`, `graph_link_update`, `graph_link_delete`, `terrain_apply_edit`, `lightmap_rebuild_or_clear` |
+| Assets | `asset_list`, `asset_inspect`, `asset_validate` |
+| Assets (deferred) | `asset_convert`, `asset_pack_or_update` |
 
 All tool schemas reject unknown properties. Tool failures are returned as
 structured MCP tool errors with stable codes and redacted summaries; local

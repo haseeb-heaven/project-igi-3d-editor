@@ -4,6 +4,7 @@
 #include "../level/task_schema.h"
 #include "mcp_task_id.h"
 
+#include <array>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -126,7 +127,7 @@ bool ReadMutationOptions(const JsonValue& arguments, MutationOptions& options,
     return true;
 }
 
-bool ReadFiniteVector(const JsonValue& value, double result[3]) {
+bool ReadFiniteVector(const JsonValue& value, std::array<double, 3>& result) {
     if (!value.is_array() || value.as_array().size() != 3) return false;
     for (std::size_t index = 0; index < 3; ++index) {
         if (!value.as_array()[index].is_number()) return false;
@@ -411,8 +412,8 @@ CallSpan* FindCall(std::vector<CallSpan>& calls, std::string_view task_id) {
 }
 
 struct Layout {
-    int position[3] = {-1, -1, -1};
-    int rotation[3] = {-1, -1, -1};
+    std::array<int, 3> position = {-1, -1, -1};
+    std::array<int, 3> rotation = {-1, -1, -1};
     int model = -1;
 };
 
@@ -656,7 +657,7 @@ std::string FormatString(std::string_view value) {
 }
 
 bool AddVectorReplacements(const std::string& source, const CallSpan& call,
-                           const int indices[3], const double values[3],
+                           const std::array<int, 3>& indices, const std::array<double, 3>& values,
                            std::string_view field, std::vector<Replacement>& replacements,
                            std::string& error) {
     for (int component = 0; component < 3; ++component) {
@@ -946,7 +947,7 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             if (TaskSchemaNS::GetSchema(type) == nullptr)
                 return Failure(error, "unsupported_operation");
             const Layout layout = LayoutFor(type);
-            const auto indices = [](const int values[3]) {
+            const auto indices = [](const std::array<int, 3>& values) {
                 JsonValue::Array result;
                 for (std::size_t index = 0; index < 3; ++index) {
                     const int value = values[index];
@@ -1053,14 +1054,14 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             if (name == "object_set_transform" || update) {
                 if (arguments.contains("scale")) return Failure(error, "unsupported_operation");
                 if (arguments.contains("position")) {
-                    double values[3];
+                    std::array<double, 3> values{};
                     if (!ReadFiniteVector(arguments.at("position"), values)) return Failure(error, "invalid_arguments");
                     const Layout layout = LayoutFor(call->type);
                     if (!AddVectorReplacements(source, *call, layout.position, values, "position",
                                                replacements, error)) return JsonValue(nullptr);
                 }
                 if (arguments.contains("rotation_radians")) {
-                    double values[3];
+                    std::array<double, 3> values{};
                     if (!ReadFiniteVector(arguments.at("rotation_radians"), values)) return Failure(error, "invalid_arguments");
                     const Layout layout = LayoutFor(call->type);
                     if (!AddVectorReplacements(source, *call, layout.rotation, values, "rotation_radians",

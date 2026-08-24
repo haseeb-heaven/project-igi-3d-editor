@@ -155,6 +155,11 @@ bool HttpTransport::ValidateRequest(const std::string& method, const std::string
         error = "content_type_required";
         return false;
     }
+    const auto accept = headers.find("accept");
+    if (accept != headers.end() && Lower(accept->second).find("text/event-stream") != std::string::npos) {
+        error = "event_stream_not_supported";
+        return false;
+    }
     const auto origin = headers.find("origin");
     if (origin != headers.end() && !IsAllowedOrigin(origin->second)) {
         error = "origin_forbidden";
@@ -327,8 +332,13 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
     if (!ValidateRequest(method, path, headers, content_length, options_, validation_error)) {
         const int status = validation_error == "unauthorized" ? 401 :
                            validation_error == "origin_forbidden" ? 403 :
+                           validation_error == "event_stream_not_supported" ? 406 :
                            validation_error == "body_too_large" ? 413 : 400;
-        SendText(connection, status, status == 401 ? "Unauthorized" : "Bad Request",
+        const char* status_text = status == 401 ? "Unauthorized" :
+                                  status == 403 ? "Forbidden" :
+                                  status == 406 ? "Not Acceptable" :
+                                  status == 413 ? "Payload Too Large" : "Bad Request";
+        SendText(connection, status, status_text,
                  "{\"error\":\"request_rejected\"}");
         return;
     }

@@ -3,10 +3,12 @@
 #include "mcp_transport_http.h"
 #include "mcp_transport_stdio.h"
 
+#include <charconv>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #ifdef _WIN32
@@ -111,14 +113,16 @@ int main(int argc, char** argv) {
         } else if (argument == "--host" && index + 1 < argc) {
             host = argv[++index];
         } else if (argument == "--port" && index + 1 < argc) {
-            try {
-                const auto parsed = std::stoul(argv[++index]);
-                if (parsed > 65535) throw std::out_of_range("port");
-                port = static_cast<std::uint16_t>(parsed);
-            } catch (...) {
+            const std::string_view port_text = argv[++index];
+            std::uint32_t parsed = 0;
+            const auto [end, parse_error] = std::from_chars(
+                port_text.data(), port_text.data() + port_text.size(), parsed);
+            if (parse_error != std::errc{} || end != port_text.data() + port_text.size() ||
+                parsed > 65535) {
                 std::cerr << "invalid port\n";
                 return 2;
             }
+            port = static_cast<std::uint16_t>(parsed);
         } else {
             std::cerr << "usage: igi_mcp [--stdio | --http [--host <ip>] [--port <port>]]"
                          " --project <game-root>\n";

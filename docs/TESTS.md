@@ -27,11 +27,11 @@ $env:Path = (Join-Path (Get-Location) 'assets/dlls/x86') + ';' + $env:Path
 .\igi_tests.exe --gtest_filter="Mcp*" --gtest_color=no
 ```
 
-The focused MCP run contains 79 tests: 78 passed and one Windows symlink
+The focused MCP run contains 86 tests: 85 passed and one Windows symlink
 containment test skipped because the test account lacks symlink privilege. The
-full Win32 Release run against `D:\IGI1` completed 563 tests: 554 passed and 9
-skipped. The other eight skips are the existing lightmap and vanilla-fixture
-prerequisites documented below.
+The full Win32 Release run against `D:\IGI1` completed 570 tests: 561 passed
+and 9 skipped. The skips are the symlink privilege case, the absent optional
+MEF corpus, and seven vanilla-fixture parity prerequisites.
 
 ---
 
@@ -121,6 +121,8 @@ $env:IGI_TEST_LEVEL="3"; .\igi_tests.exe --gtest_filter="AllLevels/VerifyLevelIn
 | Verify-level (all 14 levels) | 14 |
 | **Total — all levels** | **230** |
 | **Total — `IGI_TEST_LEVEL=1`** | **229** |
+| Focused MCP tests | 86 |
+| Current `igi_tests.exe` registration | **570 across 79 suites** |
 
 ---
 

@@ -236,7 +236,7 @@ $env:IGI_TEST_LEVEL="10"; .\igi_tests.exe
 .\igi_tests.exe
 ```
 
-**275 tests** across 28 suites: QSC lexer/parser, QVM round-trips (synthetic + real game data for all 14 levels), file-format parsers (DAT, RES, TEX, MTP, FNT, Graph), verify-core units, and level-verification integration tests. (2 pre-existing writer byte-roundtrip failures are carried over from `feature/graph-editor` and are unrelated to the 3.4.0-pre migration.)
+**570 tests** across 79 suites: QSC lexer/parser, QVM round-trips (synthetic + real game data for all 14 levels), MCP protocol/domain/transport coverage, file-format parsers (DAT, RES, TEX, MTP, FNT, Graph), verify-core units, and level-verification integration tests.
 
 For the full test reference — suites, filters, fixture descriptions, and build/deploy instructions — see:
 👉 **[Test Suite Documentation](docs/TESTS.md)**

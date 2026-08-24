@@ -2,7 +2,7 @@
 
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Build and ship a Win32 MCP server that exposes validated game-affecting Project IGI Editor data operations over stdio and opt-in authenticated localhost Streamable HTTP.
+**Goal:** Build and ship a Win32 MCP server that exposes validated game-affecting Project IGI Editor data operations over stdio and opt-in authenticated localhost JSON HTTP. Event-stream negotiation is deferred.
 
 **Architecture:** A dependency-free strict JSON layer feeds a transport-neutral JSON-RPC/MCP server. A file-backed GameDataService owns project scope, level snapshots, typed mutations, revision checks, backups, atomic persistence, and validation; stdio and HTTP call the same service. The GUI remains out of network-thread state, and visual verification launches the existing editor against persisted output.
 
@@ -227,7 +227,7 @@ git add source/mcp tests/test_mcp_server.cpp tests/test_mcp_stdio_integration.cp
 git commit -m "feat: add MCP server and stdio transport"
 ~~~
 
-### Task 8: Opt-in authenticated localhost Streamable HTTP
+### Task 8: Opt-in authenticated localhost JSON HTTP
 
 **Files:**
 - Create: source/mcp/mcp_transport_http.h
@@ -239,12 +239,12 @@ git commit -m "feat: add MCP server and stdio transport"
 
 **Interfaces:**
 - HttpTransport::Start(const HttpOptions&, McpServer&, HttpEndpoint& endpoint, std::string& error) binds only to IPv4 loopback and returns an ephemeral port/token when requested.
-- HttpTransport::HandlePost(...) accepts the MCP endpoint and returns JSON or event-stream responses with correct content negotiation and negotiated protocol headers.
+- HttpTransport::HandlePost(...) accepts the MCP endpoint and returns bounded JSON responses with the required protocol headers; event-stream negotiation is explicitly deferred.
 - HttpTransport::ValidateRequest(...) enforces bearer token, Origin, content type, message size, and method/path rules.
 
 - [ ] Step 1: Add failing socket-level tests for valid discover/list/call, missing token, wrong token, invalid Origin, non-loopback bind, oversized body, malformed JSON, and stateless protocol-header behavior.
 - [ ] Step 2: Run the HTTP filters and confirm red failures.
-- [ ] Step 3: Implement bounded Winsock HTTP parsing with one /mcp endpoint, localhost binding, bearer token, Origin validation, `Mcp-Method`/`Mcp-Name` and `MCP-Protocol-Version` checks, JSON responses, and optional event streams only when required by the request.
+- [ ] Step 3: Implement bounded Winsock HTTP parsing with one /mcp endpoint, localhost binding, bearer token, Origin validation, `Mcp-Method`/`Mcp-Name` and `MCP-Protocol-Version` checks, JSON responses, and explicit rejection of event-stream requests.
 - [ ] Step 4: Run HTTP tests against a real listening server; assert LISTENING, verify there is no session-state requirement, and make a real tools/call.
 - [ ] Step 5: Commit.
 

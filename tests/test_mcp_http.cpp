@@ -71,6 +71,11 @@ TEST(McpHttpSecurityTest, RejectsOversizedBodiesAndUntrustedOrigins) {
     headers.erase("mcp-name");
     EXPECT_FALSE(mcp::HttpTransport::ValidateRequest("POST", "/mcp", headers, 2, options, error));
     EXPECT_EQ(error, "protocol_headers_required");
+
+    headers = GoodHeaders(options.bearer_token);
+    headers["accept"] = "text/event-stream";
+    EXPECT_FALSE(mcp::HttpTransport::ValidateRequest("POST", "/mcp", headers, 2, options, error));
+    EXPECT_EQ(error, "event_stream_not_supported");
 }
 
 #ifdef _WIN32

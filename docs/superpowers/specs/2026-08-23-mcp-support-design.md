@@ -8,20 +8,20 @@
 
 Add a professional Model Context Protocol (MCP) server for Project IGI Editor that exposes the game-affecting level and asset operations already supported by the editor, while excluding editor-only preferences such as font size, panel layout, viewport cosmetics, and local UI state.
 
-The server must support deterministic inspection and mutation of game data, safe persistence with backups and validation, MCP-compatible stdio transport, opt-in authenticated localhost Streamable HTTP, and evidence-backed unit, integration, security, build, and visual verification.
+The server must support deterministic inspection and mutation of game data, safe persistence with backups and validation, MCP-compatible stdio transport, opt-in authenticated localhost JSON HTTP, and evidence-backed unit, integration, security, build, and visual verification. Event-stream negotiation is deferred until a streaming response contract is needed.
 
 ## Scope and non-goals
 
 ### In scope
 
-- Level/project discovery, load, reload, validate, save, backup, restore, dry-run, and revision reporting.
+- Level/project discovery, load, reload, validate, dry-run, and revision reporting. Client-visible save, backup, and restore commands are deferred; implemented mutations use internal transaction backups and rollback.
 - Task-tree and `LevelObject` inspection and supported mutation: rename, type/parameter updates, and game-affecting transforms. Structural create, duplicate, delete, and parent/child changes are inspection-only in the first release.
 - Model identifiers, object type, position, Euler orientation, building/prop/door/vehicle/train/spline/camera/terminal fields, and serialized task parameters. Persistent scale is excluded until a game-file representation exists; the editor's current scale field is render/snap state only.
-- AI soldiers and related tasks: AI type, team, graph binding, patrol/script content, script compile/validation, weapon and ammunition child tasks, and authored animation/behavior fields.
+- AI soldiers and related tasks: AI type, team, graph binding, script compile/validation, weapon and ammunition child tasks, and authored animation/behavior fields. Per-AI script-file replacement is deferred.
 - Objectives and mission/task data that are serialized into the game level.
 - Navigation graph and node/link metadata inspection. Graph node/link persistence is deferred until a safe serializer path exists.
 - Terrain and lightmap metadata inspection and validation. Terrain edits and game-affecting lightmap/object-lightmap persistence are deferred until safe persistence paths exist.
-- Game asset inspection and existing converter-backed operations where the result is consumed by the game (`DAT`, `MTP`, `RES`, `TEX`, `MEF`, `QSC`, `QVM`, `FNT`, terrain, and graph data).
+- Game asset inspection for (`DAT`, `MTP`, `RES`, `TEX`, `MEF`, `QSC`, `QVM`, `FNT`, terrain, and graph data). Converter-backed writes are deferred until fixed wrappers can preserve the transaction guarantees.
 - Read-only MCP resources for project manifest, level manifest, object snapshots, graph snapshots, and validation reports.
 
 ### Out of scope
@@ -37,7 +37,7 @@ The implementation has four layers with narrow interfaces:
 1. **`McpJson`** — a small strict JSON value/parser/writer used for JSON-RPC and tool arguments. It supports objects, arrays, strings, finite numbers, booleans, and null; rejects duplicate keys, malformed UTF-8/escapes, excessive nesting, and oversized messages. It has no logging side effects.
 2. **`McpProtocol`** — the stateless MCP 2026-07-28 request contract over JSON-RPC, deterministic `tools/list`, `resources/list/read`, structured tool results, protocol errors, and mandatory `server/discover`. Each request carries its protocol metadata in `_meta`; there is no mandatory initialize/initialized handshake or session identifier. It is transport-neutral and writes no diagnostics to stdout.
 3. **`GameDataService`** — the validated game-data application layer. It owns an allowlisted project session, maps stable task/object identifiers to existing `LevelObjects`, QSC/QVM, graph, terrain, and converter APIs, performs revision checks and atomic save transactions, and returns before/after records. It must not depend on GLUT or renderer UI state.
-4. **Transports** — newline-delimited stdio for MCP clients and an opt-in localhost Streamable HTTP endpoint. Both call the same protocol/server object and therefore expose identical tools and schemas.
+4. **Transports** — newline-delimited stdio for MCP clients and an opt-in localhost JSON HTTP endpoint. Both call the same protocol/server object and therefore expose identical tools and schemas. Event-stream negotiation is deferred.
 
 The first release is file-backed and deterministic. A GUI process is not required to be running. After a successful save, the editor can reload the level normally; the visual acceptance test launches the editor against the saved result. Any future live-editor bridge must use a queued main-thread command adapter rather than calling OpenGL/editor state from a network thread.
 
