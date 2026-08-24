@@ -10,9 +10,7 @@
 
 namespace mcp {
 
-inline std::string AnonymousTaskId(std::string_view parent_id,
-                                   std::string_view type,
-                                   std::string_view name) {
+inline std::string AnonymousTaskId(std::string_view parent_id, int source_line) {
     constexpr std::uint64_t kOffsetBasis = 14695981039346656037ull;
     constexpr std::uint64_t kPrime = 1099511628211ull;
     std::uint64_t hash = kOffsetBasis;
@@ -24,9 +22,7 @@ inline std::string AnonymousTaskId(std::string_view parent_id,
     };
     mix(parent_id);
     mix("|");
-    mix(type);
-    mix("|");
-    mix(name);
+    mix(std::to_string(source_line));
     mix("|");
 
     std::ostringstream result;

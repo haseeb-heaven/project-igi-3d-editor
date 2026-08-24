@@ -274,7 +274,7 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
             }
         }
         if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, call.type, task_name);
+            call.id = AnonymousTaskId(call.parent_id, call.source_line);
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return calls;
@@ -694,6 +694,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const auto calls = ScanCalls(source);
             std::vector<Patch> patches;
             std::set<std::string> seen;
+            JsonValue::Array before_loadout;
             for (const auto& item : arguments.at("loadout").as_array()) {
                 if (!HasOnlyKeys(item, {"task_id", "weapon_id"})) return Failure(error, "invalid_arguments");
                 std::string child_id;
@@ -704,6 +705,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                     return DomainFailure(error, domain_error);
                 const JsonValue child = service.GetObject(level, child_id, domain_error);
                 if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                before_loadout.emplace_back(JsonValue::Object{{"task_id", child_id}, {"object", child}});
                 if (!IsWritableObject(child)) return Failure(error, "ambiguous_task_id");
                 if (child.at("parent_id").is_null() || child.at("parent_id").as_string() != parent_id ||
                     !child.at("type").as_string().starts_with("Gun")) return Failure(error, "unsupported_operation");
@@ -724,13 +726,24 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const std::string& child_id : seen) changed_fields.emplace_back(child_id);
-            const JsonValue after = options.dry_run
+            JsonValue after = options.dry_run
                 ? service.ObjectSnapshotFromSource(level, source, parent_id, domain_error)
                 : service.GetObject(level, parent_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            JsonValue::Array after_loadout;
+            for (const std::string& child_id : seen) {
+                JsonValue child_after = options.dry_run
+                    ? service.ObjectSnapshotFromSource(level, source, child_id, domain_error)
+                    : service.GetObject(level, child_id, domain_error);
+                if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                after_loadout.emplace_back(JsonValue::Object{{"task_id", child_id}, {"object", child_after}});
+            }
+            JsonValue before_snapshot = parent;
+            before_snapshot["loadout"] = JsonValue(std::move(before_loadout));
+            after["loadout"] = JsonValue(std::move(after_loadout));
             JsonValue result = MakeFieldMutationResult("ai_set_weapon_loadout", options.dry_run, revision,
                                                        revision_after, std::move(changed_fields),
-                                                       parent, after);
+                                                       before_snapshot, after);
             result["task_id"] = parent_id;
             result["loadout_count"] = static_cast<int>(seen.size());
             return result;

@@ -190,6 +190,21 @@ TEST_F(McpHttpIntegrationTest, RejectsRequestsWithoutContentLength) {
     EXPECT_NE(response.find("{\"error\":\"request_rejected\"}"), std::string::npos);
 }
 
+TEST_F(McpHttpIntegrationTest, RejectsRequestsWithDuplicateContentLength) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    mcp::HttpTransport transport;
+    mcp::HttpOptions options;
+    mcp::HttpEndpoint endpoint;
+    std::string error;
+    ASSERT_TRUE(transport.Start(options, server, endpoint, error)) << error;
+
+    const std::string response = SendRequest(endpoint, "1\r\nContent-Length: 999", "");
+    transport.Stop();
+    EXPECT_NE(response.find("HTTP/1.1 400 Bad Request"), std::string::npos);
+    EXPECT_NE(response.find("{\"error\":\"request_rejected\"}"), std::string::npos);
+}
+
 TEST_F(McpHttpIntegrationTest, StopUnblocksAnIdleAuthenticatedOrUnauthenticatedClient) {
     mcp::GameDataService service(*scope_);
     mcp::McpServer server(service);

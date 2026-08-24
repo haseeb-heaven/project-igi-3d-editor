@@ -49,8 +49,8 @@ std::string MakeToken() {
     return token;
 }
 
-std::map<std::string, std::string> ParseHeaders(std::string_view text) {
-    std::map<std::string, std::string> headers;
+bool ParseHeaders(std::string_view text, std::map<std::string, std::string>& headers) {
+    headers.clear();
     std::size_t start = 0;
     while (start < text.size()) {
         const std::size_t end = text.find("\r\n", start);
@@ -62,9 +62,9 @@ std::map<std::string, std::string> ParseHeaders(std::string_view text) {
         std::string key = Lower(std::string(line.substr(0, colon)));
         std::string value(line.substr(colon + 1));
         while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());
-        headers[std::move(key)] = std::move(value);
+        if (!headers.emplace(std::move(key), std::move(value)).second) return false;
     }
-    return headers;
+    return true;
 }
 
 bool ParseContentLength(std::string_view text, std::size_t maximum,
@@ -289,7 +289,11 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
     std::istringstream request_line(request.substr(0, first_end));
     std::string method, path, version;
     request_line >> method >> path >> version;
-    const auto headers = ParseHeaders(std::string_view(request).substr(first_end + 2, header_end - first_end - 2));
+    std::map<std::string, std::string> headers;
+    if (!ParseHeaders(std::string_view(request).substr(first_end + 2, header_end - first_end - 2), headers)) {
+        SendText(connection, 400, "Bad Request", "{\"error\":\"request_rejected\"}");
+        return;
+    }
     std::size_t content_length = 0;
     const auto content_length_header = headers.find("content-length");
     if (content_length_header == headers.end() || headers.find("transfer-encoding") != headers.end()) {

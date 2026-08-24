@@ -348,7 +348,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         if (id.empty()) id = "anonymous";
         const bool anonymous = id == "-1" || id == "anonymous";
         if (anonymous) {
-            id = AnonymousTaskId(parent_id, ChildString(node, 1), ChildString(node, 2));
+            id = AnonymousTaskId(parent_id, static_cast<int>(node.line));
         }
         const std::string base_id = id;
         ++id_counts[base_id];

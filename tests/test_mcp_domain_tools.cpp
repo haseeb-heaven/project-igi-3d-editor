@@ -29,7 +29,8 @@ protected:
                "{\"ModelName\":\"MODEL_301\",\"ModelId\":\"301_01_1\"},"
                "{\"ModelName\":\"MODEL_302\",\"ModelId\":\"302_01_1\"},"
                "{\"ModelName\":\"MODEL_304\",\"ModelId\":\"304_01_1\"},"
-               "{\"ModelName\":\"WEAPON_ID_UZI\",\"ModelId\":\"111_01_1\"}]";
+               "{\"ModelName\":\"WEAPON_ID_UZI\",\"ModelId\":\"111_01_1\"},"
+               "{\"ModelName\":\"WEAPON_ID_UZIX2\",\"ModelId\":\"111_04_1\"}]";
         std::ofstream(level / "objects.qvm", std::ios::binary) << "fixture-qvm";
         std::ofstream(level / "objects.qsc", std::ios::binary)
             << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
@@ -142,6 +143,10 @@ TEST_F(McpDomainToolsTest, ReturnsAfterSnapshotWhenRenamingAnonymousTask) {
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_FALSE(result.is_null());
     EXPECT_EQ(result.at("after").at("name").as_string(), "Renamed");
+    EXPECT_EQ(result.at("after").at("id").as_string(), anonymous_id);
+    const auto reread = service_->GetObject(1, anonymous_id, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(reread.at("name").as_string(), "Renamed");
 }
 
 TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
@@ -151,12 +156,18 @@ TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
         mcp::JsonValue::Object{
             {"task_id", "150"},
             {"loadout", mcp::JsonValue::Array{mcp::JsonValue::Object{
-                {"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZI"}}}},
+                {"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZIX2"}}}},
             {"dry_run", true},
         }, error);
     ASSERT_TRUE(error.empty()) << error;
-    EXPECT_TRUE(result.contains("before"));
-    EXPECT_TRUE(result.contains("after"));
+    ASSERT_TRUE(result.at("before").contains("loadout"));
+    ASSERT_TRUE(result.at("after").contains("loadout"));
+    ASSERT_EQ(result.at("before").at("loadout").as_array().size(), 1u);
+    ASSERT_EQ(result.at("after").at("loadout").as_array().size(), 1u);
+    EXPECT_EQ(result.at("before").at("loadout").as_array()[0].at("object")
+                  .at("args").as_array().back().as_string(), "WEAPON_ID_UZI");
+    EXPECT_EQ(result.at("after").at("loadout").as_array()[0].at("object")
+                  .at("args").as_array().back().as_string(), "WEAPON_ID_UZIX2");
 }
 
 TEST_F(McpDomainToolsTest, RejectsUnknownPropertiesForReservedMutationTools) {

@@ -384,7 +384,7 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
             }
         }
         if (call.id == "-1" || call.id == "anonymous") {
-            call.id = AnonymousTaskId(call.parent_id, call.type, call.name);
+            call.id = AnonymousTaskId(call.parent_id, call.source_line);
         }
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
