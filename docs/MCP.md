@@ -40,6 +40,13 @@ Implemented persistent mutations use QSC span-preserving edits followed by
 QSC parse and QVM compile validation. They honor `expected_revision`, support
 `dry_run`, and use transaction backups and rollback validation.
 
+Anonymous `Task_New(-1, ...)` records receive deterministic IDs. When a
+mutation first targets one, the server stores its generated ID in a local QSC
+comment marker so later field edits and source-line insertions do not retarget
+the record. The marker is ignored by the game parser. `ai_set_weapon_loadout`
+updates the listed weapon children while preserving their serialized QSC order;
+the request order controls only the `before`/`after` arrays in the response.
+
 The following boundaries are intentional and return the stable
 `unsupported_operation` error without writing files:
 

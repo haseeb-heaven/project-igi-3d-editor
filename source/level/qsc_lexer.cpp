@@ -42,9 +42,15 @@ struct Lexer {
             } else if (c == '/' && peek(1) == '/') {
                 while (!eof() && peek() != '\n') advance();
             } else if (c == '/' && peek(1) == '*') {
+                const uint32_t comment_line = line;
+                const uint32_t comment_col = col;
                 advance(); advance();
                 while (!eof() && !(peek() == '*' && peek(1) == '/')) advance();
-                if (!eof()) { advance(); advance(); }
+                if (eof()) {
+                    fail("unterminated block comment", comment_line, comment_col);
+                    return;
+                }
+                advance(); advance();
             } else {
                 break;
             }

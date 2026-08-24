@@ -292,11 +292,24 @@ std::string ChildString(const qsc::Node& call, std::size_t index) {
 
 std::string AnonymousTaskSignature(const qsc::Node& call) {
     std::string signature;
-    for (std::size_t index = 3; index < call.children.size(); ++index) {
+    for (std::size_t index = 1; index < call.children.size(); ++index) {
         signature.push_back('|');
         signature += AnonymousArgumentSignature(*call.children[index]);
     }
     return signature;
+}
+
+std::size_t NodeSourceOffset(std::string_view source, const qsc::Node& node) {
+    if (node.line == 0 || node.col == 0) return std::string_view::npos;
+    std::size_t offset = 0;
+    uint32_t line = 1;
+    while (line < node.line) {
+        const std::size_t newline = source.find('\n', offset);
+        if (newline == std::string_view::npos) return std::string_view::npos;
+        offset = newline + 1;
+        ++line;
+    }
+    return offset + static_cast<std::size_t>(node.col - 1);
 }
 
 struct SnapshotRecord {
@@ -347,7 +360,8 @@ bool ConfigureSchemasFromProgram(const qsc::Node& program) {
     return true;
 }
 
-void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
+void CollectSnapshotRecords(std::string_view source, const qsc::Node& node,
+                            const std::string& parent_id,
                             std::vector<SnapshotRecord>& records,
                             std::unordered_map<std::string, int>& id_counts,
                             std::unordered_map<std::string, int>& next_suffix,
@@ -357,7 +371,11 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         if (id.empty()) id = "anonymous";
         const bool anonymous = id == "-1" || id == "anonymous";
         if (anonymous) {
-            id = AnonymousTaskId(parent_id, AnonymousTaskSignature(node));
+            const std::size_t offset = NodeSourceOffset(source, node);
+            const auto marker = offset == std::string_view::npos
+                                    ? std::optional<std::string>{}
+                                    : AnonymousTaskMarkerBefore(source, offset);
+            id = marker.value_or(AnonymousTaskId(parent_id, AnonymousTaskSignature(node)));
         }
         const std::string base_id = id;
         ++id_counts[base_id];
@@ -365,7 +383,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         records.push_back({&node, id, base_id, parent_id, {}, anonymous, false});
         const std::size_t record_index = records.size() - 1;
         for (const auto& child : node.children) {
-            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids);
+            CollectSnapshotRecords(source, *child, id, records, id_counts, next_suffix, used_ids);
         }
         for (std::size_t index = record_index + 1; index < records.size(); ++index) {
             if (records[index].parent_id == id) records[record_index].children.push_back(records[index].id);
@@ -373,7 +391,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         return;
     }
     for (const auto& child : node.children) {
-        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids);
+        CollectSnapshotRecords(source, *child, parent_id, records, id_counts, next_suffix, used_ids);
     }
 }
 
@@ -468,7 +486,7 @@ bool ParseSnapshot(const std::string& source, JsonValue::Array& objects, std::st
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
     std::vector<SnapshotRecord> records;
-    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids);
+    CollectSnapshotRecords(source, *parsed.program, {}, records, id_counts, next_suffix, used_ids);
     for (auto& record : records) {
         const auto count = id_counts.find(record.base_id);
         record.ambiguous = !record.anonymous && count != id_counts.end() && count->second > 1;

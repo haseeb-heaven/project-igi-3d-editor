@@ -327,7 +327,7 @@ std::string StableScalarText(const Scalar& value) {
 
 std::string AnonymousTaskSignature(const std::string& source, const std::vector<ArgSpan>& args) {
     std::string signature;
-    for (std::size_t index = 3; index < args.size(); ++index) {
+    for (std::size_t index = 1; index < args.size(); ++index) {
         const std::size_t begin = TrimLeft(source, args[index].begin, args[index].end);
         const std::size_t end = TrimRight(source, begin, args[index].end);
         signature.push_back('|');
@@ -394,8 +394,10 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
                 parent_end = calls[parent].end;
             }
         }
-        if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.args));
+        if (call.id == "-1" || call.id == "anonymous") {
+            const auto marker = AnonymousTaskMarkerBefore(source, call.begin);
+            call.id = marker.value_or(AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.args)));
+        }
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return true;
@@ -627,9 +629,13 @@ bool AddReplacement(const std::string& source, const CallSpan& call, int index,
     return true;
 }
 
-std::string FormatNumber(double value) {
+bool IsReal64Type(std::string_view type_name) {
+    return type_name == "Real64" || type_name == "Real64x3";
+}
+
+std::string FormatNumber(double value, bool real64 = false) {
     std::ostringstream output;
-    output << std::setprecision(9) << static_cast<float>(value);
+    output << std::setprecision(real64 ? 17 : 9) << (real64 ? value : static_cast<float>(value));
     return output.str();
 }
 
@@ -658,7 +664,10 @@ bool AddVectorReplacements(const std::string& source, const CallSpan& call,
             error = "unsupported_operation";
             return false;
         }
-        if (!AddReplacement(source, call, indices[component], FormatNumber(values[component]),
+        const TaskSchemaNS::FieldDef* schema_field = FieldForParameter(call, indices[component]);
+        if (!AddReplacement(source, call, indices[component],
+                            FormatNumber(values[component], schema_field != nullptr &&
+                                                             IsReal64Type(schema_field->typeName)),
                             std::string(field) + "[" + std::to_string(component) + "]",
                             replacements, error, ExpectedKind::Number)) return false;
     }
@@ -709,11 +718,14 @@ bool CurrentLevel(GameDataService& service, const JsonValue& arguments, int& lev
 
 JsonValue MutationResult(GameDataService& service, int level, std::string_view tool,
                          std::string_view task_id, const JsonValue& before,
-                         int source_line, const MutationOptions& options, std::string source,
+                         int source_line, std::size_t call_begin, const MutationOptions& options,
+                         std::string source,
                          std::vector<Replacement> replacements, std::string& error) {
     const LevelRevision revision_before = service.CurrentRevision();
     std::vector<std::string> fields;
     if (!ApplyReplacements(source, replacements, fields, error)) return JsonValue(nullptr);
+    if (before.at("id").is_string() && before.at("id").as_string().starts_with("anon-"))
+        AddAnonymousTaskMarker(source, call_begin, task_id);
     if (!service.SaveCurrentObjectSource(source, options, error)) {
         if (error.empty()) error = "save_failed";
         return JsonValue(nullptr);
@@ -1101,6 +1113,10 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                     !arguments.contains("value")) return Failure(error, "invalid_arguments");
                 if (index == 0) return Failure(error, "unsupported_operation");
                 const JsonValue& value = arguments.at("value");
+                const TaskSchemaNS::FieldDef* field = nullptr;
+                ExpectedKind expected = ExpectedKind::Any;
+                if (!ValidateSchemaParameterValue(source, *call, index, value, field, expected, error))
+                    return JsonValue(nullptr);
                 std::string replacement;
                 if (value.is_string()) {
                     std::string text;
@@ -1108,20 +1124,18 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                     replacement = FormatString(text);
                 }
                 else if (value.is_bool()) replacement = value.as_bool() ? "TRUE" : "FALSE";
-                else if (value.is_number() && std::isfinite(value.as_number())) replacement = FormatNumber(value.as_number());
+                else if (value.is_number() && std::isfinite(value.as_number()))
+                    replacement = FormatNumber(value.as_number(), field != nullptr &&
+                                                             IsReal64Type(field->typeName));
                 else return Failure(error, "invalid_arguments");
-                const TaskSchemaNS::FieldDef* field = nullptr;
-                ExpectedKind expected = ExpectedKind::Any;
-                if (!ValidateSchemaParameterValue(source, *call, index, value, field, expected, error))
-                    return JsonValue(nullptr);
                 if (!AddReplacement(source, *call, index, replacement,
                                     "parameter[" + std::to_string(index) + "]", replacements, error,
                                     expected))
                     return JsonValue(nullptr);
             }
             if (replacements.empty()) return Failure(error, "invalid_arguments");
-            return MutationResult(service, level, name, task_id, before, call->source_line, options, source,
-                                  std::move(replacements), error);
+            return MutationResult(service, level, name, task_id, before, call->source_line, call->begin,
+                                  options, source, std::move(replacements), error);
         }
 
         return Failure(error, "unknown_tool");

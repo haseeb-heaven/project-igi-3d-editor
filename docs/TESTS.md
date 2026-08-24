@@ -27,9 +27,9 @@ $env:Path = (Join-Path (Get-Location) 'assets/dlls/x86') + ';' + $env:Path
 .\igi_tests.exe --gtest_filter="Mcp*" --gtest_color=no
 ```
 
-The focused MCP run contains 74 tests: 73 passed and one Windows symlink
+The focused MCP run contains 79 tests: 78 passed and one Windows symlink
 containment test skipped because the test account lacks symlink privilege. The
-full Win32 Release run against `D:\IGI1` completed 557 tests: 548 passed and 9
+full Win32 Release run against `D:\IGI1` completed 563 tests: 554 passed and 9
 skipped. The other eight skips are the existing lightmap and vanilla-fixture
 prerequisites documented below.
 
@@ -80,7 +80,7 @@ $env:IGI_TEST_LEVEL="3"; .\igi_tests.exe --gtest_filter="AllLevels/VerifyLevelIn
 
 | Suite | Tests | What it covers |
 | --- | :---: | --- |
-| `QscLexerTest` | 52 | All token types, keywords, operators, escape sequences, qualified identifiers, line/block comments, error recovery with position reporting |
+| `QscLexerTest` | 53 | All token types, keywords, operators, escape sequences, qualified identifiers, line/block comments, error recovery with position reporting |
 | `QscParserTest` | 42 | AST node types, operator precedence, control flow (`if`/`else`/`while`), assignment associativity, parenthesised expressions, call/arg counters, error cases |
 | `QvmRoundTripTest` | 19 | Synthetic compile→write→parse→decompile cycles; identifier and string pool integrity; structural re-parse of decompiled output; fixture-based round-trip with `level01_simple.qsc` |
 | `ConfigTest` | 10 | Config defaults, field value ranges, singleton behaviour, multi-init safety, keybinding load |

@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace mcp {
 
@@ -47,6 +48,7 @@ private:
     std::atomic<std::uintptr_t> listen_socket_{0};
     std::atomic_bool stopping_{false};
     std::thread worker_;
+    std::vector<std::thread> connection_workers_;
     bool winsock_started_ = false;
     HttpOptions options_;
     HttpEndpoint endpoint_;

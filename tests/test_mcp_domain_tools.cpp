@@ -5,6 +5,7 @@
 #include "mcp/mcp_tools_graph.h"
 #include "mcp/mcp_tools_mission.h"
 #include "mcp/mcp_tools_objects.h"
+#include "mcp/mcp_task_id.h"
 
 #include <filesystem>
 #include <fstream>
@@ -33,8 +34,10 @@ protected:
                "{\"ModelName\":\"WEAPON_ID_UZIX2\",\"ModelId\":\"111_04_1\"}]";
         std::ofstream(level / "objects.qvm", std::ios::binary) << "fixture-qvm";
         std::ofstream(level / "objects.qsc", std::ios::binary)
-            << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
-               "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
+        << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
+           "Task_DeclareParameters(\"Real64Task\", \"Value\", \"Real64\");\n"
+           "Task_New(160, \"Real64Task\", \"Precision\", 0.123456789012);\n"
+           "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
                "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
                "Task_New(-1, \"HumanSoldier\", \"Anonymous guard\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n"
                "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\"); Task_New(-1, \"Building\", \"Anonymous duplicate\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
@@ -112,6 +115,20 @@ TEST_F(McpDomainToolsTest, EnforcesDeclaredStringLength) {
         mcp::JsonValue::Object{{"task_id", "100"}, {"model_id", "12345678901234567"}}, error);
     EXPECT_TRUE(result.is_null());
     EXPECT_EQ(error, "unsupported_operation");
+}
+
+TEST_F(McpDomainToolsTest, PreservesReal64ParameterPrecision) {
+    std::string error;
+    const auto result = mcp::CallObjectTool(
+        *service_, "object_set_parameter",
+        mcp::JsonValue::Object{{"task_id", "160"}, {"parameter_index", 3},
+                               {"value", 0.123456789012}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(result.is_null());
+
+    std::string source;
+    ASSERT_TRUE(service_->LoadCurrentObjectSource(source, error)) << error;
+    EXPECT_NE(source.find("0.123456789012"), std::string::npos);
 }
 
 TEST_F(McpDomainToolsTest, RejectsModelIdsMissingFromTheCatalog) {
@@ -197,6 +214,69 @@ TEST_F(McpDomainToolsTest, KeepsSameLineAnonymousTasksAddressable) {
     EXPECT_NE(ids[0], ids[1]);
 }
 
+TEST_F(McpDomainToolsTest, KeepsAnonymousIdAcrossMutableFields) {
+    std::string error;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::string anonymous_id;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("type").as_string() == "Building" &&
+            object.at("id").as_string().starts_with("anon-")) {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+
+    const auto transformed = mcp::CallObjectTool(
+        *service_, "object_set_transform",
+        mcp::JsonValue::Object{{"task_id", anonymous_id},
+                               {"position", mcp::JsonValue::Array{70.0, 80.0, 90.0}}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(transformed.is_null());
+
+    const auto reread = service_->GetObject(1, anonymous_id, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(reread.at("id").as_string(), anonymous_id);
+    EXPECT_EQ(reread.at("position").as_array()[0].as_number(), 70.0);
+}
+
+TEST_F(McpDomainToolsTest, IgnoresBlockCommentedTaskCallsForAiMutation) {
+    const fs::path qsc = root_ / "missions/location0/level1/objects.qsc";
+    std::ofstream(qsc, std::ios::binary)
+        << "/* Task_New(-1, \"HumanSoldier\", \"Commented\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0); */\n"
+           "Task_New(-1, \"HumanSoldier\", \"Live\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n";
+    std::string error;
+    ASSERT_TRUE(service_->RefreshRevision(error)) << error;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::string anonymous_id;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("name").as_string() == "Live") {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+
+    const auto result = mcp::CallAiTool(
+        *service_, "ai_update",
+        mcp::JsonValue::Object{{"task_id", anonymous_id},
+                               {"fields", mcp::JsonValue::Object{{"team", 3}}}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(result.is_null());
+    const auto after = service_->GetObject(1, anonymous_id, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(after.at("args").as_array()[8].as_number(), 3.0);
+}
+
+TEST(McpTaskIdTest, PreservesNestedArgumentIdentityInSignatures) {
+    EXPECT_NE(mcp::AnonymousArgumentSignature("Call(1)"),
+              mcp::AnonymousArgumentSignature("Call(2)"));
+    EXPECT_NE(mcp::AnonymousArgumentSignature("1 + 2"),
+              mcp::AnonymousArgumentSignature("1 + 3"));
+}
+
 TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
     std::string error;
     const auto result = mcp::CallAiTool(
@@ -225,6 +305,9 @@ TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
     EXPECT_EQ(result.at("after").at("loadout").as_array()[1].at("task_id").as_string(), "151");
     EXPECT_EQ(result.at("after").at("loadout").as_array()[1].at("object")
                   .at("args").as_array().back().as_string(), "WEAPON_ID_UZIX2");
+    ASSERT_EQ(result.at("after").at("children").as_array().size(), 2u);
+    EXPECT_EQ(result.at("after").at("children").as_array()[0].as_string(), "151");
+    EXPECT_EQ(result.at("after").at("children").as_array()[1].as_string(), "152");
 }
 
 TEST_F(McpDomainToolsTest, RejectsUnknownPropertiesForReservedMutationTools) {

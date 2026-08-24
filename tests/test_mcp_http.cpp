@@ -97,9 +97,9 @@ protected:
 };
 
 std::string SendRequest(const mcp::HttpEndpoint& endpoint, std::string content_length,
-                        std::string body) {
+                        std::string body, std::string request_line = "POST /mcp HTTP/1.1") {
     std::string request =
-        "POST /mcp HTTP/1.1\r\n"
+        request_line + "\r\n"
         "Host: 127.0.0.1\r\n"
         "Authorization: Bearer " + endpoint.bearer_token + "\r\n"
         "Content-Type: application/json\r\n"
@@ -219,6 +219,24 @@ TEST_F(McpHttpIntegrationTest, RejectsMalformedHeaderLines) {
         R"({"jsonrpc":"2.0","id":7,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}})";
     const std::string response = SendRequest(
         endpoint, std::to_string(body.size()) + "\r\nMalformedHeaderWithoutColon", body);
+    transport.Stop();
+    EXPECT_NE(response.find("HTTP/1.1 400 Bad Request"), std::string::npos);
+    EXPECT_NE(response.find("{\"error\":\"request_rejected\"}"), std::string::npos);
+}
+
+TEST_F(McpHttpIntegrationTest, RejectsMalformedRequestLines) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    mcp::HttpTransport transport;
+    mcp::HttpOptions options;
+    mcp::HttpEndpoint endpoint;
+    std::string error;
+    ASSERT_TRUE(transport.Start(options, server, endpoint, error)) << error;
+
+    const std::string body =
+        R"({"jsonrpc":"2.0","id":7,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}})";
+    const std::string response = SendRequest(endpoint, std::to_string(body.size()), body,
+                                              "POST /mcp HTTP/2");
     transport.Stop();
     EXPECT_NE(response.find("HTTP/1.1 400 Bad Request"), std::string::npos);
     EXPECT_NE(response.find("{\"error\":\"request_rejected\"}"), std::string::npos);

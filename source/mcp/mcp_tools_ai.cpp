@@ -184,10 +184,18 @@ std::size_t SkipQuoted(std::string_view source, std::size_t position) {
 }
 
 std::size_t SkipComment(std::string_view source, std::size_t position) {
-    if (position + 1 >= source.size() || source[position] != '/' || source[position + 1] != '/')
+    if (position + 1 >= source.size() || source[position] != '/') return position;
+    if (source[position + 1] == '/') {
+        position += 2;
+        while (position < source.size() && source[position] != '\n') ++position;
         return position;
-    position += 2;
-    while (position < source.size() && source[position] != '\n') ++position;
+    }
+    if (source[position + 1] == '*') {
+        position += 2;
+        while (position + 1 < source.size() &&
+               !(source[position] == '*' && source[position + 1] == '/')) ++position;
+        return position + (position + 1 < source.size() ? 2 : 0);
+    }
     return position;
 }
 
@@ -208,7 +216,8 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
             position = SkipQuoted(source, position);
             continue;
         }
-        if (position + 1 < source.size() && source[position] == '/' && source[position + 1] == '/') {
+        if (position + 1 < source.size() && source[position] == '/' &&
+            (source[position + 1] == '/' || source[position + 1] == '*')) {
             position = SkipComment(source, position);
             continue;
         }
@@ -233,7 +242,8 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
                 close = SkipQuoted(source, close);
                 continue;
             }
-            if (close + 1 < source.size() && source[close] == '/' && source[close + 1] == '/') {
+            if (close + 1 < source.size() && source[close] == '/' &&
+                (source[close + 1] == '/' || source[close + 1] == '*')) {
                 close = SkipComment(source, close);
                 continue;
             }
@@ -271,8 +281,10 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
                 parent_end = calls[parent].full.end;
             }
         }
-        if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.arguments));
+        if (call.id == "-1" || call.id == "anonymous") {
+            const auto marker = AnonymousTaskMarkerBefore(source, call.full.begin);
+            call.id = marker.value_or(AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.arguments)));
+        }
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return calls;
@@ -288,7 +300,7 @@ std::string TrimmedText(std::string_view source, SourceSpan span) {
 
 std::string AnonymousTaskSignature(std::string_view source, const std::vector<SourceSpan>& arguments) {
     std::string signature;
-    for (std::size_t index = 3; index < arguments.size(); ++index) {
+    for (std::size_t index = 1; index < arguments.size(); ++index) {
         signature.push_back('|');
         signature += AnonymousArgumentSignature(TrimmedText(source, arguments[index]));
     }
@@ -666,6 +678,8 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                 }
             }
             if (!ApplyPatches(source, std::move(patches))) return Failure(error, "unsupported_operation");
+            if (before.at("id").is_string() && before.at("id").as_string().starts_with("anon-"))
+                AddAnonymousTaskMarker(source, call->full.begin, task_id);
             if (!options.dry_run && !ValidateQsc(source, domain_error)) return Failure(error, domain_error);
             if (!service.SaveCurrentObjectSource(source, options, domain_error)) return DomainFailure(error, domain_error);
             const LevelRevision revision_after = service.CurrentRevision();
@@ -702,6 +716,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::vector<Patch> patches;
             std::set<std::string> seen;
             std::vector<std::string> child_ids;
+            std::vector<std::pair<std::size_t, std::string>> anonymous_markers;
             JsonValue::Array before_loadout;
             for (const auto& item : arguments.at("loadout").as_array()) {
                 if (!HasOnlyKeys(item, {"task_id", "weapon_id"})) return Failure(error, "invalid_arguments");
@@ -720,6 +735,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                     !child.at("type").as_string().starts_with("Gun")) return Failure(error, "unsupported_operation");
                 const CallSpan* call = FindTaskCallInSource(calls, child_id, child.at("type").as_string());
                 if (!call) return Failure(error, "unsupported_operation");
+                if (child_id.starts_with("anon-")) anonymous_markers.emplace_back(call->full.begin, child_id);
                 std::size_t weapon_argument = call->arguments.size();
                 for (std::size_t index = 3; index < call->arguments.size(); ++index) {
                     if (Unquote(TrimmedText(source, call->arguments[index])).starts_with("WEAPON_ID_")) {
@@ -731,6 +747,14 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                     return Failure(error, "unsupported_operation");
             }
             if (!ApplyPatches(source, std::move(patches))) return Failure(error, "unsupported_operation");
+            if (parent_id.starts_with("anon-")) {
+                const CallSpan* parent_call = FindTaskCallInSource(calls, parent_id, parent.at("type").as_string());
+                if (parent_call) anonymous_markers.emplace_back(parent_call->full.begin, parent_id);
+            }
+            std::sort(anonymous_markers.begin(), anonymous_markers.end(),
+                      [](const auto& left, const auto& right) { return left.first > right.first; });
+            for (const auto& [position, id] : anonymous_markers)
+                AddAnonymousTaskMarker(source, position, id);
             if (!service.SaveCurrentObjectSource(source, options, domain_error)) return DomainFailure(error, domain_error);
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
@@ -799,7 +823,11 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                         return Failure(error, "unsupported_operation");
                 }
             }
-            if (!ApplyPatches(source, std::move(patches)) || !service.SaveCurrentObjectSource(source, options, domain_error))
+            if (!ApplyPatches(source, std::move(patches)))
+                return Failure(error, "unsupported_operation");
+            if (before.at("id").is_string() && before.at("id").as_string().starts_with("anon-"))
+                AddAnonymousTaskMarker(source, call->full.begin, task_id);
+            if (!service.SaveCurrentObjectSource(source, options, domain_error))
                 return domain_error.empty() ? Failure(error, "unsupported_operation") : DomainFailure(error, domain_error);
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;

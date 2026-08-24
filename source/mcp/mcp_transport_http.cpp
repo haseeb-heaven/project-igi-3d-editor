@@ -58,10 +58,12 @@ bool ParseHeaders(std::string_view text, std::map<std::string, std::string>& hea
             start, end == std::string_view::npos ? text.size() - start : end - start);
         start = end == std::string_view::npos ? text.size() : end + 2;
         const std::size_t colon = line.find(':');
-        if (colon == std::string_view::npos) return false;
+        if (colon == std::string_view::npos || colon == 0 ||
+            line[colon - 1] == ' ' || line[colon - 1] == '\t') return false;
         std::string key = Lower(std::string(line.substr(0, colon)));
         std::string value(line.substr(colon + 1));
         while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());
+        while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) value.pop_back();
         if (!headers.emplace(std::move(key), std::move(value)).second) return false;
     }
     return true;
@@ -227,13 +229,17 @@ void HttpTransport::Stop() noexcept {
     if (listener_value != 0) {
         closesocket(static_cast<SOCKET>(listener_value));
     }
+    if (worker_.joinable()) worker_.join();
     {
         std::lock_guard<std::mutex> lock(active_mutex_);
         for (const std::uintptr_t connection_value : active_connections_) {
             shutdown(static_cast<SOCKET>(connection_value), SD_BOTH);
         }
     }
-    if (worker_.joinable()) worker_.join();
+    for (std::thread& connection_worker : connection_workers_) {
+        if (connection_worker.joinable()) connection_worker.join();
+    }
+    connection_workers_.clear();
     if (winsock_started_) {
         WSACleanup();
         winsock_started_ = false;
@@ -255,12 +261,14 @@ void HttpTransport::Run(McpServer& server) {
             active_connections_.insert(static_cast<std::uintptr_t>(connection));
             if (stopping_.load()) shutdown(connection, SD_BOTH);
         }
-        HandleConnection(static_cast<std::uintptr_t>(connection), server);
-        {
-            std::lock_guard<std::mutex> lock(active_mutex_);
-            active_connections_.erase(static_cast<std::uintptr_t>(connection));
-        }
-        closesocket(connection);
+        connection_workers_.emplace_back([this, &server, connection]() {
+            HandleConnection(static_cast<std::uintptr_t>(connection), server);
+            {
+                std::lock_guard<std::mutex> lock(active_mutex_);
+                active_connections_.erase(static_cast<std::uintptr_t>(connection));
+            }
+            closesocket(connection);
+        });
     }
 #else
     (void)server;
@@ -288,7 +296,12 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
     if (first_end == std::string::npos) return;
     std::istringstream request_line(request.substr(0, first_end));
     std::string method, path, version;
-    request_line >> method >> path >> version;
+    std::string trailing;
+    if (!(request_line >> method >> path >> version) || version != "HTTP/1.1" ||
+        (request_line >> trailing)) {
+        SendText(connection, 400, "Bad Request", "{\"error\":\"request_rejected\"}");
+        return;
+    }
     std::map<std::string, std::string> headers;
     if (!ParseHeaders(std::string_view(request).substr(first_end + 2, header_end - first_end - 2), headers)) {
         SendText(connection, 400, "Bad Request", "{\"error\":\"request_rejected\"}");

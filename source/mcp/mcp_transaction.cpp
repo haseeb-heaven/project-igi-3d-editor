@@ -104,6 +104,7 @@ bool OpenDirectoryLock(const std::filesystem::path& directory, std::uintptr_t& h
     handle = reinterpret_cast<std::uintptr_t>(opened);
     return true;
 }
+
 #endif
 
 }  // namespace
@@ -315,6 +316,7 @@ bool Transaction::Commit(std::string& error) {
             std::string validation_error;
             if (!validator_(file.relative_path, file.bytes, validation_error)) {
                 error = "validation_failed";
+                ReleaseFilesystemLocks();
                 ReleaseMutationLock();
                 return false;
             }
@@ -362,7 +364,25 @@ bool Transaction::Commit(std::string& error) {
         ReleaseMutationLock();
         return false;
     }
+    if (commit_guard_ && !commit_guard_(error)) {
+        ReleaseFilesystemLocks();
+        ReleaseMutationLock();
+        return false;
+    }
     if (!CreateBackups(error)) {
+        ReleaseFilesystemLocks();
+        ReleaseMutationLock();
+        return false;
+    }
+    if (commit_guard_ && !commit_guard_(error)) {
+        std::filesystem::path backup_root;
+        std::string resolve_error;
+        std::error_code cleanup_error;
+        if (!backup_directory_.empty() && scope_.ResolveRelative(backup_directory_, backup_root, resolve_error)) {
+            std::filesystem::remove_all(backup_root, cleanup_error);
+            backup_directory_.clear();
+        }
+        ReleaseFilesystemLocks();
         ReleaseMutationLock();
         return false;
     }

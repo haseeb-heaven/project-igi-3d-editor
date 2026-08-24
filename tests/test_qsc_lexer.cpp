@@ -295,6 +295,12 @@ TEST(QscLexerTest, BlockCommentBetweenTokens) {
     EXPECT_EQ(r.tokens[1].lexeme, "B");
 }
 
+TEST(QscLexerTest, UnterminatedBlockCommentIsRejected) {
+    const auto r = Lex("/* missing terminator");
+    EXPECT_FALSE(r.ok);
+    EXPECT_NE(r.error.find("unterminated block comment"), std::string::npos);
+}
+
 // ---------- operators ----------
 
 TEST(QscLexerTest, TwoCharOperators) {
