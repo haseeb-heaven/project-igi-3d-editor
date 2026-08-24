@@ -120,7 +120,8 @@ int main(int argc, char** argv) {
                 return 2;
             }
         } else {
-            std::cerr << "usage: igi_mcp [--stdio] --project <game-root>\n";
+            std::cerr << "usage: igi_mcp [--stdio | --http [--host <ip>] [--port <port>]]"
+                         " --project <game-root>\n";
             return 2;
         }
     }
