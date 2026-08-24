@@ -127,11 +127,17 @@ JsonValue McpServer::ToolList() const {
             {"inputSchema", tool.input_schema},
         });
     }
-    return JsonValue::Object{{"tools", std::move(tools)}};
+    return JsonValue::Object{
+        {"cacheScope", "public"},
+        {"ttlMs", 0},
+        {"tools", std::move(tools)},
+    };
 }
 
 JsonValue McpServer::ResourceList() const {
     return JsonValue::Object{
+        {"cacheScope", "public"},
+        {"ttlMs", 0},
         {"resources", JsonValue::Array{
             JsonValue::Object{{"uri", "igi://project"}, {"name", "Project manifest"}},
             JsonValue::Object{{"uri", "igi://levels"}, {"name", "Level manifest"}},
@@ -201,6 +207,8 @@ JsonValue McpServer::Handle(const JsonValue& value) {
                 {"protocolVersion", "2026-07-28"},
                 {"serverInfo", JsonValue::Object{{"name", "project-igi-editor"}, {"version", "mcp-1"}}},
                 {"capabilities", JsonValue::Object{{"tools", true}, {"resources", true}}},
+                {"cacheScope", "public"},
+                {"ttlMs", 0},
             }) : JsonValue(nullptr);
         }
         if (request.method == "tools/list") {
@@ -222,6 +230,8 @@ JsonValue McpServer::Handle(const JsonValue& value) {
                                         SafeToolError(error));
             }
             return request.has_id ? MakeJsonRpcResult(request.id, JsonValue::Object{
+                {"cacheScope", "private"},
+                {"ttlMs", 0},
                 {"contents", JsonValue::Array{JsonValue::Object{
                     {"uri", it->second}, {"mimeType", "application/json"}, {"text", JsonStringify(result)},
                 }}}

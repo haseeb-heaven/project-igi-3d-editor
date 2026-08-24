@@ -38,6 +38,11 @@ TEST(McpHttpSecurityTest, RequiresLoopbackBearerAndProtocolHeaders) {
         "POST", "/mcp", GoodHeaders(options.bearer_token), 2, options, error));
     EXPECT_TRUE(error.empty());
 
+    auto parameterized = GoodHeaders(options.bearer_token);
+    parameterized["content-type"] = "application/json; charset=utf-8";
+    EXPECT_TRUE(mcp::HttpTransport::ValidateRequest(
+        "POST", "/mcp", parameterized, 2, options, error));
+
     auto headers = GoodHeaders(options.bearer_token);
     headers["authorization"] = "Bearer wrong";
     EXPECT_FALSE(mcp::HttpTransport::ValidateRequest("POST", "/mcp", headers, 2, options, error));

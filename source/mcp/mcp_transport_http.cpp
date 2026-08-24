@@ -97,6 +97,8 @@ void SendText(SOCKET socket, int status, std::string_view status_text,
     }
 }
 
+#endif
+
 bool IsAllowedOrigin(std::string_view origin) {
     for (const std::string_view prefix : {"http://127.0.0.1", "http://localhost"}) {
         if (origin == prefix) return true;
@@ -114,7 +116,6 @@ bool IsAllowedOrigin(std::string_view origin) {
     }
     return false;
 }
-#endif
 
 }  // namespace
 
@@ -145,7 +146,12 @@ bool HttpTransport::ValidateRequest(const std::string& method, const std::string
         return false;
     }
     const auto content_type = headers.find("content-type");
-    if (content_type == headers.end() || Lower(content_type->second) != "application/json") {
+    std::string media_type = content_type == headers.end() ? std::string{} : Lower(content_type->second);
+    const std::size_t parameters = media_type.find(';');
+    if (parameters != std::string::npos) media_type.resize(parameters);
+    while (!media_type.empty() && std::isspace(static_cast<unsigned char>(media_type.back())))
+        media_type.pop_back();
+    if (media_type != "application/json") {
         error = "content_type_required";
         return false;
     }

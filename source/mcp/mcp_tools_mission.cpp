@@ -167,6 +167,12 @@ std::size_t SkipQuoted(std::string_view source, std::size_t position) {
 }
 
 std::size_t SkipComment(std::string_view source, std::size_t position) {
+    if (position + 1 < source.size() && source[position + 1] == '*') {
+        position += 2;
+        while (position + 1 < source.size() &&
+               !(source[position] == '*' && source[position + 1] == '/')) ++position;
+        return position + 1 < source.size() ? position + 2 : source.size();
+    }
     position += 2;
     while (position < source.size() && source[position] != '\n') ++position;
     return position;
@@ -194,7 +200,8 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
             position = SkipQuoted(source, position);
             continue;
         }
-        if (position + 1 < source.size() && source[position] == '/' && source[position + 1] == '/') {
+        if (position + 1 < source.size() && source[position] == '/' &&
+            (source[position + 1] == '/' || source[position + 1] == '*')) {
             position = SkipComment(source, position);
             continue;
         }
@@ -218,7 +225,8 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
                 cursor = SkipQuoted(source, cursor);
                 continue;
             }
-            if (cursor + 1 < source.size() && source[cursor] == '/' && source[cursor + 1] == '/') {
+            if (cursor + 1 < source.size() && source[cursor] == '/' &&
+                (source[cursor + 1] == '/' || source[cursor + 1] == '*')) {
                 cursor = SkipComment(source, cursor);
                 continue;
             }

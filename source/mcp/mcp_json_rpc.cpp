@@ -66,9 +66,22 @@ bool HasMcp20260728Metadata(const JsonRpcRequest& request) noexcept {
 }
 
 void RequireMcp20260728Metadata(const JsonRpcRequest& request) {
-    if (!HasMcp20260728Metadata(request)) {
+    if (!request.has_metadata) {
         throw JsonRpcException(kInvalidParams,
             "MCP 2026-07-28 protocol metadata is required");
+    }
+    const auto it = request.metadata.find(kMcpProtocolVersionMetadataKey);
+    if (it == request.metadata.end() || !it->second.is_string()) {
+        throw JsonRpcException(kInvalidParams,
+            "MCP 2026-07-28 protocol metadata is required");
+    }
+    if (it->second.as_string() != "2026-07-28") {
+        throw JsonRpcException(
+            kUnsupportedProtocolVersion, "MCP protocol version is not supported",
+            JsonValue::Object{
+                {"supported", JsonValue::Array{JsonValue("2026-07-28")}},
+                {"requested", it->second},
+            });
     }
 }
 

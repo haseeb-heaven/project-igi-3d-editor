@@ -117,6 +117,31 @@ TEST_F(McpDomainToolsTest, EnforcesDeclaredStringLength) {
     EXPECT_EQ(error, "unsupported_operation");
 }
 
+TEST_F(McpDomainToolsTest, RejectsMissingStandaloneMutationFields) {
+    std::string error;
+    const auto missing_model = mcp::CallObjectTool(
+        *service_, "object_set_model", mcp::JsonValue::Object{{"task_id", "100"}}, error);
+    EXPECT_TRUE(missing_model.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
+
+    const auto missing_type = mcp::CallObjectTool(
+        *service_, "object_set_type", mcp::JsonValue::Object{{"task_id", "100"}}, error);
+    EXPECT_TRUE(missing_type.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
+
+    const auto missing_parameter = mcp::CallObjectTool(
+        *service_, "object_set_parameter", mcp::JsonValue::Object{{"task_id", "100"}}, error);
+    EXPECT_TRUE(missing_parameter.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
+}
+
+TEST_F(McpDomainToolsTest, ReturnsLevelNotOpenBeforeSavingSource) {
+    mcp::GameDataService unopened(*scope_);
+    std::string error;
+    EXPECT_FALSE(unopened.SaveCurrentObjectSource("not parsed", {}, error));
+    EXPECT_EQ(error, "level_not_open");
+}
+
 TEST_F(McpDomainToolsTest, PreservesReal64ParameterPrecision) {
     std::string error;
     const auto result = mcp::CallObjectTool(

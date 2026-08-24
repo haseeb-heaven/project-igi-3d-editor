@@ -56,6 +56,8 @@ TEST_F(McpServerTest, ListsToolsAndHandlesProjectInfoWithStatelessMetadata) {
     AddMetadata(request);
     const auto response = server.Handle(request);
     ASSERT_TRUE(response.at("result").at("tools").is_array());
+    EXPECT_EQ(response.at("result").at("cacheScope").as_string(), "public");
+    EXPECT_EQ(response.at("result").at("ttlMs").as_number(), 0);
     std::set<std::string> names;
     for (const auto& tool : response.at("result").at("tools").as_array()) {
         names.insert(tool.at("name").as_string());
@@ -88,6 +90,40 @@ TEST_F(McpServerTest, ListsToolsAndHandlesProjectInfoWithStatelessMetadata) {
     EXPECT_FALSE(info.at("result").at("isError").as_bool());
     EXPECT_EQ(info.at("result").at("structuredContent").at("protocol_profile").as_string(),
               "2026-07-28");
+}
+
+TEST_F(McpServerTest, IncludesCacheMetadataOnDiscoveryAndResourceResults) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+
+    auto discover = Request("server/discover");
+    AddMetadata(discover);
+    const auto discover_response = server.Handle(discover);
+    EXPECT_EQ(discover_response.at("result").at("cacheScope").as_string(), "public");
+    EXPECT_EQ(discover_response.at("result").at("ttlMs").as_number(), 0);
+
+    auto resources = Request("resources/list");
+    AddMetadata(resources);
+    const auto resources_response = server.Handle(resources);
+    EXPECT_EQ(resources_response.at("result").at("cacheScope").as_string(), "public");
+    EXPECT_EQ(resources_response.at("result").at("ttlMs").as_number(), 0);
+
+    auto read = Request("resources/read", mcp::JsonValue::Object{{"uri", "igi://project"}});
+    AddMetadata(read);
+    const auto read_response = server.Handle(read);
+    EXPECT_EQ(read_response.at("result").at("cacheScope").as_string(), "private");
+    EXPECT_EQ(read_response.at("result").at("ttlMs").as_number(), 0);
+}
+
+TEST_F(McpServerTest, ReturnsUnsupportedProtocolVersionErrorData) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    auto request = Request("tools/list");
+    AddMetadata(request);
+    request["params"]["_meta"][std::string(mcp::kMcpProtocolVersionMetadataKey)] = "2025-11-25";
+    const auto response = server.Handle(request);
+    EXPECT_EQ(response.at("error").at("code").as_number(), mcp::kUnsupportedProtocolVersion);
+    EXPECT_EQ(response.at("error").at("data").at("requested").as_string(), "2025-11-25");
 }
 
 TEST_F(McpServerTest, RequiresProtocolMetadataAndReturnsSafeDomainErrors) {

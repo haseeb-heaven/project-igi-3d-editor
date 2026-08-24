@@ -30,21 +30,58 @@ BOOL WINAPI HandleConsoleControl(DWORD control_type) {
 
 void WaitForHttpStop() {
     g_http_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (g_http_stop_event == nullptr) {
-        std::string line;
-        std::getline(std::cin, line);
-        return;
-    }
+    if (g_http_stop_event == nullptr) return;
     SetConsoleCtrlHandler(HandleConsoleControl, TRUE);
-    std::thread stdin_watcher([] {
-        std::string line;
-        if (std::getline(std::cin, line) && g_http_stop_event != nullptr) SetEvent(g_http_stop_event);
+    const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    std::thread stdin_watcher([input] {
+        if (input == nullptr || input == INVALID_HANDLE_VALUE) return;
+        const HANDLE wait_handles[] = {input, g_http_stop_event};
+        if (GetFileType(input) == FILE_TYPE_CHAR) {
+            for (;;) {
+                const DWORD wait = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+                if (wait == WAIT_OBJECT_0 + 1) return;
+                if (wait != WAIT_OBJECT_0) {
+                    SetEvent(g_http_stop_event);
+                    return;
+                }
+                INPUT_RECORD records[32]{};
+                DWORD count = 0;
+                if (!ReadConsoleInputW(input, records, 32, &count)) {
+                    SetEvent(g_http_stop_event);
+                    return;
+                }
+                for (DWORD index = 0; index < count; ++index) {
+                    if (records[index].EventType == KEY_EVENT &&
+                        records[index].Event.KeyEvent.bKeyDown &&
+                        (records[index].Event.KeyEvent.uChar.UnicodeChar == L'\r' ||
+                         records[index].Event.KeyEvent.uChar.UnicodeChar == L'\n')) {
+                        SetEvent(g_http_stop_event);
+                        return;
+                    }
+                }
+            }
+        }
+        for (;;) {
+            const DWORD wait = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+            if (wait == WAIT_OBJECT_0 + 1) return;
+            if (wait != WAIT_OBJECT_0) {
+                SetEvent(g_http_stop_event);
+                return;
+            }
+            char character = '\0';
+            DWORD count = 0;
+            if (!ReadFile(input, &character, 1, &count, nullptr) || count == 0) {
+                SetEvent(g_http_stop_event);
+                return;
+            }
+            if (character == '\n') {
+                SetEvent(g_http_stop_event);
+                return;
+            }
+        }
     });
     WaitForSingleObject(g_http_stop_event, INFINITE);
-    if (stdin_watcher.joinable()) {
-        CancelSynchronousIo(static_cast<HANDLE>(stdin_watcher.native_handle()));
-        stdin_watcher.join();
-    }
+    if (stdin_watcher.joinable()) stdin_watcher.join();
     SetConsoleCtrlHandler(HandleConsoleControl, FALSE);
     CloseHandle(g_http_stop_event);
     g_http_stop_event = nullptr;

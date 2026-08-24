@@ -1071,6 +1071,8 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
             }
 
             if (name == "object_set_model" || (update && arguments.contains("model_id"))) {
+                if (name == "object_set_model" && !arguments.contains("model_id"))
+                    return Failure(error, "invalid_arguments");
                 std::string model;
                 if (!ReadNonEmptyString(arguments.at("model_id"), model)) return Failure(error, "invalid_arguments");
                 const int index = LayoutFor(call->type).model;
@@ -1086,6 +1088,8 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                                     replacements, error, ExpectedKind::String)) return JsonValue(nullptr);
             }
             if (name == "object_set_type" || (update && arguments.contains("type"))) {
+                if (name == "object_set_type" && !arguments.contains("type"))
+                    return Failure(error, "invalid_arguments");
                 std::string type;
                 const TaskSchemaNS::TaskSchema* destination_schema = nullptr;
                 if (!ReadNonEmptyString(arguments.at("type"), type)) return Failure(error, "invalid_arguments");
@@ -1108,6 +1112,9 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                     return JsonValue(nullptr);
             }
             if (name == "object_set_parameter" || (update && arguments.contains("parameter_index"))) {
+                if (name == "object_set_parameter" &&
+                    (!arguments.contains("parameter_index") || !arguments.contains("value")))
+                    return Failure(error, "invalid_arguments");
                 int index = -1;
                 if (!ReadNonNegativeInteger(arguments.at("parameter_index"), index) ||
                     !arguments.contains("value")) return Failure(error, "invalid_arguments");

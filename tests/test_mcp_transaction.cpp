@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <atomic>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -171,6 +173,51 @@ TEST_F(McpTransactionTest, RejectsCaseInsensitiveDuplicateTargets) {
         << error;
     EXPECT_FALSE(transaction.Stage("MISSIONS/LOCATION0/LEVEL1/NEW.QVM", Bytes("two"), error));
     EXPECT_EQ(error, "duplicate_stage_path");
+}
+
+TEST_F(McpTransactionTest, BackupFalseNotifiesObserverOnce) {
+    mcp::MutationOptions options;
+    options.backup = false;
+    std::string error;
+    int observer_calls = 0;
+    mcp::Transaction transaction(*scope_, options);
+    ASSERT_TRUE(transaction.Stage("missions/location0/level1/objects.qvm", Bytes("updated"), error))
+        << error;
+    transaction.SetCommitObserver([&] { ++observer_calls; });
+    ASSERT_TRUE(transaction.Commit(error)) << error;
+    EXPECT_EQ(observer_calls, 1);
+    EXPECT_TRUE(transaction.backup_directory().empty());
+    EXPECT_EQ(ReadText(target_), "updated");
+}
+
+TEST_F(McpTransactionTest, RollbackReacquiresMutationLockForCallbacks) {
+    auto mutation_mutex = std::make_shared<std::mutex>();
+    std::unique_lock<std::mutex> mutation_lock(*mutation_mutex);
+    std::string error;
+    mcp::Transaction transaction(*scope_, {}, {}, mutation_mutex, std::move(mutation_lock));
+    ASSERT_TRUE(transaction.Stage("missions/location0/level1/objects.qvm", Bytes("updated"), error))
+        << error;
+
+    const auto expect_lock_held = [&] {
+        std::atomic<bool> acquired{false};
+        std::thread probe([&] {
+            if (mutation_mutex->try_lock()) {
+                acquired.store(true);
+                mutation_mutex->unlock();
+            }
+        });
+        probe.join();
+        EXPECT_FALSE(acquired.load());
+    };
+    transaction.SetCommitObserver(expect_lock_held);
+    transaction.SetRollbackGuard([&](std::string&) {
+        expect_lock_held();
+        return true;
+    });
+
+    ASSERT_TRUE(transaction.Commit(error)) << error;
+    ASSERT_TRUE(transaction.Rollback(error)) << error;
+    EXPECT_EQ(ReadText(target_), "original");
 }
 
 }  // namespace

@@ -194,7 +194,7 @@ std::size_t SkipComment(std::string_view source, std::size_t position) {
         position += 2;
         while (position + 1 < source.size() &&
                !(source[position] == '*' && source[position + 1] == '/')) ++position;
-        return position + (position + 1 < source.size() ? 2 : 0);
+        return position + 1 < source.size() ? position + 2 : source.size();
     }
     return position;
 }

@@ -78,9 +78,9 @@ git commit -m "feat: add strict MCP JSON-RPC core"
 - mcp::Transaction::Stage(path, bytes), Commit(), and Rollback() implement same-directory temporary writes and backup retention.
 
 - [ ] Step 1: Write failing path and transaction tests. Test canonical project-root acceptance, traversal/absolute-outside rejection, invalid level rejection, stale revision rejection, dry-run no-write behavior, backup creation, rollback on validation failure, and atomic replacement.
-- [ ] Step 2: Run McpPaths* and McpTransaction* and record the expected red failures.
+- [ ] Step 2: Run `McpPaths*` and `McpTransaction*` and record the expected red failures.
 - [ ] Step 3: Implement root allowlisting, revision fingerprints, backup naming, temporary writes, and rollback. Keep all returned paths relative to the configured root.
-- [ ] Step 4: Run focused tests plus existing UtilsTest* and Qsc* regression filters.
+- [ ] Step 4: Run focused tests plus existing `UtilsTest*` and `Qsc*` regression filters.
 - [ ] Step 5: Commit.
 
 ~~~powershell

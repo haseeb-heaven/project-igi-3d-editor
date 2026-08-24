@@ -18,6 +18,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -590,10 +591,11 @@ bool ProjectScope::LevelDirectory(int level, std::filesystem::path& level_direct
 
     for (const auto& mission_path : ordered_candidates) {
         std::filesystem::path candidate_directory;
-        if (!ResolveRelative(mission_path, candidate_directory, error)) return false;
+        std::string candidate_error;
+        if (!ResolveRelative(mission_path, candidate_directory, candidate_error)) continue;
 
         std::filesystem::path objects_qvm;
-        if (!ResolveRelative(mission_path / "objects.qvm", objects_qvm, error)) return false;
+        if (!ResolveRelative(mission_path / "objects.qvm", objects_qvm, candidate_error)) continue;
 
         std::error_code status_error;
         if (std::filesystem::is_directory(candidate_directory, status_error) && !status_error &&
@@ -733,7 +735,7 @@ bool GameDataService::HasOpenLevel() const {
 
 JsonValue GameDataService::ListLevels(std::string& error) const {
     static constexpr int kMissionIds[] = {
-        1, 2, 3, 4, 5, 8, 11, 12, 13, 14, 15, 16, 17,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
         21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 35, 36};
     JsonValue::Array levels;
     for (const int level : kMissionIds) {
@@ -1018,6 +1020,10 @@ bool GameDataService::LoadCurrentObjectSource(std::string& source, std::string& 
 bool GameDataService::SaveCurrentObjectSource(std::string_view source,
                                               const MutationOptions& options,
                                               std::string& error) {
+    if (!HasOpenLevel()) {
+        error = "level_not_open";
+        return false;
+    }
     const qsc::LexResult lexed = qsc::Lex(std::string(source));
     if (!lexed.ok) {
         error = "qsc_lex_failed";

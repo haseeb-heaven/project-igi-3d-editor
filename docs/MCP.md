@@ -26,7 +26,8 @@ For local integrations, loopback HTTP is available:
 The endpoint and a cryptographically random bearer token are printed to
 stderr. HTTP is restricted to `127.0.0.1`, `POST /mcp`, JSON content, an
 `Authorization: Bearer ...` header, the `MCP-Protocol-Version: 2026-07-28`
-header, and the bounded request body. Allowed origins are loopback only.
+header, the `Mcp-Method` and `Mcp-Name` headers, and the bounded request
+body. Allowed origins are loopback only.
 
 ## Game-data scope
 

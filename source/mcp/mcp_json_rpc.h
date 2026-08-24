@@ -12,6 +12,7 @@ inline constexpr int kInvalidRequest = -32600;
 inline constexpr int kMethodNotFound = -32601;
 inline constexpr int kInvalidParams = -32602;
 inline constexpr int kInternalError = -32603;
+inline constexpr int kUnsupportedProtocolVersion = -32022;
 inline constexpr std::string_view kMcpProtocolVersionMetadataKey =
     "io.modelcontextprotocol/protocolVersion";
 inline constexpr std::string_view kMcpClientInfoMetadataKey =

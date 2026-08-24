@@ -413,8 +413,6 @@ bool Transaction::Commit(std::string& error) {
         if (!scope_.ResolveRelative(backup_directory_, backup_root, error)) {
             std::string rollback_error;
             Rollback(rollback_error);
-            if (commit_observer_) commit_observer_();
-            ReleaseMutationLock();
             error = "backup_cleanup_failed";
             return false;
         }
@@ -424,8 +422,6 @@ bool Transaction::Commit(std::string& error) {
             std::string rollback_error;
             if (!Rollback(rollback_error)) error = rollback_error;
             else error = "backup_cleanup_failed";
-            if (commit_observer_) commit_observer_();
-            ReleaseMutationLock();
             return false;
         }
         backup_directory_.clear();
@@ -438,6 +434,8 @@ bool Transaction::Commit(std::string& error) {
 }
 
 bool Transaction::Rollback(std::string& error) {
+    if (mutation_mutex_ && !mutation_lock_.owns_lock())
+        mutation_lock_.lock();
     if (backup_directory_.empty()) {
         error = "rollback_unavailable";
         ReleaseMutationLock();

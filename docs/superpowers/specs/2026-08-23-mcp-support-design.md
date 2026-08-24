@@ -15,12 +15,12 @@ The server must support deterministic inspection and mutation of game data, safe
 ### In scope
 
 - Level/project discovery, load, reload, validate, save, backup, restore, dry-run, and revision reporting.
-- Task-tree and `LevelObject` inspection and mutation: create, duplicate, delete, rename, parent/child changes, type/parameter updates, and game-affecting transforms.
+- Task-tree and `LevelObject` inspection and supported mutation: rename, type/parameter updates, and game-affecting transforms. Structural create, duplicate, delete, and parent/child changes are inspection-only in the first release.
 - Model identifiers, object type, position, Euler orientation, building/prop/door/vehicle/train/spline/camera/terminal fields, and serialized task parameters. Persistent scale is excluded until a game-file representation exists; the editor's current scale field is render/snap state only.
 - AI soldiers and related tasks: AI type, team, graph binding, patrol/script content, script compile/validation, weapon and ammunition child tasks, and authored animation/behavior fields.
 - Objectives and mission/task data that are serialized into the game level.
-- Navigation graph nodes, links, node position/radius/material/criteria, and graph persistence.
-- Terrain edits and game-affecting lightmap/object-lightmap operations that have an existing safe persistence path.
+- Navigation graph and node/link metadata inspection. Graph node/link persistence is deferred until a safe serializer path exists.
+- Terrain and lightmap metadata inspection and validation. Terrain edits and game-affecting lightmap/object-lightmap persistence are deferred until safe persistence paths exist.
 - Game asset inspection and existing converter-backed operations where the result is consumed by the game (`DAT`, `MTP`, `RES`, `TEX`, `MEF`, `QSC`, `QVM`, `FNT`, terrain, and graph data).
 - Read-only MCP resources for project manifest, level manifest, object snapshots, graph snapshots, and validation reports.
 
@@ -35,7 +35,7 @@ The server must support deterministic inspection and mutation of game data, safe
 The implementation has four layers with narrow interfaces:
 
 1. **`McpJson`** — a small strict JSON value/parser/writer used for JSON-RPC and tool arguments. It supports objects, arrays, strings, finite numbers, booleans, and null; rejects duplicate keys, malformed UTF-8/escapes, excessive nesting, and oversized messages. It has no logging side effects.
-2. **`McpProtocol`** — the stateless MCP 2026-07-28 request contract over JSON-RPC, deterministic `tools/list`, `resources/list/read`, structured tool results, protocol errors, and optional `server/discover`. Each request carries its protocol metadata in `_meta`; there is no mandatory initialize/initialized handshake or session identifier. It is transport-neutral and writes no diagnostics to stdout.
+2. **`McpProtocol`** — the stateless MCP 2026-07-28 request contract over JSON-RPC, deterministic `tools/list`, `resources/list/read`, structured tool results, protocol errors, and mandatory `server/discover`. Each request carries its protocol metadata in `_meta`; there is no mandatory initialize/initialized handshake or session identifier. It is transport-neutral and writes no diagnostics to stdout.
 3. **`GameDataService`** — the validated game-data application layer. It owns an allowlisted project session, maps stable task/object identifiers to existing `LevelObjects`, QSC/QVM, graph, terrain, and converter APIs, performs revision checks and atomic save transactions, and returns before/after records. It must not depend on GLUT or renderer UI state.
 4. **Transports** — newline-delimited stdio for MCP clients and an opt-in localhost Streamable HTTP endpoint. Both call the same protocol/server object and therefore expose identical tools and schemas.
 
@@ -56,7 +56,7 @@ Rules:
 - `--http` is explicit opt-in. It binds to `127.0.0.1` only; `0.0.0.0` is rejected.
 - Port `0` selects an available local port and reports the endpoint and generated bearer token only on stderr.
 - HTTP requires `Authorization: Bearer <token>`, validates `Origin` when present against the configured localhost origins, requires `Mcp-Method` and `Mcp-Name` headers, and returns safe JSON-RPC errors without filesystem paths, stack traces, or secrets.
-- The protocol profile is pinned to MCP 2026-07-28: requests include `MCP-Protocol-Version` and `_meta` metadata, list responses may include `ttlMs` and `cacheScope`, and the server does not issue or require `Mcp-Session-Id`.
+- The protocol profile is pinned to MCP 2026-07-28: requests include `MCP-Protocol-Version` and `_meta` metadata, `server/discover` is mandatory, and `server/discover`, `tools/list`, `resources/list`, and `resources/read` responses include `ttlMs` and `cacheScope`. The server does not issue or require `Mcp-Session-Id`.
 - stdio stdout contains only one valid JSON-RPC message per line. Logs go to stderr.
 - The project root and game root are canonicalized once at startup. Operations may address only the configured root and known level/asset subdirectories.
 

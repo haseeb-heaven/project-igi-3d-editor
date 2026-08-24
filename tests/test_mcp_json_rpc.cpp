@@ -50,6 +50,21 @@ TEST(McpJsonRpcTest, AcceptsArrayParamsAsGenericJsonRpc) {
     EXPECT_TRUE(mcp::ParseJsonRpcRequest(JsonValue(std::move(request))).params.is_array());
 }
 
+TEST(McpJsonRpcTest, ReportsUnsupportedProtocolVersionWithNegotiationData) {
+    auto request = MakeRequest();
+    request["params"]["_meta"][std::string(mcp::kMcpProtocolVersionMetadataKey)] = "2025-11-25";
+    const auto parsed = mcp::ParseJsonRpcRequest(request);
+    try {
+        mcp::RequireMcp20260728Metadata(parsed);
+        FAIL() << "expected unsupported protocol version";
+    } catch (const mcp::JsonRpcException& exception) {
+        EXPECT_EQ(exception.code(), mcp::kUnsupportedProtocolVersion);
+        EXPECT_EQ(exception.data().at("supported").as_array().size(), 1u);
+        EXPECT_EQ(exception.data().at("supported").as_array()[0].as_string(), "2026-07-28");
+        EXPECT_EQ(exception.data().at("requested").as_string(), "2025-11-25");
+    }
+}
+
 TEST(McpJsonRpcTest, RejectsInvalidRequestsAndParams) {
     JsonValue::Object invalid_version{{"jsonrpc", JsonValue("1.0")},
                                       {"method", JsonValue("tools/list")}};
