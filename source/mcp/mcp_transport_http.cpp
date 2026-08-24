@@ -58,7 +58,7 @@ bool ParseHeaders(std::string_view text, std::map<std::string, std::string>& hea
         const std::string_view line = text.substr(start, end - start);
         start = end + 2;
         const std::size_t colon = line.find(':');
-        if (colon == std::string_view::npos) continue;
+        if (colon == std::string_view::npos) return false;
         std::string key = Lower(std::string(line.substr(0, colon)));
         std::string value(line.substr(colon + 1));
         while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());

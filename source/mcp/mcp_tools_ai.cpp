@@ -256,14 +256,12 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
     }
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
+    std::unordered_map<std::string, std::size_t> next_ordinal;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         if (call.name != "Task_New" || call.arguments.size() < 2) continue;
         call.id = Unquote(TrimmedText(source, call.arguments[0]));
         call.type = Unquote(TrimmedText(source, call.arguments[1]));
-        const std::string task_name = call.arguments.size() > 2
-                                          ? Unquote(TrimmedText(source, call.arguments[2]))
-                                          : std::string{};
         if (call.id.empty()) call.id = "anonymous";
         std::size_t parent_end = std::numeric_limits<std::size_t>::max();
         for (std::size_t parent = 0; parent < index; ++parent) {
@@ -273,8 +271,9 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
                 parent_end = calls[parent].full.end;
             }
         }
+        const std::size_t sibling_ordinal = next_ordinal[call.parent_id]++;
         if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, call.source_line);
+            call.id = AnonymousTaskId(call.parent_id, sibling_ordinal);
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return calls;
@@ -694,6 +693,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const auto calls = ScanCalls(source);
             std::vector<Patch> patches;
             std::set<std::string> seen;
+            std::vector<std::string> child_ids;
             JsonValue::Array before_loadout;
             for (const auto& item : arguments.at("loadout").as_array()) {
                 if (!HasOnlyKeys(item, {"task_id", "weapon_id"})) return Failure(error, "invalid_arguments");
@@ -705,6 +705,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                     return DomainFailure(error, domain_error);
                 const JsonValue child = service.GetObject(level, child_id, domain_error);
                 if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                child_ids.push_back(child_id);
                 before_loadout.emplace_back(JsonValue::Object{{"task_id", child_id}, {"object", child}});
                 if (!IsWritableObject(child)) return Failure(error, "ambiguous_task_id");
                 if (child.at("parent_id").is_null() || child.at("parent_id").as_string() != parent_id ||
@@ -725,13 +726,13 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             if (!service.SaveCurrentObjectSource(source, options, domain_error)) return DomainFailure(error, domain_error);
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
-            for (const std::string& child_id : seen) changed_fields.emplace_back(child_id);
+            for (const std::string& child_id : child_ids) changed_fields.emplace_back(child_id);
             JsonValue after = options.dry_run
                 ? service.ObjectSnapshotFromSource(level, source, parent_id, domain_error)
                 : service.GetObject(level, parent_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
             JsonValue::Array after_loadout;
-            for (const std::string& child_id : seen) {
+            for (const std::string& child_id : child_ids) {
                 JsonValue child_after = options.dry_run
                     ? service.ObjectSnapshotFromSource(level, source, child_id, domain_error)
                     : service.GetObject(level, child_id, domain_error);

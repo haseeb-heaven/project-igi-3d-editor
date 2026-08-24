@@ -342,13 +342,15 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
                             std::vector<SnapshotRecord>& records,
                             std::unordered_map<std::string, int>& id_counts,
                             std::unordered_map<std::string, int>& next_suffix,
-                            std::unordered_set<std::string>& used_ids) {
+                            std::unordered_set<std::string>& used_ids,
+                            std::unordered_map<std::string, std::size_t>& next_ordinal) {
     if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_New") {
         std::string id = ChildString(node, 0);
         if (id.empty()) id = "anonymous";
         const bool anonymous = id == "-1" || id == "anonymous";
+        const std::size_t sibling_ordinal = next_ordinal[parent_id]++;
         if (anonymous) {
-            id = AnonymousTaskId(parent_id, static_cast<int>(node.line));
+            id = AnonymousTaskId(parent_id, sibling_ordinal);
         }
         const std::string base_id = id;
         ++id_counts[base_id];
@@ -356,7 +358,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         records.push_back({&node, id, base_id, parent_id, {}, anonymous, false});
         const std::size_t record_index = records.size() - 1;
         for (const auto& child : node.children) {
-            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids);
+            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids, next_ordinal);
         }
         for (std::size_t index = record_index + 1; index < records.size(); ++index) {
             if (records[index].parent_id == id) records[record_index].children.push_back(records[index].id);
@@ -364,7 +366,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         return;
     }
     for (const auto& child : node.children) {
-        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids);
+        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids, next_ordinal);
     }
 }
 
@@ -458,11 +460,12 @@ bool ParseSnapshot(const std::string& source, JsonValue::Array& objects, std::st
     std::unordered_map<std::string, int> id_counts;
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
+    std::unordered_map<std::string, std::size_t> next_ordinal;
     std::vector<SnapshotRecord> records;
-    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids);
+    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids, next_ordinal);
     for (auto& record : records) {
         const auto count = id_counts.find(record.base_id);
-        record.ambiguous = count != id_counts.end() && count->second > 1;
+        record.ambiguous = !record.anonymous && count != id_counts.end() && count->second > 1;
     }
     for (const auto& record : records) objects.emplace_back(SnapshotRecordJson(record));
     error.clear();

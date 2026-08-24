@@ -359,6 +359,7 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
     });
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
+    std::unordered_map<std::string, std::size_t> next_ordinal;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         for (std::size_t argument_index = 0; argument_index < call.args.size(); ++argument_index) {
@@ -383,9 +384,9 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
                 parent_end = calls[parent].end;
             }
         }
-        if (call.id == "-1" || call.id == "anonymous") {
-            call.id = AnonymousTaskId(call.parent_id, call.source_line);
-        }
+        const std::size_t sibling_ordinal = next_ordinal[call.parent_id]++;
+        if (call.id == "-1" || call.id == "anonymous")
+            call.id = AnonymousTaskId(call.parent_id, sibling_ordinal);
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return true;

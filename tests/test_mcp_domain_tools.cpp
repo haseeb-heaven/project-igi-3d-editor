@@ -37,8 +37,8 @@ protected:
                "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
                "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
                "Task_New(-1, \"HumanSoldier\", \"Anonymous guard\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n"
-               "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
-               "Task_New(150, \"HumanSoldier\", \"Loadout\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0, Task_New(151, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZI\"));\n"
+               "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\"); Task_New(-1, \"Building\", \"Anonymous duplicate\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
+               "Task_New(150, \"HumanSoldier\", \"Loadout\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0, Task_New(151, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZI\"), Task_New(152, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZIX2\"));\n"
                "Task_New(102, \"UnknownTask\", \"Unknown\", 1, 2, 3, 0, 0, 0, \"303_01_1\");\n"
                "DefineComputerObjective(1, 0, 0, \"TRUE\", \"obj.text\", 100, \"TRUE\", \"FALSE\");\n";
         std::string open_error;
@@ -149,24 +149,79 @@ TEST_F(McpDomainToolsTest, ReturnsAfterSnapshotWhenRenamingAnonymousTask) {
     EXPECT_EQ(reread.at("name").as_string(), "Renamed");
 }
 
+TEST_F(McpDomainToolsTest, KeepsAnonymousIdAcrossInsertedLines) {
+    std::string error;
+    const auto before = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::string anonymous_id;
+    for (const auto& object : before.at("objects").as_array()) {
+        if (object.at("type").as_string() == "HumanSoldier" &&
+            object.at("name").as_string() == "Anonymous guard") {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+
+    const fs::path qsc = root_ / "missions/location0/level1/objects.qsc";
+    std::ifstream input(qsc, std::ios::binary);
+    const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    std::ofstream(qsc, std::ios::binary) << "// inserted before an anonymous task\n" << source;
+
+    const auto after = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    for (const auto& object : after.at("objects").as_array()) {
+        if (object.at("name").as_string() == "Anonymous guard") {
+            EXPECT_EQ(object.at("id").as_string(), anonymous_id);
+            return;
+        }
+    }
+    FAIL() << "anonymous task disappeared after inserting a line";
+}
+
+TEST_F(McpDomainToolsTest, KeepsSameLineAnonymousTasksAddressable) {
+    std::string error;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::vector<std::string> ids;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("type").as_string() == "Building" &&
+            object.at("id").as_string().starts_with("anon-")) {
+            ids.push_back(object.at("id").as_string());
+            EXPECT_TRUE(object.at("writable").as_bool());
+        }
+    }
+    ASSERT_EQ(ids.size(), 2u);
+    EXPECT_NE(ids[0], ids[1]);
+}
+
 TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
     std::string error;
     const auto result = mcp::CallAiTool(
         *service_, "ai_set_weapon_loadout",
         mcp::JsonValue::Object{
             {"task_id", "150"},
-            {"loadout", mcp::JsonValue::Array{mcp::JsonValue::Object{
-                {"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZIX2"}}}},
+            {"loadout", mcp::JsonValue::Array{
+                mcp::JsonValue::Object{{"task_id", "152"}, {"weapon_id", "WEAPON_ID_UZI"}},
+                mcp::JsonValue::Object{{"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZIX2"}}}},
             {"dry_run", true},
         }, error);
     ASSERT_TRUE(error.empty()) << error;
     ASSERT_TRUE(result.at("before").contains("loadout"));
     ASSERT_TRUE(result.at("after").contains("loadout"));
-    ASSERT_EQ(result.at("before").at("loadout").as_array().size(), 1u);
-    ASSERT_EQ(result.at("after").at("loadout").as_array().size(), 1u);
+    ASSERT_EQ(result.at("before").at("loadout").as_array().size(), 2u);
+    ASSERT_EQ(result.at("after").at("loadout").as_array().size(), 2u);
+    EXPECT_EQ(result.at("before").at("loadout").as_array()[0].at("task_id").as_string(), "152");
     EXPECT_EQ(result.at("before").at("loadout").as_array()[0].at("object")
+                  .at("args").as_array().back().as_string(), "WEAPON_ID_UZIX2");
+    EXPECT_EQ(result.at("before").at("loadout").as_array()[1].at("task_id").as_string(), "151");
+    EXPECT_EQ(result.at("before").at("loadout").as_array()[1].at("object")
                   .at("args").as_array().back().as_string(), "WEAPON_ID_UZI");
+    EXPECT_EQ(result.at("after").at("loadout").as_array()[0].at("task_id").as_string(), "152");
     EXPECT_EQ(result.at("after").at("loadout").as_array()[0].at("object")
+                  .at("args").as_array().back().as_string(), "WEAPON_ID_UZI");
+    EXPECT_EQ(result.at("after").at("loadout").as_array()[1].at("task_id").as_string(), "151");
+    EXPECT_EQ(result.at("after").at("loadout").as_array()[1].at("object")
                   .at("args").as_array().back().as_string(), "WEAPON_ID_UZIX2");
 }
 
