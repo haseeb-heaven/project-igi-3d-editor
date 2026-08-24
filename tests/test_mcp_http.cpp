@@ -3,10 +3,10 @@
 #include "mcp/mcp_server.h"
 #include "mcp/mcp_transport_http.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <chrono>
 #include <string>
 
 #ifdef _WIN32
@@ -96,9 +96,8 @@ protected:
     std::optional<mcp::ProjectScope> scope_;
 };
 
-std::string SendDiscover(const mcp::HttpEndpoint& endpoint) {
-    const std::string body =
-        R"({"jsonrpc":"2.0","id":7,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}})";
+std::string SendRequest(const mcp::HttpEndpoint& endpoint, std::string content_length,
+                        std::string body) {
     const std::string request =
         "POST /mcp HTTP/1.1\r\n"
         "Host: 127.0.0.1\r\n"
@@ -108,7 +107,7 @@ std::string SendDiscover(const mcp::HttpEndpoint& endpoint) {
         "MCP-Protocol-Version: 2026-07-28\r\n"
         "Mcp-Method: server/discover\r\n"
         "Mcp-Name: test-client\r\n"
-        "Content-Length: " + std::to_string(body.size()) + "\r\n"
+        "Content-Length: " + std::move(content_length) + "\r\n"
         "Connection: close\r\n\r\n" + body;
 
     const SOCKET socket_handle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -134,6 +133,12 @@ std::string SendDiscover(const mcp::HttpEndpoint& endpoint) {
     return response;
 }
 
+std::string SendDiscover(const mcp::HttpEndpoint& endpoint) {
+    const std::string body =
+        R"({"jsonrpc":"2.0","id":7,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}})";
+    return SendRequest(endpoint, std::to_string(body.size()), body);
+}
+
 TEST_F(McpHttpIntegrationTest, ServesStatelessDiscoveryWithoutSessionState) {
     mcp::GameDataService service(*scope_);
     mcp::McpServer server(service);
@@ -152,6 +157,20 @@ TEST_F(McpHttpIntegrationTest, ServesStatelessDiscoveryWithoutSessionState) {
     EXPECT_NE(response.find("MCP-Protocol-Version: 2026-07-28"), std::string::npos);
     EXPECT_EQ(response.find("Mcp-Session-Id"), std::string::npos);
     EXPECT_NE(response.find("\"protocolVersion\":\"2026-07-28\""), std::string::npos);
+}
+
+TEST_F(McpHttpIntegrationTest, RejectsContentLengthThatDoesNotFitTheTargetSizeType) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    mcp::HttpTransport transport;
+    mcp::HttpOptions options;
+    mcp::HttpEndpoint endpoint;
+    std::string error;
+    ASSERT_TRUE(transport.Start(options, server, endpoint, error)) << error;
+
+    const std::string response = SendRequest(endpoint, "4294967296", "");
+    transport.Stop();
+    EXPECT_NE(response.find("HTTP/1.1 413 Payload Too Large"), std::string::npos);
 }
 
 TEST_F(McpHttpIntegrationTest, StopUnblocksAnIdleAuthenticatedOrUnauthenticatedClient) {

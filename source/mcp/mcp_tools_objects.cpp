@@ -411,7 +411,8 @@ Layout LayoutFor(const std::string& type) {
             for (int component = 0; component < 3; ++component)
                 layout.rotation[component] = field.argOffset + component;
         } else if (field.name == "Model" && field.argCount == 1 &&
-                   (field.typeName == "String16" || field.typeName == "String256" ||
+                   (field.typeName == "String16" || field.typeName == "String32" ||
+                    field.typeName == "String256" ||
                     field.typeName == "VarString")) {
             layout.model = field.argOffset;
         }
@@ -442,14 +443,19 @@ struct Replacement {
 enum class ExpectedKind { Any, Number, Boolean, String };
 
 ExpectedKind ExpectedKindForType(std::string_view type_name) {
-    if (type_name == "Bool" || type_name == "bool8" || type_name == "Boolean")
+    if (type_name == "Bool" || type_name == "bool8" || type_name == "Boolean" ||
+        type_name == "PushButton")
         return ExpectedKind::Boolean;
-    if (type_name == "String16" || type_name == "String256" || type_name == "VarString" ||
-        type_name == "String")
+    if (type_name == "String16" || type_name == "String32" || type_name == "String256" ||
+        type_name == "VarString" || type_name == "String" || type_name == "EnumString32" ||
+        type_name == "DropDownCombo" || type_name == "Graph" || type_name == "AnimData")
         return ExpectedKind::String;
     if (type_name == "ObjectPos" || type_name == "Real32x9" || type_name == "RGB" ||
-        type_name == "Real32x3" || type_name == "Colour" || type_name == "Real32" ||
-        type_name == "Int32" || type_name == "Int16" || type_name == "TrainPos1D")
+        type_name == "Real32x3" || type_name == "Real64x3" || type_name == "Colour" ||
+        type_name == "Real32" || type_name == "Real64" || type_name == "Angle" ||
+        type_name == "Degrees" || type_name == "RangeReal32" || type_name == "Int8" ||
+        type_name == "Int32" || type_name == "Int16" || type_name == "Integer" ||
+        type_name == "EnumInt32" || type_name == "TrainPos1D")
         return ExpectedKind::Number;
     return ExpectedKind::Any;
 }
@@ -495,9 +501,16 @@ bool SchemaFieldValueMatches(const JsonValue& value, const Scalar& existing,
                              const TaskSchemaNS::FieldDef& field) {
     const ExpectedKind expected = ExpectedKindForType(field.typeName);
     if (expected == ExpectedKind::Any || !ValueMatches(value, existing, expected)) return false;
+    if (expected == ExpectedKind::String) {
+        const std::size_t maximum = field.typeName == "String16" ? 16 :
+                                    field.typeName == "String32" ? 32 : 256;
+        return value.is_string() && value.as_string().size() <= maximum;
+    }
     if (!value.is_number()) return true;
     const double number = value.as_number();
     if (!std::isfinite(number)) return false;
+    if (field.typeName == "RGB" || field.typeName == "Colour")
+        return number >= 0.0 && number <= 1.0;
     if (!IsIntegerType(field.typeName)) return true;
     if (std::trunc(number) != number) return false;
     if (field.typeName == "Int8") return number >= -128.0 && number <= 127.0;
@@ -562,6 +575,13 @@ bool ValidateReplacementValue(const std::string& source, const CallSpan& call, i
         return false;
     }
     return true;
+}
+
+bool ValidateFieldStringLength(const JsonValue& value, const TaskSchemaNS::FieldDef* field) {
+    if (field == nullptr || !value.is_string()) return false;
+    const std::size_t maximum = field->typeName == "String16" ? 16 :
+                                field->typeName == "String32" ? 32 : 256;
+    return value.as_string().size() <= maximum;
 }
 
 bool AddReplacement(const std::string& source, const CallSpan& call, int index,
@@ -684,9 +704,16 @@ JsonValue MutationResult(GameDataService& service, int level, std::string_view t
         return JsonValue(nullptr);
     }
 
-    JsonValue after = before;
+    JsonValue after;
     LevelRevision revision_after = revision_before;
-    if (!options.dry_run) {
+    if (options.dry_run) {
+        std::string object_error;
+        after = service.ObjectSnapshotFromSource(level, source, task_id, object_error);
+        if (!object_error.empty()) {
+            error = object_error;
+            return JsonValue(nullptr);
+        }
+    } else {
         revision_after = service.CurrentRevision();
         std::string object_error;
         after = service.GetObject(level, task_id, object_error);
@@ -749,6 +776,10 @@ bool PrepareTarget(GameDataService& service, const JsonValue& arguments, int& le
     call = FindCall(calls, task_id);
     if (!call) {
         error = "unknown_task_id";
+        return false;
+    }
+    if (before.contains("writable") && !before.at("writable").as_bool()) {
+        error = "ambiguous_task_id";
         return false;
     }
     if (TaskSchemaNS::GetSchema(call->type) == nullptr) {
@@ -1016,6 +1047,9 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                 std::string model;
                 if (!ReadNonEmptyString(arguments.at("model_id"), model)) return Failure(error, "invalid_arguments");
                 const int index = LayoutFor(call->type).model;
+                const TaskSchemaNS::FieldDef* model_field = FieldForParameter(*call, index);
+                if (!ValidateFieldStringLength(JsonValue(model), model_field))
+                    return Failure(error, "unsupported_operation");
                 if (!ValidateReplacementValue(source, *call, index, JsonValue(model),
                                               ExpectedKind::String, error) ||
                     !AddReplacement(source, *call, index, FormatString(model), "model_id",

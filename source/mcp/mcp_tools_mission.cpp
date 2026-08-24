@@ -468,6 +468,14 @@ JsonValue CallMissionTool(GameDataService& service, std::string_view name,
                     std::int64_t link = 0;
                     if (!ReadInteger(value, link, std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()))
                         return Failure(error, "invalid_arguments");
+                    if (link != -1) {
+                        std::string link_error;
+                        const JsonValue linked = service.GetObject(level, std::to_string(link), link_error);
+                        if (!link_error.empty()) return Failure(error, "unknown_task_id");
+                        if (linked.contains("writable") &&
+                            (!linked.at("writable").is_bool() || !linked.at("writable").as_bool()))
+                            return Failure(error, "ambiguous_task_id");
+                    }
                     ++argument;
                     replacement = std::to_string(link);
                 }

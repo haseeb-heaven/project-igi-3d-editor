@@ -79,6 +79,31 @@ TEST_F(McpDomainToolsTest, PersistsTransformAndModelWithoutAcceptingScale) {
     EXPECT_EQ(error, "unsupported_operation");
 }
 
+TEST_F(McpDomainToolsTest, DryRunReturnsStagedObjectWithoutWriting) {
+    std::string error;
+    const auto before = service_->GetObject(1, "100", error);
+    ASSERT_TRUE(error.empty()) << error;
+    const auto result = mcp::CallObjectTool(
+        *service_, "object_set_model",
+        mcp::JsonValue::Object{{"task_id", "100"}, {"model_id", "301_01_1"}, {"dry_run", true}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_TRUE(result.at("dry_run").as_bool());
+    EXPECT_EQ(result.at("before").at("model_id").as_string(), before.at("model_id").as_string());
+    EXPECT_EQ(result.at("after").at("model_id").as_string(), "301_01_1");
+    const auto after = service_->GetObject(1, "100", error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(after.at("model_id").as_string(), before.at("model_id").as_string());
+}
+
+TEST_F(McpDomainToolsTest, EnforcesDeclaredStringLength) {
+    std::string error;
+    const auto result = mcp::CallObjectTool(
+        *service_, "object_set_model",
+        mcp::JsonValue::Object{{"task_id", "100"}, {"model_id", "12345678901234567"}}, error);
+    EXPECT_TRUE(result.is_null());
+    EXPECT_EQ(error, "unsupported_operation");
+}
+
 TEST_F(McpDomainToolsTest, ExposesAiMissionGraphAndAssetReadOnlyOperations) {
     std::string error;
     const auto ai = mcp::CallAiTool(
@@ -181,13 +206,13 @@ TEST_F(McpDomainToolsTest, EnforcesSchemaTypesForParameterMutation) {
     std::string error;
     const auto fractional_team = mcp::CallObjectTool(
         *service_, "object_set_parameter",
-        mcp::JsonValue::Object{{"task_id", "101"}, {"parameter_index", 8}, {"value", 1.5}}, error);
+        mcp::JsonValue::Object{{"task_id", "100"}, {"parameter_index", 3}, {"value", "not-a-number"}}, error);
     EXPECT_TRUE(fractional_team.is_null());
     EXPECT_EQ(error, "unsupported_operation");
 
     const auto unknown_field = mcp::CallObjectTool(
         *service_, "object_set_parameter",
-        mcp::JsonValue::Object{{"task_id", "101"}, {"parameter_index", 11}, {"value", 1}}, error);
+        mcp::JsonValue::Object{{"task_id", "100"}, {"parameter_index", 99}, {"value", 1}}, error);
     EXPECT_TRUE(unknown_field.is_null());
     EXPECT_EQ(error, "unsupported_operation");
 }
@@ -198,8 +223,8 @@ TEST_F(McpDomainToolsTest, ResolvesAnonymousAndDuplicateAiIds) {
         *service_, "ai_update",
         mcp::JsonValue::Object{{"task_id", "101#1"},
                                {"fields", mcp::JsonValue::Object{{"team", 2}}}}, error);
-    ASSERT_TRUE(error.empty()) << error;
-    EXPECT_FALSE(duplicate.is_null());
+    EXPECT_TRUE(duplicate.is_null());
+    EXPECT_EQ(error, "ambiguous_task_id");
 
     std::string anonymous_id;
     const auto snapshot = service_->ListObjects(1, error);

@@ -60,6 +60,11 @@ public:
     JsonValue LevelManifest(int level, std::string& error) const;
     JsonValue ListObjects(int level, std::string& error) const;
     JsonValue GetObject(int level, std::string_view task_id, std::string& error) const;
+    JsonValue ObjectSnapshotFromSource(int level, std::string_view source,
+                                       std::string_view task_id, std::string& error) const;
+    bool IsAvailablePickupId(std::string_view pickup_id, std::string& error) const;
+    bool IsAvailableWeaponId(std::string_view weapon_id, std::string& error) const;
+    bool IsAvailableAmmoId(std::string_view ammo_id, std::string& error) const;
     JsonValue ValidateLevel(int level, std::string& error) const;
     bool LoadCurrentObjectSource(std::string& source, std::string& error) const;
     bool SaveCurrentObjectSource(std::string_view source, const MutationOptions& options,

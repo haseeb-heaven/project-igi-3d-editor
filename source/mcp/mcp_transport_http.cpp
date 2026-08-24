@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cctype>
 #include <cstring>
 #include <sstream>
@@ -64,6 +65,15 @@ std::map<std::string, std::string> ParseHeaders(std::string_view text) {
         headers[std::move(key)] = std::move(value);
     }
     return headers;
+}
+
+bool ParseContentLength(std::string_view text, std::size_t maximum,
+                        std::size_t& content_length) {
+    if (text.empty()) return false;
+    content_length = 0;
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), content_length);
+    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() &&
+           content_length <= maximum;
 }
 
 #ifdef _WIN32
@@ -282,8 +292,10 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
     const auto headers = ParseHeaders(std::string_view(request).substr(first_end + 2, header_end - first_end - 2));
     std::size_t content_length = 0;
     if (const auto it = headers.find("content-length"); it != headers.end()) {
-        try { content_length = static_cast<std::size_t>(std::stoull(it->second)); }
-        catch (...) { content_length = options_.max_body_bytes + 1; }
+        if (!ParseContentLength(it->second, options_.max_body_bytes, content_length)) {
+            SendText(connection, 413, "Payload Too Large", "{\"error\":\"request_rejected\"}");
+            return;
+        }
     }
     std::string validation_error;
     if (!ValidateRequest(method, path, headers, content_length, options_, validation_error)) {

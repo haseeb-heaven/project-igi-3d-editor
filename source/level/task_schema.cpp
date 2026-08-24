@@ -149,7 +149,10 @@ TaskSchema ParseDeclaration(const std::vector<std::string>& declArgs) {
 }
 
 static std::map<std::string, TaskSchema>& RegisteredSchemas() {
-    static std::map<std::string, TaskSchema> s;
+    // Runtime declarations are scoped to the parsing thread. The headless MCP
+    // service can inspect different project levels concurrently without one
+    // request replacing another request's declared offsets.
+    static thread_local std::map<std::string, TaskSchema> s;
     return s;
 }
 

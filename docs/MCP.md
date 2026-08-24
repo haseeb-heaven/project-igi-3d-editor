@@ -44,6 +44,8 @@ The following boundaries are intentional and return the stable
 `unsupported_operation` error without writing files:
 
 - task structural create/delete/duplicate/reparent operations;
+- `pickup_create_or_update` structural creation; the tool is update-only and
+  requires an existing stable `task_id`;
 - per-AI script-file replacement (script source validation and dry-run compile
   are available);
 - graph node/link mutations;

@@ -436,6 +436,30 @@ bool ReadWeaponId(const JsonValue& value, std::string& weapon_id) {
     return weapon_id.starts_with("WEAPON_ID_");
 }
 
+bool IsWritableObject(const JsonValue& object) {
+    return !object.contains("writable") ||
+           (object.at("writable").is_bool() && object.at("writable").as_bool());
+}
+
+bool GraphIdExists(GameDataService& service, int level, std::int64_t graph_id,
+                   std::string& error) {
+    const JsonValue manifest = service.LevelManifest(level, error);
+    if (!error.empty() || !manifest.is_object() || !manifest.contains("files")) return false;
+    const std::string expected = "graph" + std::to_string(graph_id) + ".dat";
+    for (const auto& file : manifest.at("files").as_array()) {
+        if (!file.is_object() || !file.contains("path") || !file.at("path").is_string()) continue;
+        const std::string path = file.at("path").as_string();
+        const std::size_t slash = path.find_last_of("/\\");
+        const std::string name = path.substr(slash == std::string::npos ? 0 : slash + 1);
+        if (name == expected) {
+            error.clear();
+            return true;
+        }
+    }
+    error = "unknown_graph";
+    return false;
+}
+
 JsonValue WeaponListResult(const JsonValue& snapshot) {
     std::map<std::string, std::set<std::string>> weapons;
     for (const auto& object : snapshot.at("objects").as_array()) {
@@ -489,7 +513,7 @@ ToolDefinitionList AiToolDefinitions() {
         {"ai_compile_script", ObjectSchema(std::move(compile_script), {"source"})},
         {"ai_list_weapons", ObjectSchema(std::move(list_weapons))},
         {"ai_set_weapon_loadout", ObjectSchema(std::move(loadout), {"task_id", "loadout"})},
-        {"pickup_create_or_update", ObjectSchema(std::move(pickup), {"fields"})},
+        {"pickup_create_or_update", ObjectSchema(std::move(pickup), {"task_id", "fields"})},
     };
 }
 
@@ -596,6 +620,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::string domain_error;
             const JsonValue before = service.GetObject(level, task_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            if (!IsWritableObject(before)) return Failure(error, "ambiguous_task_id");
             const std::string type = before.at("type").as_string();
             if (!IsAiObject(type)) return Failure(error, "unsupported_operation");
 
@@ -614,6 +639,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                 } else if (field == "graph_id") {
                     std::int64_t graph_id = 0;
                     if (type != "HumanAI" || !ReadInteger(value, graph_id, 0, std::numeric_limits<std::int32_t>::max()) ||
+                        !GraphIdExists(service, level, graph_id, domain_error) ||
                         !AddArgumentPatch(*call, 4, std::to_string(graph_id), patches))
                         return Failure(error, "unsupported_operation");
                 } else if (field == "team") {
@@ -630,14 +656,12 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const auto& [field, ignored] : arguments.at("fields").as_object()) changed_fields.emplace_back(field);
-            JsonValue result = MakeMutationResult(before, task_id, options.dry_run, revision_before,
-                                                  revision_after, "ai_update", std::move(changed_fields), before);
-            if (!options.dry_run) {
-                const JsonValue after = service.GetObject(level, task_id, domain_error);
-                if (!domain_error.empty()) return DomainFailure(error, domain_error);
-                result["after"] = after;
-            }
-            return result;
+            const JsonValue after = options.dry_run
+                ? service.ObjectSnapshotFromSource(level, source, task_id, domain_error)
+                : service.GetObject(level, task_id, domain_error);
+            if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            return MakeMutationResult(before, task_id, options.dry_run, revision_before,
+                                      revision_after, "ai_update", std::move(changed_fields), after);
         }
 
         if (name == "ai_set_weapon_loadout") {
@@ -655,6 +679,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::string domain_error;
             const JsonValue parent = service.GetObject(level, parent_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            if (!IsWritableObject(parent)) return Failure(error, "ambiguous_task_id");
             if (parent.at("type").as_string() != "HumanSoldier" && parent.at("type").as_string() != "HumanSoldierFemale" &&
                 parent.at("type").as_string() != "HumanPlayer") return Failure(error, "unsupported_operation");
             std::string source;
@@ -668,8 +693,11 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                 std::string weapon_id;
                 if (!ReadTaskId(item, child_id) || !item.contains("weapon_id") || !ReadWeaponId(item.at("weapon_id"), weapon_id) ||
                     !seen.insert(child_id).second) return Failure(error, "invalid_arguments");
+                if (!service.IsAvailableWeaponId(weapon_id, domain_error))
+                    return DomainFailure(error, domain_error);
                 const JsonValue child = service.GetObject(level, child_id, domain_error);
                 if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                if (!IsWritableObject(child)) return Failure(error, "ambiguous_task_id");
                 if (child.at("parent_id").is_null() || child.at("parent_id").as_string() != parent_id ||
                     !child.at("type").as_string().starts_with("Gun")) return Failure(error, "unsupported_operation");
                 const CallSpan* call = FindTaskCallInSource(calls, child_id, child.at("type").as_string());
@@ -700,7 +728,6 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             if (!HasOnlyKeys(arguments, {"level", "task_id", "fields", "dry_run", "backup", "expected_revision"}) ||
                 !arguments.contains("fields") || !HasOnlyKeys(arguments.at("fields"), {"weapon_id", "ammo_id", "count"}) ||
                 arguments.at("fields").as_object().empty()) return Failure(error, "invalid_arguments");
-            if (!arguments.contains("task_id")) return Failure(error, "unsupported_operation");
             std::string task_id;
             if (!ReadTaskId(arguments, task_id)) return Failure(error, "invalid_arguments");
             MutationOptions options;
@@ -711,6 +738,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             std::string domain_error;
             const JsonValue before = service.GetObject(level, task_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            if (!IsWritableObject(before)) return Failure(error, "ambiguous_task_id");
             const std::string type = before.at("type").as_string();
             if (type != "GunPickup" && type != "AmmoPickup") return Failure(error, "unsupported_operation");
             std::string source;
@@ -724,7 +752,10 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                     std::string id;
                     const bool valid_id = field == "weapon_id" ? ReadWeaponId(value, id) :
                         (ReadString(value, id, 64) && id.starts_with("AMMO_ID_"));
-                    if (!valid_id || (field == "weapon_id" && type != "GunPickup") ||
+                    const bool known_id = valid_id && (field == "weapon_id"
+                        ? service.IsAvailableWeaponId(id, domain_error)
+                        : service.IsAvailableAmmoId(id, domain_error));
+                    if (!known_id || (field == "weapon_id" && type != "GunPickup") ||
                         (field == "ammo_id" && type != "AmmoPickup") || !AddArgumentPatch(*call, 9, QuoteQsc(id), patches))
                         return Failure(error, "unsupported_operation");
                 } else if (field == "count") {
@@ -739,15 +770,13 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const auto& [field, ignored] : arguments.at("fields").as_object()) changed_fields.emplace_back(field);
-            JsonValue result = MakeMutationResult(before, task_id, options.dry_run, revision,
-                                                  revision_after, "pickup_create_or_update",
-                                                  std::move(changed_fields), before);
-            if (!options.dry_run) {
-                const JsonValue after = service.GetObject(level, task_id, domain_error);
-                if (!domain_error.empty()) return DomainFailure(error, domain_error);
-                result["after"] = after;
-            }
-            return result;
+            const JsonValue after = options.dry_run
+                ? service.ObjectSnapshotFromSource(level, source, task_id, domain_error)
+                : service.GetObject(level, task_id, domain_error);
+            if (!domain_error.empty()) return DomainFailure(error, domain_error);
+            return MakeMutationResult(before, task_id, options.dry_run, revision,
+                                      revision_after, "pickup_create_or_update",
+                                      std::move(changed_fields), after);
         }
 
         return Failure(error, "unknown_tool");

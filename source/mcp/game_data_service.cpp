@@ -7,6 +7,7 @@
 #include "../level/qvm_compiler.h"
 #include "../level/qvm_decompiler.h"
 #include "../level/qvm_parser.h"
+#include "../level/task_schema.h"
 #include "mcp_task_id.h"
 
 #include <algorithm>
@@ -151,6 +152,49 @@ bool ReadBoundedText(const std::filesystem::path& file, std::string& text, std::
     return true;
 }
 
+bool IsAvailableCatalogId(const ProjectScope& scope, std::string_view value,
+                          std::string& error) {
+    if (value.empty() || value.size() > 128) {
+        error = "unknown_asset_id";
+        return false;
+    }
+    std::filesystem::path catalog_path;
+    std::string path_error;
+    if (!scope.ResolveRelative("editor/tools/IGIModels.json", catalog_path, path_error)) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    std::error_code status_error;
+    if (!std::filesystem::is_regular_file(catalog_path, status_error) || status_error) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    std::string catalog_text;
+    std::string read_error;
+    if (!ReadBoundedText(catalog_path, catalog_text, read_error)) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    JsonValue catalog;
+    JsonError parse_error;
+    if (!JsonParse(catalog_text, catalog, parse_error) || !catalog.is_array()) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    for (const auto& entry : catalog.as_array()) {
+        if (!entry.is_object() || !entry.contains("ModelName") ||
+            !entry.contains("ModelId") || !entry.at("ModelName").is_string() ||
+            !entry.at("ModelId").is_string()) continue;
+        if (entry.at("ModelName").as_string() == value &&
+            !entry.at("ModelId").as_string().empty()) {
+            error.clear();
+            return true;
+        }
+    }
+    error = "unknown_asset_id";
+    return false;
+}
+
 bool LoadObjectQsc(const ProjectScope& scope, const std::filesystem::path& level_directory,
                   std::string& source, std::string& error) {
     std::filesystem::path level_relative;
@@ -248,9 +292,50 @@ std::string ChildString(const qsc::Node& call, std::size_t index) {
 struct SnapshotRecord {
     const qsc::Node* call = nullptr;
     std::string id;
+    std::string base_id;
     std::string parent_id;
     std::vector<std::string> children;
+    bool anonymous = false;
+    bool ambiguous = false;
 };
+
+int McpTypeArgCount(std::string_view type) {
+    return type == "ObjectPos" || type == "Real32x3" || type == "Real64x3" ||
+                   type == "Real32x9" || type == "RGB" || type == "Colour"
+               ? 3
+               : 1;
+}
+
+void RegisterDeclaredSchemas(const qsc::Node& node) {
+    if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_DeclareParameters" &&
+        !node.children.empty()) {
+        std::vector<std::string> arguments;
+        arguments.reserve(node.children.size());
+        for (const auto& child : node.children) arguments.push_back(ScalarStableText(*child));
+
+        if (!arguments.front().empty() && arguments.size() >= 3) {
+            TaskSchemaNS::TaskSchema schema;
+            int offset = 3;
+            for (std::size_t index = 1; index + 1 < arguments.size(); index += 2) {
+                TaskSchemaNS::FieldDef field;
+                field.name = arguments[index];
+                field.typeName = arguments[index + 1];
+                field.argOffset = offset;
+                field.argCount = McpTypeArgCount(field.typeName);
+                offset += field.argCount;
+                schema.push_back(std::move(field));
+            }
+            TaskSchemaNS::RegisterSchema(arguments.front(), std::move(schema));
+        }
+    }
+    for (const auto& child : node.children) RegisterDeclaredSchemas(*child);
+}
+
+bool ConfigureSchemasFromProgram(const qsc::Node& program) {
+    TaskSchemaNS::ClearRegisteredSchemas();
+    RegisterDeclaredSchemas(program);
+    return true;
+}
 
 void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
                             std::vector<SnapshotRecord>& records,
@@ -258,12 +343,14 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
     if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_New") {
         std::string id = ChildString(node, 0);
         if (id.empty()) id = "anonymous";
-        if (id == "-1" || id == "anonymous") {
+        const bool anonymous = id == "-1" || id == "anonymous";
+        if (anonymous) {
             id = AnonymousTaskId(parent_id, ChildString(node, 1), ChildString(node, 2));
         }
-        const int occurrence = id_counts[id]++;
+        const std::string base_id = id;
+        const int occurrence = id_counts[base_id]++;
         if (occurrence > 0) id += "#" + std::to_string(occurrence);
-        records.push_back({&node, id, parent_id, {}});
+        records.push_back({&node, id, base_id, parent_id, {}, anonymous, false});
         const std::size_t record_index = records.size() - 1;
         for (const auto& child : node.children) {
             CollectSnapshotRecords(*child, id, records, id_counts);
@@ -287,6 +374,8 @@ JsonValue SnapshotRecordJson(const SnapshotRecord& record) {
     object["type"] = ChildString(call, 1);
     object["name"] = ChildString(call, 2);
     object["source_line"] = static_cast<int>(call.line);
+    object["writable"] = !record.ambiguous;
+    object["id_status"] = record.ambiguous ? JsonValue("ambiguous") : JsonValue("stable");
 
     JsonValue::Array args;
     for (const auto& child : call.children) {
@@ -303,10 +392,47 @@ JsonValue SnapshotRecordJson(const SnapshotRecord& record) {
         }
         return values;
     };
-    object["position"] = numericVector(3);
-    object["rotation_radians"] = numericVector(6);
-    const std::string model_id = ChildString(call, 9);
-    if (!model_id.empty()) object["model_id"] = model_id;
+
+    int position = -1;
+    int rotation = -1;
+    int gamma = -1;
+    int model = -1;
+    const TaskSchemaNS::TaskSchema* schema = TaskSchemaNS::GetSchema(ChildString(call, 1));
+    if (schema != nullptr) {
+        for (const auto& field : *schema) {
+            if (field.name == "Position" && field.typeName == "ObjectPos" && field.argCount == 3)
+                position = field.argOffset;
+            else if (field.name == "Orientation" && field.typeName == "Real32x9" && field.argCount == 3)
+                rotation = field.argOffset;
+            else if (field.name == "Gamma" && field.typeName == "Real32" && field.argCount == 1)
+                gamma = field.argOffset;
+            else if (field.name == "Model" && field.argCount == 1 &&
+                     (field.typeName == "String16" || field.typeName == "String32" ||
+                      field.typeName == "String256" || field.typeName == "VarString"))
+                model = field.argOffset;
+        }
+    }
+    object["position"] = position >= 0 ? numericVector(static_cast<std::size_t>(position))
+                                       : JsonValue::Array{};
+    if (rotation >= 0) {
+        object["rotation_radians"] = numericVector(static_cast<std::size_t>(rotation));
+    } else if (gamma >= 0) {
+        JsonValue::Array values{0.0, 0.0};
+        double value = 0.0;
+        if (ScalarChild(call, static_cast<std::size_t>(gamma)) &&
+            ScalarNumber(*ScalarChild(call, static_cast<std::size_t>(gamma)), value)) {
+            values.emplace_back(value);
+            object["rotation_radians"] = std::move(values);
+        } else {
+            object["rotation_radians"] = JsonValue::Array{};
+        }
+    } else {
+        object["rotation_radians"] = JsonValue::Array{};
+    }
+    if (model >= 0) {
+        const std::string model_id = ChildString(call, static_cast<std::size_t>(model));
+        if (!model_id.empty()) object["model_id"] = model_id;
+    }
 
     JsonValue::Array children;
     for (const auto& child : record.children) children.emplace_back(child);
@@ -325,9 +451,14 @@ bool ParseSnapshot(const std::string& source, JsonValue::Array& objects, std::st
         error = "qsc_parse_failed";
         return false;
     }
+    ConfigureSchemasFromProgram(*parsed.program);
     std::unordered_map<std::string, int> id_counts;
     std::vector<SnapshotRecord> records;
     CollectSnapshotRecords(*parsed.program, {}, records, id_counts);
+    for (auto& record : records) {
+        const auto count = id_counts.find(record.base_id);
+        record.ambiguous = count != id_counts.end() && count->second > 1;
+    }
     for (const auto& record : records) objects.emplace_back(SnapshotRecordJson(record));
     error.clear();
     return true;
@@ -492,8 +623,17 @@ bool GameDataService::CalculateRevision(int level, const std::filesystem::path& 
 
 bool GameDataService::OpenLevel(int level, std::string& error) {
     std::lock_guard<std::mutex> lock(*mutation_mutex_);
+    TaskSchemaNS::ClearRegisteredSchemas();
     std::filesystem::path level_directory;
     if (!scope_.LevelDirectory(level, level_directory, error)) return false;
+
+    std::string source;
+    std::string schema_error;
+    if (LoadObjectQsc(scope_, level_directory, source, schema_error)) {
+        const qsc::LexResult lexed = qsc::Lex(source);
+        const qsc::ParseResult parsed = lexed.ok ? qsc::Parse(lexed.tokens) : qsc::ParseResult{};
+        if (lexed.ok && parsed.ok && parsed.program) ConfigureSchemasFromProgram(*parsed.program);
+    }
 
     LevelRevision revision;
     if (!CalculateRevision(level, level_directory, revision, error)) return false;
@@ -658,6 +798,7 @@ JsonValue GameDataService::LevelManifest(int level, std::string& error) const {
 }
 
 JsonValue GameDataService::ListObjects(int level, std::string& error) const {
+    std::lock_guard<std::mutex> lock(*mutation_mutex_);
     std::filesystem::path level_directory;
     if (!scope_.LevelDirectory(level, level_directory, error)) return JsonValue(nullptr);
     LevelRevision revision;
@@ -689,6 +830,38 @@ JsonValue GameDataService::GetObject(int level, std::string_view task_id, std::s
     }
     error = "unknown_task_id";
     return JsonValue(nullptr);
+}
+
+JsonValue GameDataService::ObjectSnapshotFromSource(int level, std::string_view source,
+                                                    std::string_view task_id,
+                                                    std::string& error) const {
+    std::lock_guard<std::mutex> lock(*mutation_mutex_);
+    if (task_id.empty() || task_id.size() > 128) {
+        error = "invalid_task_id";
+        return JsonValue(nullptr);
+    }
+    JsonValue::Array objects;
+    if (!ParseSnapshot(std::string(source), objects, error)) return JsonValue(nullptr);
+    for (const auto& object : objects) {
+        if (object.at("id").as_string() == task_id) {
+            error.clear();
+            return object;
+        }
+    }
+    error = "unknown_task_id";
+    return JsonValue(nullptr);
+}
+
+bool GameDataService::IsAvailablePickupId(std::string_view pickup_id, std::string& error) const {
+    return IsAvailableCatalogId(scope_, pickup_id, error);
+}
+
+bool GameDataService::IsAvailableWeaponId(std::string_view weapon_id, std::string& error) const {
+    return IsAvailableCatalogId(scope_, weapon_id, error);
+}
+
+bool GameDataService::IsAvailableAmmoId(std::string_view ammo_id, std::string& error) const {
+    return IsAvailableCatalogId(scope_, ammo_id, error);
 }
 
 JsonValue GameDataService::ValidateLevel(int level, std::string& error) const {
@@ -756,7 +929,16 @@ bool GameDataService::LoadCurrentObjectSource(std::string& source, std::string& 
     }
     std::filesystem::path level_directory;
     if (!scope_.LevelDirectory(current_revision_->level, level_directory, error)) return false;
-    return LoadObjectQsc(scope_, level_directory, source, error);
+    if (!LoadObjectQsc(scope_, level_directory, source, error)) return false;
+    const qsc::LexResult lexed = qsc::Lex(source);
+    const qsc::ParseResult parsed = lexed.ok ? qsc::Parse(lexed.tokens) : qsc::ParseResult{};
+    if (!lexed.ok || !parsed.ok || !parsed.program) {
+        error = "qsc_parse_failed";
+        return false;
+    }
+    ConfigureSchemasFromProgram(*parsed.program);
+    error.clear();
+    return true;
 }
 
 bool GameDataService::SaveCurrentObjectSource(std::string_view source,
@@ -772,6 +954,7 @@ bool GameDataService::SaveCurrentObjectSource(std::string_view source,
         error = "qsc_parse_failed";
         return false;
     }
+    ConfigureSchemasFromProgram(*parsed.program);
     const qvm::CompileResult compiled = qvm::Compile(*parsed.program);
     if (!compiled.ok || compiled.binary.empty()) {
         error = "qvm_compile_failed";
