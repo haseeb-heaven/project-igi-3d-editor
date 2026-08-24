@@ -19,6 +19,7 @@
 #include <limits>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef _WIN32
@@ -339,7 +340,9 @@ bool ConfigureSchemasFromProgram(const qsc::Node& program) {
 
 void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
                             std::vector<SnapshotRecord>& records,
-                            std::unordered_map<std::string, int>& id_counts) {
+                            std::unordered_map<std::string, int>& id_counts,
+                            std::unordered_map<std::string, int>& next_suffix,
+                            std::unordered_set<std::string>& used_ids) {
     if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_New") {
         std::string id = ChildString(node, 0);
         if (id.empty()) id = "anonymous";
@@ -348,12 +351,12 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
             id = AnonymousTaskId(parent_id, ChildString(node, 1), ChildString(node, 2));
         }
         const std::string base_id = id;
-        const int occurrence = id_counts[base_id]++;
-        if (occurrence > 0) id += "#" + std::to_string(occurrence);
+        ++id_counts[base_id];
+        id = UniqueTaskId(base_id, next_suffix, used_ids);
         records.push_back({&node, id, base_id, parent_id, {}, anonymous, false});
         const std::size_t record_index = records.size() - 1;
         for (const auto& child : node.children) {
-            CollectSnapshotRecords(*child, id, records, id_counts);
+            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids);
         }
         for (std::size_t index = record_index + 1; index < records.size(); ++index) {
             if (records[index].parent_id == id) records[record_index].children.push_back(records[index].id);
@@ -361,7 +364,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         return;
     }
     for (const auto& child : node.children) {
-        CollectSnapshotRecords(*child, parent_id, records, id_counts);
+        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids);
     }
 }
 
@@ -453,8 +456,10 @@ bool ParseSnapshot(const std::string& source, JsonValue::Array& objects, std::st
     }
     ConfigureSchemasFromProgram(*parsed.program);
     std::unordered_map<std::string, int> id_counts;
+    std::unordered_map<std::string, int> next_suffix;
+    std::unordered_set<std::string> used_ids;
     std::vector<SnapshotRecord> records;
-    CollectSnapshotRecords(*parsed.program, {}, records, id_counts);
+    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids);
     for (auto& record : records) {
         const auto count = id_counts.find(record.base_id);
         record.ambiguous = count != id_counts.end() && count->second > 1;
@@ -835,6 +840,12 @@ JsonValue GameDataService::GetObject(int level, std::string_view task_id, std::s
 JsonValue GameDataService::ObjectSnapshotFromSource(int level, std::string_view source,
                                                     std::string_view task_id,
                                                     std::string& error) const {
+    return ObjectSnapshotFromSource(level, source, task_id, 0, error);
+}
+
+JsonValue GameDataService::ObjectSnapshotFromSource(int level, std::string_view source,
+                                                    std::string_view task_id, int source_line,
+                                                    std::string& error) const {
     std::lock_guard<std::mutex> lock(*mutation_mutex_);
     if (task_id.empty() || task_id.size() > 128) {
         error = "invalid_task_id";
@@ -843,7 +854,8 @@ JsonValue GameDataService::ObjectSnapshotFromSource(int level, std::string_view 
     JsonValue::Array objects;
     if (!ParseSnapshot(std::string(source), objects, error)) return JsonValue(nullptr);
     for (const auto& object : objects) {
-        if (object.at("id").as_string() == task_id) {
+        if (object.at("id").as_string() == task_id ||
+            (source_line > 0 && object.at("source_line").as_number() == source_line)) {
             error.clear();
             return object;
         }
@@ -854,6 +866,41 @@ JsonValue GameDataService::ObjectSnapshotFromSource(int level, std::string_view 
 
 bool GameDataService::IsAvailablePickupId(std::string_view pickup_id, std::string& error) const {
     return IsAvailableCatalogId(scope_, pickup_id, error);
+}
+
+bool GameDataService::IsAvailableModelId(std::string_view model_id, std::string& error) const {
+    if (model_id.empty() || model_id.size() > 128) {
+        error = "unknown_asset_id";
+        return false;
+    }
+    std::filesystem::path catalog_path;
+    std::string path_error;
+    if (!scope_.ResolveRelative("editor/tools/IGIModels.json", catalog_path, path_error)) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    std::string catalog_text;
+    std::string read_error;
+    if (!ReadBoundedText(catalog_path, catalog_text, read_error)) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    JsonValue catalog;
+    JsonError parse_error;
+    if (!JsonParse(catalog_text, catalog, parse_error) || !catalog.is_array()) {
+        error = "asset_catalog_unavailable";
+        return false;
+    }
+    for (const auto& entry : catalog.as_array()) {
+        if (!entry.is_object() || !entry.contains("ModelId") ||
+            !entry.at("ModelId").is_string()) continue;
+        if (entry.at("ModelId").as_string() == model_id && !model_id.empty()) {
+            error.clear();
+            return true;
+        }
+    }
+    error = "unknown_asset_id";
+    return false;
 }
 
 bool GameDataService::IsAvailableWeaponId(std::string_view weapon_id, std::string& error) const {

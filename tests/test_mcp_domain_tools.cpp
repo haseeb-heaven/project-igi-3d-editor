@@ -22,6 +22,14 @@ protected:
         const fs::path level = root_ / "missions/location0/level1";
         fs::create_directories(level, error);
         ASSERT_FALSE(error) << error.message();
+        fs::create_directories(root_ / "editor/tools", error);
+        ASSERT_FALSE(error) << error.message();
+        std::ofstream(root_ / "editor/tools/IGIModels.json")
+            << "[{\"ModelName\":\"MODEL_300\",\"ModelId\":\"300_01_1\"},"
+               "{\"ModelName\":\"MODEL_301\",\"ModelId\":\"301_01_1\"},"
+               "{\"ModelName\":\"MODEL_302\",\"ModelId\":\"302_01_1\"},"
+               "{\"ModelName\":\"MODEL_304\",\"ModelId\":\"304_01_1\"},"
+               "{\"ModelName\":\"WEAPON_ID_UZI\",\"ModelId\":\"111_01_1\"}]";
         std::ofstream(level / "objects.qvm", std::ios::binary) << "fixture-qvm";
         std::ofstream(level / "objects.qsc", std::ios::binary)
             << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
@@ -29,6 +37,7 @@ protected:
                "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
                "Task_New(-1, \"HumanSoldier\", \"Anonymous guard\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n"
                "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
+               "Task_New(150, \"HumanSoldier\", \"Loadout\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0, Task_New(151, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZI\"));\n"
                "Task_New(102, \"UnknownTask\", \"Unknown\", 1, 2, 3, 0, 0, 0, \"303_01_1\");\n"
                "DefineComputerObjective(1, 0, 0, \"TRUE\", \"obj.text\", 100, \"TRUE\", \"FALSE\");\n";
         std::string open_error;
@@ -102,6 +111,65 @@ TEST_F(McpDomainToolsTest, EnforcesDeclaredStringLength) {
         mcp::JsonValue::Object{{"task_id", "100"}, {"model_id", "12345678901234567"}}, error);
     EXPECT_TRUE(result.is_null());
     EXPECT_EQ(error, "unsupported_operation");
+}
+
+TEST_F(McpDomainToolsTest, RejectsModelIdsMissingFromTheCatalog) {
+    std::string error;
+    const auto result = mcp::CallObjectTool(
+        *service_, "object_set_model",
+        mcp::JsonValue::Object{{"task_id", "100"}, {"model_id", "999_01_1"}}, error);
+    EXPECT_TRUE(result.is_null());
+    EXPECT_EQ(error, "unknown_asset_id");
+}
+
+TEST_F(McpDomainToolsTest, ReturnsAfterSnapshotWhenRenamingAnonymousTask) {
+    std::string error;
+    const auto snapshot = service_->ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::string anonymous_id;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        if (object.at("type").as_string() == "Building" &&
+            object.at("id").as_string().starts_with("anon-")) {
+            anonymous_id = object.at("id").as_string();
+            break;
+        }
+    }
+    ASSERT_FALSE(anonymous_id.empty());
+
+    const auto result = mcp::CallObjectTool(
+        *service_, "task_update",
+        mcp::JsonValue::Object{{"task_id", anonymous_id}, {"name", "Renamed"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_FALSE(result.is_null());
+    EXPECT_EQ(result.at("after").at("name").as_string(), "Renamed");
+}
+
+TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
+    std::string error;
+    const auto result = mcp::CallAiTool(
+        *service_, "ai_set_weapon_loadout",
+        mcp::JsonValue::Object{
+            {"task_id", "150"},
+            {"loadout", mcp::JsonValue::Array{mcp::JsonValue::Object{
+                {"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZI"}}}},
+            {"dry_run", true},
+        }, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_TRUE(result.contains("before"));
+    EXPECT_TRUE(result.contains("after"));
+}
+
+TEST_F(McpDomainToolsTest, RejectsUnknownPropertiesForReservedMutationTools) {
+    std::string error;
+    const auto graph = mcp::CallGraphTool(
+        *service_, "graph_node_update", mcp::JsonValue::Object{{"unexpected", true}}, error);
+    EXPECT_TRUE(graph.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
+
+    const auto asset = mcp::CallAssetTool(
+        *service_, "asset_convert", mcp::JsonValue::Object{{"unexpected", true}}, error);
+    EXPECT_TRUE(asset.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
 }
 
 TEST_F(McpDomainToolsTest, ExposesAiMissionGraphAndAssetReadOnlyOperations) {

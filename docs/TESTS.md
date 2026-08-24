@@ -27,9 +27,9 @@ $env:Path = (Join-Path (Get-Location) 'assets/dlls/x86') + ';' + $env:Path
 .\igi_tests.exe --gtest_filter="Mcp*" --gtest_color=no
 ```
 
-The focused MCP run contains 64 tests: 63 passed and one Windows symlink
+The focused MCP run contains 70 tests: 69 passed and one Windows symlink
 containment test skipped because the test account lacks symlink privilege. The
-full Win32 Release run against `D:\IGI1` completed 547 tests: 538 passed and 9
+full Win32 Release run against `D:\IGI1` completed 553 tests: 544 passed and 9
 skipped. The other eight skips are the existing lightmap and vanilla-fixture
 prerequisites documented below.
 

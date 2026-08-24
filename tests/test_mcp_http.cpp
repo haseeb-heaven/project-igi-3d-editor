@@ -98,7 +98,7 @@ protected:
 
 std::string SendRequest(const mcp::HttpEndpoint& endpoint, std::string content_length,
                         std::string body) {
-    const std::string request =
+    std::string request =
         "POST /mcp HTTP/1.1\r\n"
         "Host: 127.0.0.1\r\n"
         "Authorization: Bearer " + endpoint.bearer_token + "\r\n"
@@ -106,9 +106,9 @@ std::string SendRequest(const mcp::HttpEndpoint& endpoint, std::string content_l
         "Origin: http://127.0.0.1\r\n"
         "MCP-Protocol-Version: 2026-07-28\r\n"
         "Mcp-Method: server/discover\r\n"
-        "Mcp-Name: test-client\r\n"
-        "Content-Length: " + std::move(content_length) + "\r\n"
-        "Connection: close\r\n\r\n" + body;
+        "Mcp-Name: test-client\r\n";
+    if (!content_length.empty()) request += "Content-Length: " + std::move(content_length) + "\r\n";
+    request += "Connection: close\r\n\r\n" + body;
 
     const SOCKET socket_handle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     EXPECT_NE(socket_handle, INVALID_SOCKET);
@@ -171,6 +171,23 @@ TEST_F(McpHttpIntegrationTest, RejectsContentLengthThatDoesNotFitTheTargetSizeTy
     const std::string response = SendRequest(endpoint, "4294967296", "");
     transport.Stop();
     EXPECT_NE(response.find("HTTP/1.1 413 Payload Too Large"), std::string::npos);
+}
+
+TEST_F(McpHttpIntegrationTest, RejectsRequestsWithoutContentLength) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    mcp::HttpTransport transport;
+    mcp::HttpOptions options;
+    mcp::HttpEndpoint endpoint;
+    std::string error;
+    ASSERT_TRUE(transport.Start(options, server, endpoint, error)) << error;
+
+    const std::string body =
+        R"({"jsonrpc":"2.0","id":7,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}})";
+    const std::string response = SendRequest(endpoint, "", body);
+    transport.Stop();
+    EXPECT_NE(response.find("HTTP/1.1 400 Bad Request"), std::string::npos);
+    EXPECT_NE(response.find("{\"error\":\"request_rejected\"}"), std::string::npos);
 }
 
 TEST_F(McpHttpIntegrationTest, StopUnblocksAnIdleAuthenticatedOrUnauthenticatedClient) {

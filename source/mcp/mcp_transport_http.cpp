@@ -291,11 +291,14 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
     request_line >> method >> path >> version;
     const auto headers = ParseHeaders(std::string_view(request).substr(first_end + 2, header_end - first_end - 2));
     std::size_t content_length = 0;
-    if (const auto it = headers.find("content-length"); it != headers.end()) {
-        if (!ParseContentLength(it->second, options_.max_body_bytes, content_length)) {
-            SendText(connection, 413, "Payload Too Large", "{\"error\":\"request_rejected\"}");
-            return;
-        }
+    const auto content_length_header = headers.find("content-length");
+    if (content_length_header == headers.end() || headers.find("transfer-encoding") != headers.end()) {
+        SendText(connection, 400, "Bad Request", "{\"error\":\"request_rejected\"}");
+        return;
+    }
+    if (!ParseContentLength(content_length_header->second, options_.max_body_bytes, content_length)) {
+        SendText(connection, 413, "Payload Too Large", "{\"error\":\"request_rejected\"}");
+        return;
     }
     std::string validation_error;
     if (!ValidateRequest(method, path, headers, content_length, options_, validation_error)) {

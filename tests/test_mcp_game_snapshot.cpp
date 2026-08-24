@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 
 namespace {
@@ -111,6 +112,24 @@ TEST_F(McpGameSnapshotTest, RejectsUnknownTaskIdWithoutLeakingFilesystemDetails)
     EXPECT_TRUE(object.is_null());
     EXPECT_EQ(error, "unknown_task_id");
     EXPECT_EQ(error.find(root_.string()), std::string::npos);
+}
+
+TEST_F(McpGameSnapshotTest, KeepsGeneratedTaskIdsUniqueWhenTheyMeetExplicitIds) {
+    const fs::path objects = root_ / "missions/location0/level1/objects.qsc";
+    std::ofstream(objects, std::ios::trunc)
+        << "Task_New(1, \"Building\", \"First\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
+           "Task_New(1, \"Building\", \"Second\", 4, 5, 6, 0, 0, 0, \"300_01_1\");\n"
+           "Task_New(\"1#1\", \"Building\", \"Explicit suffix\", 7, 8, 9, 0, 0, 0, \"300_01_1\");\n";
+    mcp::GameDataService service(*scope_);
+    std::string error;
+    ASSERT_TRUE(service.OpenLevel(1, error)) << error;
+    const auto snapshot = service.ListObjects(1, error);
+    ASSERT_TRUE(error.empty()) << error;
+    std::set<std::string> ids;
+    for (const auto& object : snapshot.at("objects").as_array()) {
+        ids.insert(object.at("id").as_string());
+    }
+    EXPECT_EQ(ids.size(), snapshot.at("objects").as_array().size());
 }
 
 }  // namespace

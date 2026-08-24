@@ -62,7 +62,11 @@ public:
     JsonValue GetObject(int level, std::string_view task_id, std::string& error) const;
     JsonValue ObjectSnapshotFromSource(int level, std::string_view source,
                                        std::string_view task_id, std::string& error) const;
+    JsonValue ObjectSnapshotFromSource(int level, std::string_view source,
+                                       std::string_view task_id, int source_line,
+                                       std::string& error) const;
     bool IsAvailablePickupId(std::string_view pickup_id, std::string& error) const;
+    bool IsAvailableModelId(std::string_view model_id, std::string& error) const;
     bool IsAvailableWeaponId(std::string_view weapon_id, std::string& error) const;
     bool IsAvailableAmmoId(std::string_view ammo_id, std::string& error) const;
     JsonValue ValidateLevel(int level, std::string& error) const;

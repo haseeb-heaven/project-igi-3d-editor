@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -154,6 +155,7 @@ struct CallSpan {
     std::size_t begin = 0;
     std::size_t open = 0;
     std::size_t end = 0;
+    int source_line = 0;
     std::vector<ArgSpan> args;
     std::string type;
     std::string name;
@@ -346,13 +348,17 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
         if (open >= source.size() || source[open] != '(') continue;
         std::size_t close = 0;
         if (!FindClosingParen(source, open, close)) return false;
-        calls.push_back({word_begin, open, close, SplitArguments(source, open, close)});
+        const int source_line = static_cast<int>(
+            std::count(source.begin(), source.begin() + word_begin, '\n')) + 1;
+        calls.push_back({word_begin, open, close, source_line,
+                         SplitArguments(source, open, close)});
     }
 
     std::sort(calls.begin(), calls.end(), [](const CallSpan& left, const CallSpan& right) {
         return left.begin < right.begin;
     });
-    std::unordered_map<std::string, int> id_counts;
+    std::unordered_map<std::string, int> next_suffix;
+    std::unordered_set<std::string> used_ids;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         for (std::size_t argument_index = 0; argument_index < call.args.size(); ++argument_index) {
@@ -380,8 +386,7 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
         if (call.id == "-1" || call.id == "anonymous") {
             call.id = AnonymousTaskId(call.parent_id, call.type, call.name);
         }
-        const int occurrence = id_counts[call.id]++;
-        if (occurrence > 0) call.id += "#" + std::to_string(occurrence);
+        call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return true;
 }
@@ -694,7 +699,7 @@ bool CurrentLevel(GameDataService& service, const JsonValue& arguments, int& lev
 
 JsonValue MutationResult(GameDataService& service, int level, std::string_view tool,
                          std::string_view task_id, const JsonValue& before,
-                         const MutationOptions& options, std::string source,
+                         int source_line, const MutationOptions& options, std::string source,
                          std::vector<Replacement> replacements, std::string& error) {
     const LevelRevision revision_before = service.CurrentRevision();
     std::vector<std::string> fields;
@@ -708,7 +713,7 @@ JsonValue MutationResult(GameDataService& service, int level, std::string_view t
     LevelRevision revision_after = revision_before;
     if (options.dry_run) {
         std::string object_error;
-        after = service.ObjectSnapshotFromSource(level, source, task_id, object_error);
+        after = service.ObjectSnapshotFromSource(level, source, task_id, source_line, object_error);
         if (!object_error.empty()) {
             error = object_error;
             return JsonValue(nullptr);
@@ -716,7 +721,7 @@ JsonValue MutationResult(GameDataService& service, int level, std::string_view t
     } else {
         revision_after = service.CurrentRevision();
         std::string object_error;
-        after = service.GetObject(level, task_id, object_error);
+        after = service.ObjectSnapshotFromSource(level, source, task_id, source_line, object_error);
         if (!object_error.empty()) {
             error = object_error;
             return JsonValue(nullptr);
@@ -1050,6 +1055,9 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                 const TaskSchemaNS::FieldDef* model_field = FieldForParameter(*call, index);
                 if (!ValidateFieldStringLength(JsonValue(model), model_field))
                     return Failure(error, "unsupported_operation");
+                std::string catalog_error;
+                if (!service.IsAvailableModelId(model, catalog_error))
+                    return DomainFailure(error, catalog_error);
                 if (!ValidateReplacementValue(source, *call, index, JsonValue(model),
                                               ExpectedKind::String, error) ||
                     !AddReplacement(source, *call, index, FormatString(model), "model_id",
@@ -1102,7 +1110,7 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                     return JsonValue(nullptr);
             }
             if (replacements.empty()) return Failure(error, "invalid_arguments");
-            return MutationResult(service, level, name, task_id, before, options, source,
+            return MutationResult(service, level, name, task_id, before, call->source_line, options, source,
                                   std::move(replacements), error);
         }
 

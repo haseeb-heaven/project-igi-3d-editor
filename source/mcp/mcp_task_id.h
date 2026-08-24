@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace mcp {
 
@@ -30,6 +32,18 @@ inline std::string AnonymousTaskId(std::string_view parent_id,
     std::ostringstream result;
     result << "anon-" << std::hex << hash;
     return result.str();
+}
+
+inline std::string UniqueTaskId(std::string_view base_id,
+                               std::unordered_map<std::string, int>& next_suffix,
+                               std::unordered_set<std::string>& used_ids) {
+    std::string candidate(base_id);
+    int& suffix = next_suffix[std::string(base_id)];
+    if (suffix == 0) suffix = 1;
+    while (!used_ids.insert(candidate).second) {
+        candidate = std::string(base_id) + "#" + std::to_string(suffix++);
+    }
+    return candidate;
 }
 
 }  // namespace mcp

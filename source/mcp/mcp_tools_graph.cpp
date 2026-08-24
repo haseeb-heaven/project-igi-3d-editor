@@ -253,7 +253,12 @@ JsonValue ManifestResult(const JsonValue& manifest, int level,
 }
 
 JsonValue Unsupported(std::string& error, const JsonValue& arguments) {
-    if (!arguments.is_object()) return Failure(error, "invalid_arguments");
+    if (!HasOnlyKeys(arguments, {
+            "level", "graph_id", "node_id", "from_node", "to_node", "link_type",
+            "position", "gamma", "radius", "material", "criteria", "operation",
+            "x", "y", "z", "value", "delta", "expected_revision", "dry_run", "backup"})) {
+        return Failure(error, "invalid_arguments");
+    }
     return Failure(error, "unsupported_operation");
 }
 

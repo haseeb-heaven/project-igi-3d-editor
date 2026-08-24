@@ -13,6 +13,8 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -27,6 +29,7 @@ struct SourceSpan {
 struct CallSpan {
     std::string name;
     SourceSpan full;
+    int source_line = 0;
     std::vector<SourceSpan> arguments;
     std::string id;
     std::string parent_id;
@@ -247,9 +250,12 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
         if (depth != 0) continue;
         const SourceSpan last = TrimSpan(source, {argument_begin, close});
         if (last.begin != last.end || !arguments.empty()) arguments.push_back(last);
-        calls.push_back({name, {name_begin, close + 1}, std::move(arguments)});
+        const int source_line = static_cast<int>(
+            std::count(source.begin(), source.begin() + name_begin, '\n')) + 1;
+        calls.push_back({name, {name_begin, close + 1}, source_line, std::move(arguments)});
     }
-    std::map<std::string, int> id_counts;
+    std::unordered_map<std::string, int> next_suffix;
+    std::unordered_set<std::string> used_ids;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         if (call.name != "Task_New" || call.arguments.size() < 2) continue;
@@ -269,8 +275,7 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
         }
         if (call.id == "-1" || call.id == "anonymous")
             call.id = AnonymousTaskId(call.parent_id, call.type, task_name);
-        const int occurrence = id_counts[call.id]++;
-        if (occurrence > 0) call.id += "#" + std::to_string(occurrence);
+        call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return calls;
 }
@@ -396,7 +401,8 @@ JsonValue MakeMutationResult(const JsonValue& before, std::string_view task_id,
 JsonValue MakeFieldMutationResult(std::string_view operation, bool dry_run,
                                   const LevelRevision& before_revision,
                                   const LevelRevision& after_revision,
-                                  JsonValue changed_fields) {
+                                  JsonValue changed_fields, JsonValue before,
+                                  JsonValue after) {
     return JsonValue::Object{
         {"tool", JsonValue(operation)},
         {"changed", JsonValue(true)},
@@ -404,6 +410,8 @@ JsonValue MakeFieldMutationResult(std::string_view operation, bool dry_run,
         {"changed_fields", std::move(changed_fields)},
         {"revision_before", JsonValue(before_revision.fingerprint)},
         {"revision_after", JsonValue(after_revision.fingerprint)},
+        {"before", std::move(before)},
+        {"after", std::move(after)},
     };
 }
 
@@ -656,9 +664,8 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const auto& [field, ignored] : arguments.at("fields").as_object()) changed_fields.emplace_back(field);
-            const JsonValue after = options.dry_run
-                ? service.ObjectSnapshotFromSource(level, source, task_id, domain_error)
-                : service.GetObject(level, task_id, domain_error);
+            const JsonValue after = service.ObjectSnapshotFromSource(
+                level, source, task_id, call->source_line, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
             return MakeMutationResult(before, task_id, options.dry_run, revision_before,
                                       revision_after, "ai_update", std::move(changed_fields), after);
@@ -717,8 +724,13 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const std::string& child_id : seen) changed_fields.emplace_back(child_id);
+            const JsonValue after = options.dry_run
+                ? service.ObjectSnapshotFromSource(level, source, parent_id, domain_error)
+                : service.GetObject(level, parent_id, domain_error);
+            if (!domain_error.empty()) return DomainFailure(error, domain_error);
             JsonValue result = MakeFieldMutationResult("ai_set_weapon_loadout", options.dry_run, revision,
-                                                       revision_after, std::move(changed_fields));
+                                                       revision_after, std::move(changed_fields),
+                                                       parent, after);
             result["task_id"] = parent_id;
             result["loadout_count"] = static_cast<int>(seen.size());
             return result;
@@ -770,9 +782,8 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const LevelRevision revision_after = service.CurrentRevision();
             JsonValue::Array changed_fields;
             for (const auto& [field, ignored] : arguments.at("fields").as_object()) changed_fields.emplace_back(field);
-            const JsonValue after = options.dry_run
-                ? service.ObjectSnapshotFromSource(level, source, task_id, domain_error)
-                : service.GetObject(level, task_id, domain_error);
+            const JsonValue after = service.ObjectSnapshotFromSource(
+                level, source, task_id, call->source_line, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
             return MakeMutationResult(before, task_id, options.dry_run, revision,
                                       revision_after, "pickup_create_or_update",
