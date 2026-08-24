@@ -325,6 +325,17 @@ std::string StableScalarText(const Scalar& value) {
     return value.text;
 }
 
+std::string AnonymousTaskSignature(const std::string& source, const std::vector<ArgSpan>& args) {
+    std::string signature;
+    for (std::size_t index = 3; index < args.size(); ++index) {
+        const std::size_t begin = TrimLeft(source, args[index].begin, args[index].end);
+        const std::size_t end = TrimRight(source, begin, args[index].end);
+        signature.push_back('|');
+        signature += AnonymousArgumentSignature(std::string_view(source).substr(begin, end - begin));
+    }
+    return signature;
+}
+
 bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
     for (std::size_t position = 0; position < source.size();) {
         if (source[position] == '"') {
@@ -359,7 +370,6 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
     });
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
-    std::unordered_map<std::string, std::size_t> next_ordinal;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         for (std::size_t argument_index = 0; argument_index < call.args.size(); ++argument_index) {
@@ -384,9 +394,8 @@ bool ScanTaskCalls(const std::string& source, std::vector<CallSpan>& calls) {
                 parent_end = calls[parent].end;
             }
         }
-        const std::size_t sibling_ordinal = next_ordinal[call.parent_id]++;
         if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, sibling_ordinal);
+            call.id = AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.args));
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return true;

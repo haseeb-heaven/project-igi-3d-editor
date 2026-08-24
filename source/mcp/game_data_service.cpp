@@ -290,6 +290,15 @@ std::string ChildString(const qsc::Node& call, std::size_t index) {
     return ScalarStableText(*child);
 }
 
+std::string AnonymousTaskSignature(const qsc::Node& call) {
+    std::string signature;
+    for (std::size_t index = 3; index < call.children.size(); ++index) {
+        signature.push_back('|');
+        signature += AnonymousArgumentSignature(*call.children[index]);
+    }
+    return signature;
+}
+
 struct SnapshotRecord {
     const qsc::Node* call = nullptr;
     std::string id;
@@ -342,15 +351,13 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
                             std::vector<SnapshotRecord>& records,
                             std::unordered_map<std::string, int>& id_counts,
                             std::unordered_map<std::string, int>& next_suffix,
-                            std::unordered_set<std::string>& used_ids,
-                            std::unordered_map<std::string, std::size_t>& next_ordinal) {
+                            std::unordered_set<std::string>& used_ids) {
     if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_New") {
         std::string id = ChildString(node, 0);
         if (id.empty()) id = "anonymous";
         const bool anonymous = id == "-1" || id == "anonymous";
-        const std::size_t sibling_ordinal = next_ordinal[parent_id]++;
         if (anonymous) {
-            id = AnonymousTaskId(parent_id, sibling_ordinal);
+            id = AnonymousTaskId(parent_id, AnonymousTaskSignature(node));
         }
         const std::string base_id = id;
         ++id_counts[base_id];
@@ -358,7 +365,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         records.push_back({&node, id, base_id, parent_id, {}, anonymous, false});
         const std::size_t record_index = records.size() - 1;
         for (const auto& child : node.children) {
-            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids, next_ordinal);
+            CollectSnapshotRecords(*child, id, records, id_counts, next_suffix, used_ids);
         }
         for (std::size_t index = record_index + 1; index < records.size(); ++index) {
             if (records[index].parent_id == id) records[record_index].children.push_back(records[index].id);
@@ -366,7 +373,7 @@ void CollectSnapshotRecords(const qsc::Node& node, const std::string& parent_id,
         return;
     }
     for (const auto& child : node.children) {
-        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids, next_ordinal);
+        CollectSnapshotRecords(*child, parent_id, records, id_counts, next_suffix, used_ids);
     }
 }
 
@@ -460,9 +467,8 @@ bool ParseSnapshot(const std::string& source, JsonValue::Array& objects, std::st
     std::unordered_map<std::string, int> id_counts;
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
-    std::unordered_map<std::string, std::size_t> next_ordinal;
     std::vector<SnapshotRecord> records;
-    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids, next_ordinal);
+    CollectSnapshotRecords(*parsed.program, {}, records, id_counts, next_suffix, used_ids);
     for (auto& record : records) {
         const auto count = id_counts.find(record.base_id);
         record.ambiguous = !record.anonymous && count != id_counts.end() && count->second > 1;

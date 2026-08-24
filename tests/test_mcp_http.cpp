@@ -106,9 +106,10 @@ std::string SendRequest(const mcp::HttpEndpoint& endpoint, std::string content_l
         "Origin: http://127.0.0.1\r\n"
         "MCP-Protocol-Version: 2026-07-28\r\n"
         "Mcp-Method: server/discover\r\n"
-        "Mcp-Name: test-client\r\n";
+        "Mcp-Name: test-client\r\n"
+        "Connection: close\r\n";
     if (!content_length.empty()) request += "Content-Length: " + std::move(content_length) + "\r\n";
-    request += "Connection: close\r\n\r\n" + body;
+    request += "\r\n" + body;
 
     const SOCKET socket_handle = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     EXPECT_NE(socket_handle, INVALID_SOCKET);

@@ -199,6 +199,7 @@ SourceSpan TrimSpan(std::string_view source, SourceSpan span) {
 
 std::string Unquote(std::string value);
 std::string TrimmedText(std::string_view source, SourceSpan span);
+std::string AnonymousTaskSignature(std::string_view source, const std::vector<SourceSpan>& arguments);
 
 std::vector<CallSpan> ScanCalls(std::string_view source) {
     std::vector<CallSpan> calls;
@@ -256,7 +257,6 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
     }
     std::unordered_map<std::string, int> next_suffix;
     std::unordered_set<std::string> used_ids;
-    std::unordered_map<std::string, std::size_t> next_ordinal;
     for (std::size_t index = 0; index < calls.size(); ++index) {
         CallSpan& call = calls[index];
         if (call.name != "Task_New" || call.arguments.size() < 2) continue;
@@ -271,9 +271,8 @@ std::vector<CallSpan> ScanCalls(std::string_view source) {
                 parent_end = calls[parent].full.end;
             }
         }
-        const std::size_t sibling_ordinal = next_ordinal[call.parent_id]++;
         if (call.id == "-1" || call.id == "anonymous")
-            call.id = AnonymousTaskId(call.parent_id, sibling_ordinal);
+            call.id = AnonymousTaskId(call.parent_id, AnonymousTaskSignature(source, call.arguments));
         call.id = UniqueTaskId(call.id, next_suffix, used_ids);
     }
     return calls;
@@ -285,6 +284,15 @@ std::string SpanText(std::string_view source, SourceSpan span) {
 
 std::string TrimmedText(std::string_view source, SourceSpan span) {
     return SpanText(source, TrimSpan(source, span));
+}
+
+std::string AnonymousTaskSignature(std::string_view source, const std::vector<SourceSpan>& arguments) {
+    std::string signature;
+    for (std::size_t index = 3; index < arguments.size(); ++index) {
+        signature.push_back('|');
+        signature += AnonymousArgumentSignature(TrimmedText(source, arguments[index]));
+    }
+    return signature;
 }
 
 std::string Unquote(std::string value) {

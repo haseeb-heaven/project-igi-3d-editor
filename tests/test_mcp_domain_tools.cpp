@@ -166,7 +166,9 @@ TEST_F(McpDomainToolsTest, KeepsAnonymousIdAcrossInsertedLines) {
     const fs::path qsc = root_ / "missions/location0/level1/objects.qsc";
     std::ifstream input(qsc, std::ios::binary);
     const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    std::ofstream(qsc, std::ios::binary) << "// inserted before an anonymous task\n" << source;
+    std::ofstream(qsc, std::ios::binary)
+        << "Task_New(200, \"Building\", \"Inserted sibling\", 20, 21, 22, 0, 0, 0, \"304_01_1\");\n"
+        << source;
 
     const auto after = service_->ListObjects(1, error);
     ASSERT_TRUE(error.empty()) << error;
@@ -281,6 +283,9 @@ TEST_F(McpDomainToolsTest, UsesListedAnonymousIdsAndRejectsUnknownMutationLayout
         mcp::JsonValue::Object{{"task_id", anonymous_id}, {"model_id", "304_01_1"}}, error);
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_FALSE(anonymous_update.is_null());
+    const auto reread = service_->GetObject(1, anonymous_id, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(reread.at("id").as_string(), anonymous_id);
 
     const auto unknown_update = mcp::CallObjectTool(
         *service_, "object_set_transform",
