@@ -29,6 +29,11 @@ std::string FoldPath(const std::filesystem::path& path) {
     return result;
 }
 
+std::string TrimWin32Component(std::string value) {
+    while (!value.empty() && (value.back() == '.' || value.back() == ' ')) value.pop_back();
+    return value;
+}
+
 bool IsWithin(const std::filesystem::path& prefix, const std::filesystem::path& candidate) {
     const std::string prefix_text = FoldPath(prefix.lexically_normal());
     const std::string candidate_text = FoldPath(candidate.lexically_normal());
@@ -39,7 +44,7 @@ bool IsWithin(const std::filesystem::path& prefix, const std::filesystem::path& 
 
 bool IsMcpBackupPath(const std::filesystem::path& path) {
     for (const auto& component : path) {
-        if (FoldPath(component) == ".mcp-backups") return true;
+        if (TrimWin32Component(FoldPath(component)) == ".mcp-backups") return true;
     }
     return false;
 }
@@ -156,7 +161,7 @@ bool Transaction::CreateBackups(std::string& error) {
     const std::filesystem::path backup_root =
         std::filesystem::path(".mcp-backups") / ("transaction-" + UniqueSuffix(0));
     std::filesystem::path backup_directory;
-    if (!scope_.ResolveRelative(backup_root, backup_directory, error)) return false;
+    if (!scope_.ResolveRelative(backup_root, backup_directory, error, true)) return false;
 
     std::error_code directory_error;
     std::filesystem::create_directories(backup_directory, directory_error);
@@ -290,7 +295,7 @@ bool Transaction::Restore(StagedFile& file, std::size_t sequence, std::string& e
     }
 
     std::filesystem::path backup_root;
-    if (!scope_.ResolveRelative(backup_directory_, backup_root, error)) return false;
+    if (!scope_.ResolveRelative(backup_directory_, backup_root, error, true)) return false;
     if (!CopyToReplacement(backup_root / file.relative_path, file.target_path,
                            UniqueSuffix(sequence), temporary_files_)) {
         error = "rollback_failed";
@@ -378,7 +383,8 @@ bool Transaction::Commit(std::string& error) {
         std::filesystem::path backup_root;
         std::string resolve_error;
         std::error_code cleanup_error;
-        if (!backup_directory_.empty() && scope_.ResolveRelative(backup_directory_, backup_root, resolve_error)) {
+        if (!backup_directory_.empty() &&
+            scope_.ResolveRelative(backup_directory_, backup_root, resolve_error, true)) {
             std::filesystem::remove_all(backup_root, cleanup_error);
             backup_directory_.clear();
         }
@@ -410,7 +416,7 @@ bool Transaction::Commit(std::string& error) {
     }
     if (!options_.backup) {
         std::filesystem::path backup_root;
-        if (!scope_.ResolveRelative(backup_directory_, backup_root, error)) {
+        if (!scope_.ResolveRelative(backup_directory_, backup_root, error, true)) {
             std::string rollback_error;
             Rollback(rollback_error);
             error = "backup_cleanup_failed";

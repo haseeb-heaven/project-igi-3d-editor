@@ -170,6 +170,18 @@ TEST_F(McpHttpIntegrationTest, ServesStatelessDiscoveryWithoutSessionState) {
     EXPECT_NE(response.find("\"protocolVersion\":\"2026-07-28\""), std::string::npos);
 }
 
+TEST_F(McpHttpIntegrationTest, RejectsZeroConnectionLimit) {
+    mcp::GameDataService service(*scope_);
+    mcp::McpServer server(service);
+    mcp::HttpTransport transport;
+    mcp::HttpOptions options;
+    options.max_connections = 0;
+    mcp::HttpEndpoint endpoint;
+    std::string error;
+    EXPECT_FALSE(transport.Start(options, server, endpoint, error));
+    EXPECT_EQ(error, "invalid_max_connections");
+}
+
 TEST_F(McpHttpIntegrationTest, RejectsContentLengthThatDoesNotFitTheTargetSizeType) {
     mcp::GameDataService service(*scope_);
     mcp::McpServer server(service);

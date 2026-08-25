@@ -3,10 +3,12 @@
 #include "../level/qsc_lexer.h"
 #include "../level/qsc_parser.h"
 
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cctype>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -16,16 +18,21 @@
 
 namespace mcp {
 
+inline std::string StableNumberText(double value) {
+    char buffer[128]{};
+    const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+    if (result.ec == std::errc{}) return std::string(buffer, result.ptr);
+
+    std::ostringstream output;
+    output << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+    return output.str();
+}
+
 inline std::string AnonymousArgumentSignature(const qsc::Node& node) {
     std::string signature;
     switch (node.kind) {
-    case qsc::NodeKind::IntLit:
-    case qsc::NodeKind::FloatLit: {
-        std::ostringstream output;
-        output << std::setprecision(9) << static_cast<float>(
-            node.kind == qsc::NodeKind::IntLit ? node.i_val : node.f_val);
-        return output.str();
-    }
+    case qsc::NodeKind::IntLit: return std::to_string(node.i_val);
+    case qsc::NodeKind::FloatLit: return StableNumberText(static_cast<double>(node.f_val));
     case qsc::NodeKind::BoolLit: return node.b_val ? "true" : "false";
     case qsc::NodeKind::StringLit:
     case qsc::NodeKind::IdentLit: return node.s_val;

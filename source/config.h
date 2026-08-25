@@ -13,7 +13,7 @@ struct KeyBinding {
 struct ConfigData {
     // [GamePath]
     int level;
-    // [Marker] - IGI 2 Style Manipulation
+    // [Marker] - Editor Manipulation
     char keySnapGround;
     char keySnapObject;
     char keyRotateAlpha;

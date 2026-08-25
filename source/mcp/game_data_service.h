@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #ifdef GetObject
 #undef GetObject
@@ -35,9 +36,11 @@ public:
 
     const std::filesystem::path& root() const noexcept { return root_; }
     bool ResolveRelative(const std::filesystem::path& relative_path,
-                         std::filesystem::path& resolved_path, std::string& error) const;
+                         std::filesystem::path& resolved_path, std::string& error,
+                         bool allow_internal_backup = false) const;
     bool RelativeToRoot(const std::filesystem::path& path,
                         std::filesystem::path& relative_path, std::string& error) const;
+    bool IsSupportedPath(const std::filesystem::path& relative_path) const;
     bool LevelDirectory(int level, std::filesystem::path& level_directory,
                         std::string& error) const;
 
@@ -50,6 +53,8 @@ private:
 class GameDataService {
 public:
     explicit GameDataService(ProjectScope scope) : scope_(std::move(scope)) {}
+
+    const ProjectScope& scope() const noexcept { return scope_; }
 
     bool OpenLevel(int level, std::string& error);
     bool HasOpenLevel() const;
@@ -71,6 +76,14 @@ public:
     bool IsAvailableAmmoId(std::string_view ammo_id, std::string& error) const;
     JsonValue ValidateLevel(int level, std::string& error) const;
     bool LoadCurrentObjectSource(std::string& source, std::string& error) const;
+    bool LoadProjectText(const std::filesystem::path& relative_path,
+                         std::string& text, std::string& error) const;
+    std::string ProjectRevision(const std::vector<std::filesystem::path>& relative_paths,
+                                std::string& error) const;
+    std::unique_ptr<Transaction> BeginProjectMutation(
+        const MutationOptions& options,
+        const std::vector<std::filesystem::path>& tracked_paths,
+        std::string& error);
     bool SaveCurrentObjectSource(std::string_view source, const MutationOptions& options,
                                  std::string& error);
     std::unique_ptr<Transaction> BeginMutation(const MutationOptions& options,

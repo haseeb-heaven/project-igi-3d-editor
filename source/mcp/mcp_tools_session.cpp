@@ -121,11 +121,13 @@ JsonValue CallSessionTool(GameDataService& service, std::string_view name,
             std::string domain_error;
             if (!service.OpenLevel(level, domain_error))
                 return DomainFailure(error, domain_error);
-            const LevelRevision revision = service.CurrentRevision();
             const JsonValue manifest = service.LevelManifest(level, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
 
-            JsonValue::Object result = RevisionResult(revision).as_object();
+            JsonValue::Object result{
+                {"level", manifest.at("level")},
+                {"revision", manifest.at("revision")},
+            };
             result["opened"] = true;
             result["relative_path"] = manifest.at("relative_path");
             result["manifest"] = manifest;

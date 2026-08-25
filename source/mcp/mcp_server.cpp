@@ -2,10 +2,15 @@
 
 #include "mcp_json_rpc.h"
 #include "mcp_tools_ai.h"
+#include "mcp_tools_audio.h"
+#include "mcp_tools_cutscene.h"
+#include "mcp_tools_strings.h"
 #include "mcp_tools_assets.h"
 #include "mcp_tools_graph.h"
 #include "mcp_tools_mission.h"
 #include "mcp_tools_objects.h"
+#include "mcp_tools_player.h"
+#include "mcp_tools_runtime.h"
 #include "mcp_tools_session.h"
 
 #include <algorithm>
@@ -33,6 +38,21 @@ JsonValue SafeToolError(std::string_view code) {
         {"path_forbidden", "The requested path is outside the configured game data."},
         {"unknown_asset", "The requested asset was not found in the level manifest."},
         {"unknown_graph", "The requested graph was not found in the level manifest."},
+        {"game_already_running", "The MCP-managed game is already running."},
+        {"game_executable_missing", "igi.exe was not found in the configured game root."},
+        {"game_launch_failed", "The game could not be launched through WMI."},
+        {"game_not_running", "The MCP-managed game is not running."},
+        {"game_not_managed", "IGI is already running, but this MCP session did not launch it."},
+        {"game_stop_failed", "The MCP-managed game could not be stopped."},
+        {"game_window_unavailable", "The game window is not available for capture."},
+        {"screenshot_failed", "The game screenshot could not be written."},
+        {"audio_target_missing", "The requested audio destination is not present."},
+        {"audio_read_failed", "The requested audio asset could not be read."},
+        {"audio_invalid", "The staged audio asset is invalid."},
+        {"unknown_string_key", "The requested localized string key was not found."},
+        {"unsupported_format", "The requested table format is not supported safely."},
+        {"table_parse_failed", "The localized table could not be parsed."},
+        {"batch_partial_failure", "A batch operation stopped after a partial write; inspect the returned operation state."},
     };
     const auto it = summaries.find(code);
     return JsonValue::Object{
@@ -103,6 +123,21 @@ std::vector<McpServer::RegisteredTool> McpServer::RegisteredTools() const {
     for (const auto& definition : AiToolDefinitions()) {
         tools.push_back({definition.name, definition.input_schema, "ai"});
     }
+    for (const auto& definition : PlayerToolDefinitions()) {
+        tools.push_back({definition.name, definition.input_schema, "player"});
+    }
+    for (const auto& definition : RuntimeToolDefinitions()) {
+        tools.push_back({definition.name, definition.input_schema, "runtime"});
+    }
+    for (const auto& definition : AudioToolDefinitions()) {
+        tools.push_back({definition.name, definition.input_schema, "audio"});
+    }
+    for (const auto& definition : CutsceneToolDefinitions()) {
+        tools.push_back({definition.name, definition.input_schema, "cutscene"});
+    }
+    for (const auto& definition : StringToolDefinitions()) {
+        tools.push_back({definition.name, definition.input_schema, "strings"});
+    }
     for (const auto& definition : MissionToolDefinitions()) {
         tools.push_back({definition.name, definition.input_schema, "mission"});
     }
@@ -157,6 +192,11 @@ JsonValue McpServer::CallTool(std::string_view name, const JsonValue& arguments,
             if (tool.domain == "session") return CallSessionTool(service_, name, arguments, error);
             if (tool.domain == "objects") return CallObjectTool(service_, name, arguments, error);
             if (tool.domain == "ai") return CallAiTool(service_, name, arguments, error);
+            if (tool.domain == "player") return CallPlayerTool(service_, name, arguments, error);
+            if (tool.domain == "runtime") return CallRuntimeTool(service_, name, arguments, error);
+            if (tool.domain == "audio") return CallAudioTool(service_, name, arguments, error);
+            if (tool.domain == "cutscene") return CallCutsceneTool(service_, name, arguments, error);
+            if (tool.domain == "strings") return CallStringTool(service_, name, arguments, error);
             if (tool.domain == "mission") return CallMissionTool(service_, name, arguments, error);
             if (tool.domain == "graph") return CallGraphTool(service_, name, arguments, error);
             if (tool.domain == "assets") return CallAssetTool(service_, name, arguments, error);

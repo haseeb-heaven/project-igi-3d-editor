@@ -479,59 +479,6 @@ ParsedGeometry ParseCollisionGeometry(const std::vector<uint8_t>& bytes, const s
 }
 
 // ---------------------------------------------------------------------------
-// REIH bone hierarchy — returns vector<BoneInfo>
-// ---------------------------------------------------------------------------
-
-std::vector<BoneInfo> ParseBoneHierarchy(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks) {
-    const ChunkInfo* reih = FindChunk(chunks, "REIH");
-    if (!reih || reih->size < 1) return {};
-
-    const size_t sz       = reih->size;
-    const size_t align    = sz % 13;
-    const size_t numBones = (sz - align) / 13;
-    const size_t p2Offset = reih->data + numBones + align;
-
-    if (numBones == 0 || p2Offset + numBones * 12 > bytes.size()) return {};
-
-    std::vector<BoneInfo> bones(numBones);
-    std::vector<uint8_t> numChildArr(numBones);
-    for (size_t i = 0; i < numBones; ++i) {
-        numChildArr[i]      = bytes[reih->data + i];
-        bones[i].numChild   = numChildArr[i];
-        bones[i].pivot.x    = ReadValue<float>(bytes, p2Offset + i * 12 + 0);
-        bones[i].pivot.y    = ReadValue<float>(bytes, p2Offset + i * 12 + 4);
-        bones[i].pivot.z    = ReadValue<float>(bytes, p2Offset + i * 12 + 8);
-    }
-
-    // Reconstruct parent indices using breadth-first queue logic:
-    // Bones are stored in level-order (BFS) traversal. Each node's children are
-    // assigned to the next consecutive bone IDs in the flat array.
-    bones[0].parent = -1;
-    {
-        // queue stores (boneId, remainingChildren)
-        std::vector<std::pair<int,int>> bfsQueue;
-        bfsQueue.reserve(numBones);
-        bfsQueue.push_back({ 0, static_cast<int>(numChildArr[0]) });
-        size_t head = 0;
-        size_t nextBone = 1;
-        while (head < bfsQueue.size() && nextBone < numBones) {
-            auto& [parentId, remaining] = bfsQueue[head];
-            if (remaining == 0) {
-                ++head;
-                continue;
-            }
-            --remaining;
-            bones[nextBone].parent = parentId;
-            bfsQueue.push_back({ static_cast<int>(nextBone),
-                                  static_cast<int>(numChildArr[nextBone]) });
-            ++nextBone;
-        }
-    }
-
-    return bones;
-}
-
-// ---------------------------------------------------------------------------
 // Helper: compute world positions from BoneInfo (for vertex baking)
 // ---------------------------------------------------------------------------
 
@@ -545,25 +492,6 @@ std::vector<glm::vec3> ComputeBoneWorldPositions(const std::vector<BoneInfo>& bo
         worldPos[i] = acc;
     }
     return worldPos;
-}
-
-// ---------------------------------------------------------------------------
-// MANB bone names
-// ---------------------------------------------------------------------------
-
-std::vector<std::string> ParseManbNames(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks) {
-    const ChunkInfo* manb = FindChunk(chunks, "MANB");
-    if (!manb || manb->size == 0) return {};
-
-    const size_t count = manb->size / 16;
-    std::vector<std::string> names(count);
-    for (size_t i = 0; i < count; ++i) {
-        const size_t base = manb->data + i * 16;
-        size_t len = 0;
-        while (len < 16 && bytes[base + len] != 0) ++len;
-        names[i] = std::string(reinterpret_cast<const char*>(bytes.data() + base), len);
-    }
-    return names;
 }
 
 // ---------------------------------------------------------------------------
@@ -638,41 +566,24 @@ std::vector<XtvmVertex> ParseXtvmVerts(const std::vector<uint8_t>& bytes, const 
     return verts;
 }
 
-std::vector<XtvcVertex> ParseXtvcVerts(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, bool isIgi1) {
-    if (isIgi1) {
-        // XTVC IGI 1: 16 bytes per vertex
-        const size_t stride = 16;
-        const size_t count  = chunk.size / stride;
-        std::vector<XtvcVertex> verts(count);
-        for (size_t i = 0; i < count; ++i) {
-            const size_t base = chunk.data + i * stride;
-            verts[i].px        = ReadValue<float>   (bytes, base + 0);
-            verts[i].py        = ReadValue<float>   (bytes, base + 4);
-            verts[i].pz        = ReadValue<float>   (bytes, base + 8);
-            verts[i].boneIndex = ReadValue<uint32_t>(bytes, base + 12);
-            verts[i].reserved  = 0;
-        }
-        return verts;
-    } else {
-        // XTVC IGI 2: 20 bytes per vertex
-        const size_t stride = 20;
-        const size_t count  = chunk.size / stride;
-        std::vector<XtvcVertex> verts(count);
-        for (size_t i = 0; i < count; ++i) {
-            const size_t base = chunk.data + i * stride;
-            verts[i].px        = ReadValue<float>   (bytes, base + 0);
-            verts[i].py        = ReadValue<float>   (bytes, base + 4);
-            verts[i].pz        = ReadValue<float>   (bytes, base + 8);
-            verts[i].boneIndex = ReadValue<uint32_t>(bytes, base + 12);
-            verts[i].reserved  = ReadValue<uint32_t>(bytes, base + 16);
-        }
-        return verts;
+std::vector<XtvcVertex> ParseXtvcVerts(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    const size_t stride = 16;
+    const size_t count  = chunk.size / stride;
+    std::vector<XtvcVertex> verts(count);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t base = chunk.data + i * stride;
+        verts[i].px        = ReadValue<float>   (bytes, base + 0);
+        verts[i].py        = ReadValue<float>   (bytes, base + 4);
+        verts[i].pz        = ReadValue<float>   (bytes, base + 8);
+        verts[i].boneIndex = ReadValue<uint32_t>(bytes, base + 12);
+        verts[i].reserved  = 0;
     }
+    return verts;
 }
 
-std::vector<EcfcFace> ParseEcfcFaces(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, bool isIgi1) {
-    // ECFC: 8 bytes per face in IGI 1, 12 bytes per face in IGI 2
-    const size_t stride = isIgi1 ? 8 : 12;
+std::vector<EcfcFace> ParseEcfcFaces(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // ECFC: 8 bytes per face in IGI 1.
+    const size_t stride = 8;
     const size_t count  = chunk.size / stride;
     std::vector<EcfcFace> faces(count);
     for (size_t i = 0; i < count; ++i) {
@@ -681,100 +592,36 @@ std::vector<EcfcFace> ParseEcfcFaces(const std::vector<uint8_t>& bytes, const Ch
         faces[i].b   = ReadValue<uint16_t>(bytes, base + 2);
         faces[i].c   = ReadValue<uint16_t>(bytes, base + 4);
         faces[i].mat = ReadValue<uint16_t>(bytes, base + 6);
-        if (!isIgi1) {
-            faces[i].lmp = ReadValue<uint16_t>(bytes, base + 8);
-            faces[i].vrt = ReadValue<uint16_t>(bytes, base + 10);
-        } else {
-            faces[i].lmp = 0;
-            faces[i].vrt = 0;
-        }
+        faces[i].lmp = 0;
+        faces[i].vrt = 0;
     }
     return faces;
 }
 
-std::vector<EcafFace> ParseEcafFaces(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
-    // ECAF: 6 bytes per face
-    const size_t stride = 6;
+std::vector<TamcRecord> ParseTamcRecords(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
+    // TAMC: 12 bytes per record in IGI 1.
+    const size_t stride = 12;
     const size_t count  = chunk.size / stride;
-    std::vector<EcafFace> faces(count);
+    std::vector<TamcRecord> recs(count);
     for (size_t i = 0; i < count; ++i) {
         const size_t base = chunk.data + i * stride;
-        faces[i].a = ReadValue<uint16_t>(bytes, base + 0);
-        faces[i].b = ReadValue<uint16_t>(bytes, base + 2);
-        faces[i].c = ReadValue<uint16_t>(bytes, base + 4);
-    }
-    return faces;
-}
-
-std::vector<DnerRecord> ParseDnerRecords(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk) {
-    // DNER type0/type1: 32 bytes per record
-    const size_t stride = 32;
-    const size_t count  = chunk.size / stride;
-    std::vector<DnerRecord> recs(count);
-    for (size_t i = 0; i < count; ++i) {
-        const size_t base = chunk.data + i * stride;
-        recs[i].opacity     = ReadValue<uint8_t> (bytes, base + 0);
-        recs[i].mshine      = ReadValue<uint8_t> (bytes, base + 1);
-        recs[i].scolor      = ReadValue<uint8_t> (bytes, base + 2);
-        recs[i].opacitd     = ReadValue<uint8_t> (bytes, base + 3);
-        recs[i].px          = ReadValue<float>   (bytes, base + 4);
-        recs[i].py          = ReadValue<float>   (bytes, base + 8);
-        recs[i].pz          = ReadValue<float>   (bytes, base + 12);
-        recs[i].offsetIndex = ReadValue<uint16_t>(bytes, base + 16);
-        recs[i].numFace     = ReadValue<uint16_t>(bytes, base + 18);
-        recs[i].offVerts    = ReadValue<uint16_t>(bytes, base + 20);
-        recs[i].numVerts    = ReadValue<uint16_t>(bytes, base + 22);
-        recs[i].td          = ReadValue<int16_t> (bytes, base + 24);
-        recs[i].tb          = ReadValue<int16_t> (bytes, base + 26);
-        recs[i].tr          = ReadValue<int16_t> (bytes, base + 28);
-        recs[i].trd         = ReadValue<uint8_t> (bytes, base + 30);
-        recs[i].tbd         = ReadValue<uint8_t> (bytes, base + 31);
+        recs[i].opacity  = ReadValue<float>   (bytes, base + 0);
+        recs[i].portal   = ReadValue<uint16_t>(bytes, base + 4);
+        recs[i].diffuse  = ReadValue<int16_t> (bytes, base + 6);
+        recs[i].matId    = ReadValue<int16_t> (bytes, base + 8);
+        recs[i].unknown  = ReadValue<uint16_t>(bytes, base + 10);
+        recs[i].unknown0 = 0;
+        recs[i].unknown1 = 0;
     }
     return recs;
-}
-
-std::vector<TamcRecord> ParseTamcRecords(const std::vector<uint8_t>& bytes, const ChunkInfo& chunk, bool isIgi1) {
-    if (isIgi1) {
-        // TAMC IGI 1: 12 bytes per record
-        const size_t stride = 12;
-        const size_t count  = chunk.size / stride;
-        std::vector<TamcRecord> recs(count);
-        for (size_t i = 0; i < count; ++i) {
-            const size_t base = chunk.data + i * stride;
-            recs[i].opacity  = ReadValue<float>   (bytes, base + 0);
-            recs[i].portal   = ReadValue<uint16_t>(bytes, base + 4);
-            recs[i].diffuse  = ReadValue<int16_t> (bytes, base + 6);
-            recs[i].matId    = ReadValue<int16_t> (bytes, base + 8);
-            recs[i].unknown  = ReadValue<uint16_t>(bytes, base + 10);
-            recs[i].unknown0 = 0;
-            recs[i].unknown1 = 0;
-        }
-        return recs;
-    } else {
-        // TAMC IGI 2: 16 bytes per record
-        const size_t stride = 16;
-        const size_t count  = chunk.size / stride;
-        std::vector<TamcRecord> recs(count);
-        for (size_t i = 0; i < count; ++i) {
-            const size_t base = chunk.data + i * stride;
-            recs[i].opacity  = ReadValue<float>   (bytes, base + 0);
-            recs[i].portal   = ReadValue<uint16_t>(bytes, base + 4);
-            recs[i].diffuse  = ReadValue<int16_t> (bytes, base + 6);
-            recs[i].unknown0 = ReadValue<uint16_t>(bytes, base + 8);
-            recs[i].unknown1 = ReadValue<uint16_t>(bytes, base + 10);
-            recs[i].matId    = ReadValue<int16_t> (bytes, base + 12);
-            recs[i].unknown  = ReadValue<uint16_t>(bytes, base + 14);
-        }
-        return recs;
-    }
 }
 
 ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks, const std::string& filepath = "") {
     ParsedGeometry geometry;
     const ChunkInfo* hsem = FindChunk(chunks, "HSEM");
-    const bool isIgi1 = hsem && (hsem->size == 156);
-    geometry.isIgi1 = isIgi1;
-
+    if (hsem == nullptr || hsem->size != 156) {
+        throw std::runtime_error("Unsupported MEF: IGI 1 HSEM chunk required");
+    }
     const uint32_t modelType = ReadModelType(bytes, chunks);
     geometry.modelType = modelType;
     const D3drInfo d3drInfo = ReadD3drInfo(bytes, chunks, modelType);
@@ -787,27 +634,19 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
         geometry.vertices = ParseRenderVertices(bytes, *xtrv, modelType);
 
         if (modelType == 1) {
-            if (isIgi1) {
-                std::string modelName;
-                if (!filepath.empty()) {
-                    std::string filename = filepath;
-                    size_t lastSlash = filename.find_last_of("\\/");
-                    if (lastSlash != std::string::npos) filename = filename.substr(lastSlash + 1);
-                    size_t lastDot = filename.find_last_of(".");
-                    modelName = (lastDot != std::string::npos) ? filename.substr(0, lastDot) : filename;
-                }
-                uint32_t maxBoneIdx = 0;
-                for (const auto& v : geometry.vertices) {
-                    if (v.boneIndex > maxBoneIdx) maxBoneIdx = v.boneIndex;
-                }
-                geometry.bones = GetIgi1HardcodedBones(modelName, maxBoneIdx);
-            } else {
-                geometry.bones = ParseBoneHierarchy(bytes, chunks);
-                const std::vector<std::string> names = ParseManbNames(bytes, chunks);
-                for (size_t i = 0; i < geometry.bones.size() && i < names.size(); ++i) {
-                    geometry.bones[i].name = names[i];
-                }
+            std::string modelName;
+            if (!filepath.empty()) {
+                std::string filename = filepath;
+                size_t lastSlash = filename.find_last_of("\\/");
+                if (lastSlash != std::string::npos) filename = filename.substr(lastSlash + 1);
+                size_t lastDot = filename.find_last_of(".");
+                modelName = (lastDot != std::string::npos) ? filename.substr(0, lastDot) : filename;
             }
+            uint32_t maxBoneIdx = 0;
+            for (const auto& v : geometry.vertices) {
+                if (v.boneIndex > maxBoneIdx) maxBoneIdx = v.boneIndex;
+            }
+            geometry.bones = GetIgi1HardcodedBones(modelName, maxBoneIdx);
             geometry.attachments = ParseAttachments(bytes, chunks);
 
             // Bake world-space bone offsets into vertex positions
@@ -843,8 +682,7 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
     }
 
     // ---- Parse ASCII-export-specific chunks ----
-    if (isIgi1) {
-        if (dner) {
+    if (dner) {
             // Parse inline DNER & ECAF for IGI 1
             size_t cursor = 0;
             uint32_t accumulatedIndicesCount = 0;
@@ -934,14 +772,6 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
                     cursor += rec.numFace * 2;
                 }
             }
-        }
-    } else {
-        if (dner) {
-            geometry.dnerRecords = ParseDnerRecords(bytes, *dner);
-        }
-        if (ecaf) {
-            geometry.ecafFaces = ParseEcafFaces(bytes, *ecaf);
-        }
     }
 
     // XTVC0, ECFC0, TAMC0 (set 0), XTVC1, ECFC1, TAMC1 (set 1)
@@ -954,12 +784,12 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
     const ChunkInfo* xtvm  = FindChunk(chunks, "XTVM", 0);
     const ChunkInfo* atta  = FindChunk(chunks, "ATTA", 0);
 
-    if (xtvc0) geometry.xtvcVerts  = ParseXtvcVerts (bytes, *xtvc0, isIgi1);
-    if (ecfc0) geometry.ecfcFaces  = ParseEcfcFaces (bytes, *ecfc0, isIgi1);
-    if (tamc0) geometry.tamcRecords= ParseTamcRecords(bytes, *tamc0, isIgi1);
-    if (xtvc1) geometry.xtvcVerts1 = ParseXtvcVerts (bytes, *xtvc1, isIgi1);
-    if (ecfc1) geometry.ecfcFaces1 = ParseEcfcFaces (bytes, *ecfc1, isIgi1);
-    if (tamc1) geometry.tamcRecords1= ParseTamcRecords(bytes, *tamc1, isIgi1);
+    if (xtvc0) geometry.xtvcVerts  = ParseXtvcVerts (bytes, *xtvc0);
+    if (ecfc0) geometry.ecfcFaces  = ParseEcfcFaces (bytes, *ecfc0);
+    if (tamc0) geometry.tamcRecords= ParseTamcRecords(bytes, *tamc0);
+    if (xtvc1) geometry.xtvcVerts1 = ParseXtvcVerts (bytes, *xtvc1);
+    if (ecfc1) geometry.ecfcFaces1 = ParseEcfcFaces (bytes, *ecfc1);
+    if (tamc1) geometry.tamcRecords1= ParseTamcRecords(bytes, *tamc1);
     if (xtvm)  geometry.xtvmVerts  = ParseXtvmVerts (bytes, *xtvm);
     if (atta)  geometry.mefAttachments = ParseMefAttachments(bytes, *atta);
 

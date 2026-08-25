@@ -35,7 +35,7 @@ struct Attachment {
 
 // ---- New structs for ASCII MEF exporter ----
 
-// XTVC type1: 20 bytes per vertex
+// XTVC collision vertices: 16 bytes per vertex in IGI 1
 struct XtvcVertex {
     float    px{0.f}, py{0.f}, pz{0.f};
     uint32_t boneIndex{0};
@@ -57,7 +57,7 @@ struct MefAttachment {
     int32_t boneId;
 };
 
-// ECFC: 12 bytes per face
+// ECFC: 8 bytes per face in IGI 1
 struct EcfcFace {
     uint16_t a{0}, b{0}, c{0};
     uint16_t mat{0};   // material index into TAMC
@@ -84,7 +84,7 @@ struct DnerRecord {
     uint8_t  eflame{0};
 };
 
-// TAMC: 16 bytes per record
+// TAMC: 12 bytes per record in IGI 1
 struct TamcRecord {
     float    opacity{0.f};
     uint16_t portal{0};
@@ -113,7 +113,6 @@ struct ParsedGeometry {
     std::vector<std::array<uint32_t, 3>> triangles;
     std::vector<RenderBlock> renderBlocks;
     bool fromRenderMesh = false;
-    bool isIgi1 = false;
     uint32_t modelType = 0;
     size_t renderBlockCount = 0;
     size_t collisionVertexCount = 0;

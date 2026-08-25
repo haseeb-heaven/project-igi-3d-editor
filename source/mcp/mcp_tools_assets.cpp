@@ -190,7 +190,9 @@ JsonValue AssetDescriptor(const JsonValue& file) {
 }
 
 bool MatchesFormat(const JsonValue& file, std::string_view format) {
-    return AssetFormat(file) == Lower(std::string(format));
+    const std::string requested = Lower(std::string(format));
+    if (requested == "dat") return Extension(file.at("path").as_string()) == "dat";
+    return AssetFormat(file) == requested;
 }
 
 bool IsSupportedFormat(std::string_view format) {

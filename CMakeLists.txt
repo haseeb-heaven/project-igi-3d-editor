@@ -245,6 +245,11 @@ add_executable(igi_tests
     tests/test_mcp_session_tools.cpp
     tests/test_mcp_server.cpp
     tests/test_mcp_domain_tools.cpp
+    tests/test_mcp_player_tools.cpp
+    tests/test_mcp_runtime_tools.cpp
+    tests/test_mcp_audio_tools.cpp
+    tests/test_mcp_string_tools.cpp
+    tests/test_mcp_cutscene_tools.cpp
     tests/test_mcp_http.cpp
     tests/test_qsc_lexer.cpp
     tests/test_qsc_parser.cpp
@@ -297,7 +302,7 @@ if (WIN32)
     set(TESTS_GL_LIB_DIR "${PROJECT_SOURCE_DIR}/third_party/GL/lib/x86")
   endif()
   target_link_directories(igi_tests PRIVATE ${TESTS_GL_LIB_DIR})
-  target_link_libraries(igi_tests PRIVATE gtest_main winmm ws2_32 bcrypt freeglut glew32 OpenGL32)
+  target_link_libraries(igi_tests PRIVATE gtest_main winmm ws2_32 bcrypt freeglut glew32 OpenGL32 gdiplus psapi wbemuuid ole32)
 else()
   target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 endif()
@@ -312,6 +317,11 @@ target_sources(igi_tests PRIVATE
     source/mcp/mcp_transport_http.cpp
     source/mcp/mcp_tools_objects.cpp
     source/mcp/mcp_tools_ai.cpp
+    source/mcp/mcp_tools_player.cpp
+    source/mcp/mcp_tools_runtime.cpp
+    source/mcp/mcp_tools_audio.cpp
+    source/mcp/mcp_tools_strings.cpp
+    source/mcp/mcp_tools_cutscene.cpp
     source/mcp/mcp_tools_mission.cpp
     source/mcp/mcp_tools_graph.cpp
     source/mcp/mcp_tools_assets.cpp
@@ -412,6 +422,11 @@ add_executable(igi_mcp
     source/mcp/mcp_tools_session.cpp
     source/mcp/mcp_tools_objects.cpp
     source/mcp/mcp_tools_ai.cpp
+    source/mcp/mcp_tools_player.cpp
+    source/mcp/mcp_tools_runtime.cpp
+    source/mcp/mcp_tools_audio.cpp
+    source/mcp/mcp_tools_strings.cpp
+    source/mcp/mcp_tools_cutscene.cpp
     source/mcp/mcp_tools_mission.cpp
     source/mcp/mcp_tools_graph.cpp
     source/mcp/mcp_tools_assets.cpp
@@ -422,10 +437,11 @@ add_executable(igi_mcp
     source/level/qvm_compiler.cpp
     source/level/qvm_decompiler.cpp
     source/level/task_schema.cpp
+    source/renderer/res_writer.cpp
 )
 target_include_directories(igi_mcp PRIVATE source)
 if (WIN32)
-    target_link_libraries(igi_mcp PRIVATE ws2_32 bcrypt)
+    target_link_libraries(igi_mcp PRIVATE ws2_32 bcrypt gdiplus psapi wbemuuid ole32)
     set_target_properties(igi_mcp PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${PROJECT_SOURCE_DIR}/bin/Debug"
         RUNTIME_OUTPUT_DIRECTORY_RELEASE "${PROJECT_SOURCE_DIR}/bin/Release"

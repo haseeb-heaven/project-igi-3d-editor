@@ -19,6 +19,7 @@ struct HttpOptions {
     std::string bearer_token;
     std::size_t max_body_bytes = 8u * 1024u * 1024u;
     std::uint32_t receive_timeout_ms = 5000;
+    std::size_t max_connections = 64;
 };
 
 struct HttpEndpoint {

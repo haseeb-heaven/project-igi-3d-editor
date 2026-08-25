@@ -87,7 +87,7 @@ constexpr int MK_JUMP			= FLAG_BIT(6);
 constexpr int MK_ROLL_INC		= FLAG_BIT(7);
 constexpr int MK_ROLL_DEC		= FLAG_BIT(8);
 
-// IGI 2 Style Manipulation Flags
+// Editor manipulation flags
 constexpr int MK_MANIP_A		= FLAG_BIT(10);
 constexpr int MK_MANIP_B		= FLAG_BIT(11);
 constexpr int MK_MANIP_G		= FLAG_BIT(12);

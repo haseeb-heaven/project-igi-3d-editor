@@ -166,6 +166,21 @@ TEST_F(McpTransactionTest, RejectsNestedBackupPath) {
     EXPECT_EQ(error, "path_forbidden");
 }
 
+TEST_F(McpTransactionTest, RejectsWin32NormalizedBackupPathVariants) {
+    std::string error;
+    mcp::Transaction transaction(*scope_, {});
+    EXPECT_FALSE(transaction.Stage(".mcp-backups./escape.qvm", Bytes("bad"), error));
+    EXPECT_EQ(error, "path_forbidden");
+    EXPECT_FALSE(transaction.Stage("missions/location0/level1/.mcp-backups. /escape.qvm",
+                                   Bytes("bad"), error));
+    EXPECT_EQ(error, "path_forbidden");
+
+    fs::path resolved;
+    EXPECT_FALSE(scope_->ResolveRelative("missions/location0/level1/.mcp-backups./escape.qvm",
+                                         resolved, error));
+    EXPECT_EQ(error, "path_forbidden");
+}
+
 TEST_F(McpTransactionTest, RejectsCaseInsensitiveDuplicateTargets) {
     std::string error;
     mcp::Transaction transaction(*scope_, {});

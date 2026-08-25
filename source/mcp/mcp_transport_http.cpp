@@ -16,8 +16,10 @@
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <sstream>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -29,6 +31,19 @@ std::string Lower(std::string value) {
         return static_cast<char>(std::tolower(character));
     });
     return value;
+}
+
+bool ConstantTimeEqual(std::string_view left, std::string_view right) {
+    std::size_t difference = left.size() ^ right.size();
+    const std::size_t count = left.size() > right.size() ? left.size() : right.size();
+    for (std::size_t index = 0; index < count; ++index) {
+        const unsigned char left_byte = index < left.size()
+            ? static_cast<unsigned char>(left[index]) : 0;
+        const unsigned char right_byte = index < right.size()
+            ? static_cast<unsigned char>(right[index]) : 0;
+        difference |= static_cast<std::size_t>(left_byte ^ right_byte);
+    }
+    return difference == 0;
 }
 
 std::string MakeToken() {
@@ -140,8 +155,9 @@ bool HttpTransport::ValidateRequest(const std::string& method, const std::string
         return false;
     }
     const auto authorization = headers.find("authorization");
-    if (authorization == headers.end() || authorization->second != "Bearer " + options.bearer_token ||
-        options.bearer_token.empty()) {
+    const std::string expected_authorization = "Bearer " + options.bearer_token;
+    if (authorization == headers.end() || options.bearer_token.empty() ||
+        !ConstantTimeEqual(authorization->second, expected_authorization)) {
         error = "unauthorized";
         return false;
     }
@@ -187,6 +203,10 @@ bool HttpTransport::Start(const HttpOptions& options, McpServer& server,
 #else
     if (options.host != "127.0.0.1") {
         error = "non_loopback_bind_forbidden";
+        return false;
+    }
+    if (options.max_connections == 0) {
+        error = "invalid_max_connections";
         return false;
     }
     options_ = options;
@@ -235,6 +255,7 @@ bool HttpTransport::Start(const HttpOptions& options, McpServer& server,
 
 void HttpTransport::Stop() noexcept {
 #ifdef _WIN32
+    std::vector<std::thread> connection_workers;
     stopping_.store(true);
     const std::uintptr_t listener_value = listen_socket_.exchange(0);
     if (listener_value != 0) {
@@ -246,11 +267,11 @@ void HttpTransport::Stop() noexcept {
         for (const std::uintptr_t connection_value : active_connections_) {
             shutdown(static_cast<SOCKET>(connection_value), SD_BOTH);
         }
+        connection_workers.swap(connection_workers_);
     }
-    for (std::thread& connection_worker : connection_workers_) {
+    for (std::thread& connection_worker : connection_workers) {
         if (connection_worker.joinable()) connection_worker.join();
     }
-    connection_workers_.clear();
     if (winsock_started_) {
         WSACleanup();
         winsock_started_ = false;
@@ -263,23 +284,37 @@ void HttpTransport::Run(McpServer& server) {
     const SOCKET listener = static_cast<SOCKET>(listen_socket_.load());
     while (!stopping_.load()) {
         const SOCKET connection = accept(listener, nullptr, nullptr);
-        if (connection == INVALID_SOCKET) break;
+        if (connection == INVALID_SOCKET) {
+            if (stopping_.load()) break;
+            const int accept_error = WSAGetLastError();
+            if (accept_error == WSAEINVAL || accept_error == WSAENETDOWN ||
+                accept_error == WSAENOTSOCK || accept_error == WSAEBADF) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
         const DWORD timeout = options_.receive_timeout_ms;
         setsockopt(connection, SOL_SOCKET, SO_RCVTIMEO,
                    reinterpret_cast<const char*>(&timeout), sizeof(timeout));
+        bool accepted = false;
         {
             std::lock_guard<std::mutex> lock(active_mutex_);
-            active_connections_.insert(static_cast<std::uintptr_t>(connection));
-            if (stopping_.load()) shutdown(connection, SD_BOTH);
-        }
-        connection_workers_.emplace_back([this, &server, connection]() {
-            HandleConnection(static_cast<std::uintptr_t>(connection), server);
-            {
-                std::lock_guard<std::mutex> lock(active_mutex_);
-                active_connections_.erase(static_cast<std::uintptr_t>(connection));
+            if (!stopping_.load() && active_connections_.size() < options_.max_connections) {
+                active_connections_.insert(static_cast<std::uintptr_t>(connection));
+                connection_workers_.emplace_back([this, &server, connection]() {
+                    HandleConnection(static_cast<std::uintptr_t>(connection), server);
+                    {
+                        std::lock_guard<std::mutex> lock(active_mutex_);
+                        active_connections_.erase(static_cast<std::uintptr_t>(connection));
+                    }
+                    closesocket(connection);
+                });
+                accepted = true;
             }
+        }
+        if (!accepted) {
+            shutdown(connection, SD_BOTH);
             closesocket(connection);
-        });
+        }
     }
 #else
     (void)server;
@@ -370,12 +405,24 @@ void HttpTransport::HandleConnection(std::uintptr_t connection_value, McpServer&
                                                  "MCP method header does not match request")));
         return;
     }
-    const JsonValue response = server.Handle(body);
-    if (response.is_null()) {
-        SendText(connection, 202, "Accepted", "");
-        return;
+    JsonValue request_id = JsonValue(nullptr);
+    const auto id = body.as_object().find("id");
+    if (id != body.as_object().end() &&
+        (id->second.is_null() || id->second.is_string() || id->second.is_number())) {
+        request_id = id->second;
     }
-    SendText(connection, 200, "OK", JsonStringify(response));
+    try {
+        const JsonValue response = server.Handle(body);
+        if (response.is_null()) {
+            SendText(connection, 202, "Accepted", "");
+            return;
+        }
+        const std::string serialized = JsonStringify(response);
+        SendText(connection, 200, "OK", serialized);
+    } catch (...) {
+        SendText(connection, 200, "OK",
+                 JsonStringify(MakeJsonRpcError(request_id, kInternalError, "internal error")));
+    }
 #else
     (void)connection_value; (void)server;
 #endif

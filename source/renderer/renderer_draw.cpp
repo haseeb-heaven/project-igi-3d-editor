@@ -2015,7 +2015,7 @@ void Renderer::Draw(const draw_params_s &params,
       }
     }
 
-    // ── C2: IGI2-style property panel (left side, replaces tree) ───────────────
+    // ── C2: Property panel (left side, replaces tree) ───────────────────────────
     if (task_tree_view.prop_editor_open_ && task_tree_view.selected_object_index_ >= 0 && task_tree_view.level_objects_) {
       const auto& objects = task_tree_view.level_objects_->GetObjects();
       int sel = task_tree_view.selected_object_index_;

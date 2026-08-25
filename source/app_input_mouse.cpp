@@ -158,7 +158,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				return;
 			}
 			
-			// C2: Property editor click handling (IGI2-style left panel)
+			// C2: Property editor click handling.
 			if (IsEditorInputActive() && prop_editor_open_ && selected_object_index_ >= 0) {
 				auto& objects = level_.GetLevelObjects().GetObjects();
 				if (selected_object_index_ < (int)objects.size()) {

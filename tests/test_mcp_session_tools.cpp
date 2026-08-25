@@ -57,6 +57,7 @@ TEST_F(McpSessionToolsTest, OpensReloadsAndValidatesTheCurrentLevel) {
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_TRUE(open.at("opened").as_bool());
     EXPECT_EQ(open.at("relative_path").as_string(), "missions/location0/level1");
+    EXPECT_EQ(open.at("revision").as_string(), open.at("manifest").at("revision").as_string());
 
     const auto reload = mcp::CallSessionTool(
         service, "level_reload", mcp::JsonValue::Object{}, error);

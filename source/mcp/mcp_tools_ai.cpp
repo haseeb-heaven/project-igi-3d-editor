@@ -530,6 +530,13 @@ ToolDefinitionList AiToolDefinitions() {
     JsonValue::Object loadout{{"task_id", StringSchema()}, {"loadout", JsonValue::Object{
         {"type", JsonValue("array")}, {"items", loadout_item}}}};
     AddMutationSchemaProperties(loadout);
+    const JsonValue batch_item = ObjectSchema(
+        JsonValue::Object{{"task_id", StringSchema()}, {"loadout", JsonValue::Object{
+            {"type", JsonValue("array")}, {"minItems", JsonValue(1)}, {"items", loadout_item}}}},
+        {"task_id", "loadout"});
+    JsonValue::Object batch{{"operations", JsonValue::Object{
+        {"type", JsonValue("array")}, {"minItems", JsonValue(1)}, {"items", batch_item}}}};
+    AddMutationSchemaProperties(batch);
     JsonValue::Object pickup{{"task_id", StringSchema()}, {"fields", FieldsSchema({"weapon_id", "ammo_id", "count"})}};
     AddMutationSchemaProperties(pickup);
     return ToolDefinitionList{
@@ -540,6 +547,7 @@ ToolDefinitionList AiToolDefinitions() {
         {"ai_compile_script", ObjectSchema(std::move(compile_script), {"source"})},
         {"ai_list_weapons", ObjectSchema(std::move(list_weapons))},
         {"ai_set_weapon_loadout", ObjectSchema(std::move(loadout), {"task_id", "loadout"})},
+        {"ai_batch_set_loadout", ObjectSchema(std::move(batch), {"operations"})},
         {"pickup_create_or_update", ObjectSchema(std::move(pickup), {"task_id", "fields"})},
     };
 }
@@ -660,20 +668,30 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             for (const auto& [field, value] : arguments.at("fields").as_object()) {
                 if (field == "ai_type") {
                     std::string ai_type;
-                    if (type != "HumanAI" || !ReadString(value, ai_type, 256) ||
-                        !AddArgumentPatch(*call, 3, QuoteQsc(ai_type), patches))
+                    if (type != "HumanAI") return Failure(error, "unsupported_operation");
+                    if (!ReadString(value, ai_type, 256))
+                        return Failure(error, "invalid_arguments");
+                    if (!AddArgumentPatch(*call, 3, QuoteQsc(ai_type), patches))
                         return Failure(error, "unsupported_operation");
                 } else if (field == "graph_id") {
                     std::int64_t graph_id = 0;
-                    if (type != "HumanAI" || !ReadInteger(value, graph_id, 0, std::numeric_limits<std::int32_t>::max()) ||
-                        !GraphIdExists(service, level, graph_id, domain_error) ||
-                        !AddArgumentPatch(*call, 4, std::to_string(graph_id), patches))
+                    if (type != "HumanAI") return Failure(error, "unsupported_operation");
+                    if (!ReadInteger(value, graph_id, 0, std::numeric_limits<std::int32_t>::max()))
+                        return Failure(error, "invalid_arguments");
+                    if (!GraphIdExists(service, level, graph_id, domain_error)) {
+                        if (!domain_error.empty()) return DomainFailure(error, domain_error);
+                        return Failure(error, "unknown_graph");
+                    }
+                    if (!AddArgumentPatch(*call, 4, std::to_string(graph_id), patches))
                         return Failure(error, "unsupported_operation");
                 } else if (field == "team") {
                     std::int64_t team = 0;
-                    if ((type != "HumanSoldier" && type != "HumanSoldierFemale" && type != "HumanPlayer") ||
-                        !ReadInteger(value, team, std::numeric_limits<std::int32_t>::min(), std::numeric_limits<std::int32_t>::max()) ||
-                        !AddArgumentPatch(*call, 8, std::to_string(team), patches))
+                    if (type != "HumanSoldier" && type != "HumanSoldierFemale" && type != "HumanPlayer")
+                        return Failure(error, "unsupported_operation");
+                    if (!ReadInteger(value, team, std::numeric_limits<std::int32_t>::min(),
+                                     std::numeric_limits<std::int32_t>::max()))
+                        return Failure(error, "invalid_arguments");
+                    if (!AddArgumentPatch(*call, 8, std::to_string(team), patches))
                         return Failure(error, "unsupported_operation");
                 }
             }
@@ -708,7 +726,10 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             const JsonValue parent = service.GetObject(level, parent_id, domain_error);
             if (!domain_error.empty()) return DomainFailure(error, domain_error);
             if (!IsWritableObject(parent)) return Failure(error, "ambiguous_task_id");
-            if (parent.at("type").as_string() != "HumanSoldier" && parent.at("type").as_string() != "HumanSoldierFemale" &&
+            if (parent.at("type").as_string() != "HumanSoldier" &&
+                parent.at("type").as_string() != "HumanSoldierFemale" &&
+                parent.at("type").as_string() != "HumanSoldierRPG" &&
+                parent.at("type").as_string() != "HumanAI" &&
                 parent.at("type").as_string() != "HumanPlayer") return Failure(error, "unsupported_operation");
             std::string source;
             if (!service.LoadCurrentObjectSource(source, domain_error)) return DomainFailure(error, domain_error);
@@ -782,6 +803,59 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             return result;
         }
 
+        if (name == "ai_batch_set_loadout") {
+            if (!HasOnlyKeys(arguments, {"operations", "dry_run", "backup", "expected_revision"}) ||
+                !arguments.contains("operations") || !arguments.at("operations").is_array() ||
+                arguments.at("operations").as_array().empty()) return Failure(error, "invalid_arguments");
+            for (const auto& operation : arguments.at("operations").as_array()) {
+                if (!HasOnlyKeys(operation, {"task_id", "loadout"}) ||
+                    !operation.contains("task_id") || !operation.contains("loadout") ||
+                    !operation.at("loadout").is_array() || operation.at("loadout").as_array().empty())
+                    return Failure(error, "invalid_arguments");
+            }
+            MutationOptions options;
+            if (!ReadMutationOptions(arguments, options)) return Failure(error, "invalid_arguments");
+            JsonValue::Array preview;
+            for (const auto& operation : arguments.at("operations").as_array()) {
+                JsonValue::Object preview_arguments = operation.as_object();
+                preview_arguments["dry_run"] = true;
+                preview_arguments["backup"] = false;
+                if (arguments.contains("expected_revision"))
+                    preview_arguments["expected_revision"] = arguments.at("expected_revision");
+                std::string preview_error;
+                const JsonValue result = CallAiTool(service, "ai_set_weapon_loadout",
+                                                    preview_arguments, preview_error);
+                if (!preview_error.empty()) {
+                    error = preview_error;
+                    return JsonValue(nullptr);
+                }
+                preview.emplace_back(result);
+            }
+            if (options.dry_run) {
+                return JsonValue::Object{{"tool", "ai_batch_set_loadout"}, {"dry_run", true},
+                                         {"operations", std::move(preview)}};
+            }
+            JsonValue::Array applied;
+            bool first = true;
+            for (const auto& operation : arguments.at("operations").as_array()) {
+                JsonValue::Object applied_arguments = operation.as_object();
+                applied_arguments["backup"] = options.backup;
+                if (first && arguments.contains("expected_revision"))
+                    applied_arguments["expected_revision"] = arguments.at("expected_revision");
+                first = false;
+                std::string applied_error;
+                const JsonValue result = CallAiTool(service, "ai_set_weapon_loadout",
+                                                    applied_arguments, applied_error);
+                if (!applied_error.empty()) {
+                    error = "batch_partial_failure";
+                    return JsonValue(nullptr);
+                }
+                applied.emplace_back(result);
+            }
+            return JsonValue::Object{{"tool", "ai_batch_set_loadout"}, {"dry_run", false},
+                                     {"operations", std::move(applied)}};
+        }
+
         if (name == "pickup_create_or_update") {
             if (!HasOnlyKeys(arguments, {"level", "task_id", "fields", "dry_run", "backup", "expected_revision"}) ||
                 !arguments.contains("fields") || !HasOnlyKeys(arguments.at("fields"), {"weapon_id", "ammo_id", "count"}) ||
@@ -806,20 +880,28 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             if (!call) return Failure(error, "unsupported_operation");
             std::vector<Patch> patches;
             for (const auto& [field, value] : arguments.at("fields").as_object()) {
-                if (field == "weapon_id" || field == "ammo_id") {
+                if (field == "weapon_id") {
                     std::string id;
-                    const bool valid_id = field == "weapon_id" ? ReadWeaponId(value, id) :
-                        (ReadString(value, id, 64) && id.starts_with("AMMO_ID_"));
-                    const bool known_id = valid_id && (field == "weapon_id"
-                        ? service.IsAvailableWeaponId(id, domain_error)
-                        : service.IsAvailableAmmoId(id, domain_error));
-                    if (!known_id || (field == "weapon_id" && type != "GunPickup") ||
-                        (field == "ammo_id" && type != "AmmoPickup") || !AddArgumentPatch(*call, 9, QuoteQsc(id), patches))
+                    if (type != "GunPickup") return Failure(error, "unsupported_operation");
+                    if (!ReadWeaponId(value, id)) return Failure(error, "invalid_arguments");
+                    if (!service.IsAvailableWeaponId(id, domain_error))
+                        return DomainFailure(error, domain_error);
+                    if (!AddArgumentPatch(*call, 9, QuoteQsc(id), patches))
+                        return Failure(error, "unsupported_operation");
+                } else if (field == "ammo_id") {
+                    std::string id;
+                    if (type != "AmmoPickup") return Failure(error, "unsupported_operation");
+                    if (!ReadString(value, id, 64) || !id.starts_with("AMMO_ID_"))
+                        return Failure(error, "invalid_arguments");
+                    if (!service.IsAvailableAmmoId(id, domain_error))
+                        return DomainFailure(error, domain_error);
+                    if (!AddArgumentPatch(*call, 9, QuoteQsc(id), patches))
                         return Failure(error, "unsupported_operation");
                 } else if (field == "count") {
                     std::int64_t count = 0;
-                    if (!ReadInteger(value, count, 0, std::numeric_limits<std::int16_t>::max()) ||
-                        !AddArgumentPatch(*call, 10, std::to_string(count), patches))
+                    if (!ReadInteger(value, count, 0, std::numeric_limits<std::int16_t>::max()))
+                        return Failure(error, "invalid_arguments");
+                    if (!AddArgumentPatch(*call, 10, std::to_string(count), patches))
                         return Failure(error, "unsupported_operation");
                 }
             }

@@ -36,12 +36,16 @@ protected:
         std::ofstream(level / "objects.qsc", std::ios::binary)
         << "Task_New(100, \"Building\", \"Hangar\", 1, 2, 3, 0, 0, 0, \"300_01_1\");\n"
            "Task_DeclareParameters(\"Real64Task\", \"Value\", \"Real64\");\n"
+           "Task_DeclareParameters(\"CustomLayoutTask\", \"Position\", \"Real64x3\", \"Model\", \"String16\");\n"
            "Task_New(160, \"Real64Task\", \"Precision\", 0.123456789012);\n"
+           "Task_New(161, \"CustomLayoutTask\", \"Layout\", 1, 2, 3, \"302_01_1\");\n"
            "Task_New(101, \"HumanSoldier\", \"Guard\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0);\n"
-               "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
+           "Task_New(101, \"HumanSoldier\", \"Guard duplicate\", 14, 15, 16, 0, \"200_01_2\", 0, -1, 0);\n"
+           "Task_New(103, \"HumanSoldier\", \"Unique guard\", 24, 25, 26, 0, \"200_01_4\", 0, -1, 0);\n"
                "Task_New(-1, \"HumanSoldier\", \"Anonymous guard\", 17, 18, 19, 0, \"200_01_3\", 0, -1, 0);\n"
                "Task_New(-1, \"Building\", \"Anonymous\", 7, 8, 9, 0, 0, 0, \"302_01_1\"); Task_New(-1, \"Building\", \"Anonymous duplicate\", 7, 8, 9, 0, 0, 0, \"302_01_1\");\n"
                "Task_New(150, \"HumanSoldier\", \"Loadout\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0, Task_New(151, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZI\"), Task_New(152, \"GunUzi\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZIX2\"));\n"
+               "Task_New(170, \"HumanSoldierRPG\", \"Sniper\", 4, 5, 6, 0, \"200_01_1\", 0, -1, 0, Task_New(171, \"GunRPG\", \"\", 4, 5, 6, 0, 0, 0, \"WEAPON_ID_UZI\"));\n"
                "Task_New(102, \"UnknownTask\", \"Unknown\", 1, 2, 3, 0, 0, 0, \"303_01_1\");\n"
                "DefineComputerObjective(1, 0, 0, \"TRUE\", \"obj.text\", 100, \"TRUE\", \"FALSE\");\n";
         std::string open_error;
@@ -300,6 +304,18 @@ TEST(McpTaskIdTest, PreservesNestedArgumentIdentityInSignatures) {
               mcp::AnonymousArgumentSignature("Call(2)"));
     EXPECT_NE(mcp::AnonymousArgumentSignature("1 + 2"),
               mcp::AnonymousArgumentSignature("1 + 3"));
+    EXPECT_NE(mcp::AnonymousArgumentSignature("16777216"),
+              mcp::AnonymousArgumentSignature("16777217"));
+}
+
+TEST_F(McpDomainToolsTest, ReturnsInvalidArgumentsForMalformedAiFields) {
+    std::string error;
+    const auto result = mcp::CallAiTool(
+        *service_, "ai_update",
+        mcp::JsonValue::Object{{"task_id", "103"},
+                               {"fields", mcp::JsonValue::Object{{"team", "three"}}}}, error);
+    EXPECT_TRUE(result.is_null());
+    EXPECT_EQ(error, "invalid_arguments");
 }
 
 TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
@@ -335,6 +351,46 @@ TEST_F(McpDomainToolsTest, ReturnsBeforeAndAfterForWeaponLoadoutDryRun) {
     EXPECT_EQ(result.at("after").at("children").as_array()[1].as_string(), "152");
 }
 
+TEST_F(McpDomainToolsTest, SupportsRpgEnemyWeaponLoadouts) {
+    std::string error;
+    const auto result = mcp::CallAiTool(
+        *service_, "ai_set_weapon_loadout",
+        mcp::JsonValue::Object{
+            {"task_id", "170"},
+            {"loadout", mcp::JsonValue::Array{
+                mcp::JsonValue::Object{{"task_id", "171"}, {"weapon_id", "WEAPON_ID_UZIX2"}}}},
+            {"dry_run", true},
+        }, error);
+    ASSERT_TRUE(error.empty()) << error;
+    ASSERT_TRUE(result.at("after").at("loadout").is_array());
+    EXPECT_EQ(result.at("after").at("loadout").as_array()[0].at("object")
+                  .at("args").as_array().back().as_string(), "WEAPON_ID_UZIX2");
+}
+
+TEST_F(McpDomainToolsTest, BatchLoadoutPreflightsAllOperations) {
+    std::string error;
+    const auto result = mcp::CallAiTool(
+        *service_, "ai_batch_set_loadout",
+        mcp::JsonValue::Object{
+            {"operations", mcp::JsonValue::Array{
+                mcp::JsonValue::Object{
+                    {"task_id", "150"},
+                    {"loadout", mcp::JsonValue::Array{
+                        mcp::JsonValue::Object{{"task_id", "151"}, {"weapon_id", "WEAPON_ID_UZI"}}}}},
+                mcp::JsonValue::Object{
+                    {"task_id", "170"},
+                    {"loadout", mcp::JsonValue::Array{
+                        mcp::JsonValue::Object{{"task_id", "171"}, {"weapon_id", "WEAPON_ID_UZIX2"}}}}}}},
+            {"dry_run", true},
+        }, error);
+    ASSERT_TRUE(error.empty()) << error;
+    ASSERT_TRUE(result.at("dry_run").as_bool());
+    ASSERT_EQ(result.at("operations").as_array().size(), 2u);
+    const auto object = service_->GetObject(1, "171", error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(object.at("args").as_array().back().as_string(), "WEAPON_ID_UZI");
+}
+
 TEST_F(McpDomainToolsTest, RejectsUnknownPropertiesForReservedMutationTools) {
     std::string error;
     const auto graph = mcp::CallGraphTool(
@@ -365,10 +421,31 @@ TEST_F(McpDomainToolsTest, ExposesAiMissionGraphAndAssetReadOnlyOperations) {
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_TRUE(graphs.at("graphs").is_array());
 
+    std::error_code file_error;
+    fs::create_directories(root_ / "missions/location0/level1/graphs", file_error);
+    ASSERT_FALSE(file_error) << file_error.message();
+    std::ofstream(root_ / "missions/location0/level1/graphs/graph1.dat", std::ios::binary)
+        << "graph";
     const auto assets = mcp::CallAssetTool(
-        *service_, "asset_list", mcp::JsonValue::Object{}, error);
+        *service_, "asset_list", mcp::JsonValue::Object{{"format", "dat"}}, error);
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_TRUE(assets.at("assets").is_array());
+    bool found_graph_dat = false;
+    for (const auto& asset : assets.at("assets").as_array()) {
+        if (asset.at("path").as_string().ends_with("/graphs/graph1.dat")) {
+            found_graph_dat = true;
+            EXPECT_EQ(asset.at("format").as_string(), "graph");
+        }
+    }
+    EXPECT_TRUE(found_graph_dat);
+}
+
+TEST_F(McpDomainToolsTest, UsesCanonicalSchemaArgumentCounts) {
+    std::string error;
+    const auto object = service_->GetObject(1, "161", error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_TRUE(object.is_object());
+    EXPECT_TRUE(object.at("position").as_array().empty());
 }
 
 TEST_F(McpDomainToolsTest, UsesListedAnonymousIdsAndRejectsUnknownMutationLayouts) {

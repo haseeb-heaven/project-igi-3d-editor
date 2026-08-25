@@ -454,8 +454,8 @@ void App::DispatchEventBindings() {
 	if (Check("SaveState")) {
 		SaveCurrentLevel();
 		int lvl = level_.GetLevelNo();
-		status_message_ = "Save level: LOCAL:missions/location" + std::to_string(lvl) +
-		                  "/level" + std::to_string(lvl) + "/objects.qsc";
+		status_message_ = "Save level: LOCAL:missions/location0/level" +
+		                  std::to_string(lvl) + "/objects.qsc";
 		return;
 	}
 	if (Check("SaveObjectFile")) {
@@ -469,8 +469,8 @@ void App::DispatchEventBindings() {
 		// (Whole-level save/compile lives in the pause menu.)
 		int lvl = level_.GetLevelNo();
 		file_dialog_mode_  = FileDialogMode::SaveObjectFile;
-		file_dialog_path_  = "missions/location" + std::to_string(lvl) +
-		                     "/level" + std::to_string(lvl) + "/objects.qsc";
+		file_dialog_path_  = "missions/location0/level" +
+		                     std::to_string(lvl) + "/objects.qsc";
 		file_dialog_caret_ = (int)file_dialog_path_.size();
 		return;
 	}

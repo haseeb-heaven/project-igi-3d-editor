@@ -318,9 +318,7 @@ bool ParseScalar(std::string_view text, Scalar& result) {
 
 std::string StableScalarText(const Scalar& value) {
     if (value.kind == Scalar::Kind::Number) {
-        std::ostringstream output;
-        output << std::setprecision(9) << static_cast<float>(value.number);
-        return output.str();
+        return StableNumberText(value.number);
     }
     if (value.kind == Scalar::Kind::Boolean) return value.boolean ? "true" : "false";
     return value.text;
@@ -698,20 +696,20 @@ bool ApplyReplacements(std::string& source, std::vector<Replacement>& replacemen
 
 bool CurrentLevel(GameDataService& service, const JsonValue& arguments, int& level,
                   std::string& error) {
-    if (!service.HasOpenLevel()) {
-        error = "level_not_open";
-        return false;
-    }
+    LevelRevision current_revision;
     try {
-        level = service.CurrentRevision().level;
+        current_revision = service.CurrentRevision();
     } catch (...) {
         error = "level_not_open";
         return false;
     }
-    if (arguments.contains("level") && (!ReadInteger(arguments.at("level"), level) ||
-                                         level != service.CurrentRevision().level)) {
-        error = "invalid_arguments";
-        return false;
+    level = current_revision.level;
+    if (arguments.contains("level")) {
+        int requested = 0;
+        if (!ReadInteger(arguments.at("level"), requested) || requested != current_revision.level) {
+            error = "invalid_arguments";
+            return false;
+        }
     }
     error.clear();
     return true;

@@ -40,8 +40,21 @@ int StdioTransport::Run(McpServer& server) const {
                                                         "invalid JSON")) << '\n' << std::flush;
             continue;
         }
-        const JsonValue response = server.Handle(request);
-        if (!response.is_null()) std::cout << JsonStringify(response) << '\n' << std::flush;
+        JsonValue request_id = JsonValue(nullptr);
+        if (request.is_object()) {
+            const auto id = request.as_object().find("id");
+            if (id != request.as_object().end() &&
+                (id->second.is_null() || id->second.is_string() || id->second.is_number())) {
+                request_id = id->second;
+            }
+        }
+        try {
+            const JsonValue response = server.Handle(request);
+            if (!response.is_null()) std::cout << JsonStringify(response) << '\n' << std::flush;
+        } catch (...) {
+            std::cout << JsonStringify(MakeJsonRpcError(request_id, kInternalError, "internal error"))
+                      << '\n' << std::flush;
+        }
     }
     return 0;
 }

@@ -35,30 +35,9 @@ namespace {
 
 std::vector<std::filesystem::path> MissionDirectoryCandidatesFor(int mission_id) {
     std::vector<std::filesystem::path> candidates;
-    // IGI1 retail data uses missions/location0/level1 through level14. The
-    // numbered locations are retained as a compatibility layout used by the
-    // editor's documented campaign fixtures.
     if (mission_id >= 1 && mission_id <= 14) {
         candidates.emplace_back(std::filesystem::path("missions") / "location0" /
                                 ("level" + std::to_string(mission_id)));
-    }
-    if (mission_id >= 11 && mission_id <= 17)
-        candidates.emplace_back(std::filesystem::path("missions") / "location1" /
-                                ("level" + std::to_string(mission_id - 10)));
-    if (mission_id >= 21 && mission_id <= 26)
-        candidates.emplace_back(std::filesystem::path("missions") / "location2" /
-                                ("level" + std::to_string(mission_id - 20)));
-    if (mission_id >= 31 && mission_id <= 36)
-        candidates.emplace_back(std::filesystem::path("missions") / "location3" /
-                                ("level" + std::to_string(mission_id - 30)));
-    switch (mission_id) {
-    case 1: candidates.emplace_back("missions/multiplayer/redstone"); break;
-    case 2: candidates.emplace_back("missions/multiplayer/forestraid"); break;
-    case 3: candidates.emplace_back("missions/multiplayer/sandstorm"); break;
-    case 4: candidates.emplace_back("missions/multiplayer/timberland"); break;
-    case 5: candidates.emplace_back("missions/multiplayer/chinesetemple"); break;
-    case 8: candidates.emplace_back("missions/multiplayer/jungle"); break;
-    default: break;
     }
     return candidates;
 }
@@ -69,6 +48,11 @@ std::string FoldPath(const std::filesystem::path& path) {
         return static_cast<char>(std::tolower(value));
     });
     return result;
+}
+
+std::string TrimWin32Component(std::string value) {
+    while (!value.empty() && (value.back() == '.' || value.back() == ' ')) value.pop_back();
+    return value;
 }
 
 bool IsWithinRoot(const std::filesystem::path& root, const std::filesystem::path& candidate) {
@@ -110,7 +94,7 @@ bool ContainsReparsePoint(const std::filesystem::path& root,
 
 bool IsMcpBackupPath(const std::filesystem::path& path) {
     for (const auto& component : path) {
-        if (FoldPath(component) == ".mcp-backups") return true;
+        if (TrimWin32Component(FoldPath(component)) == ".mcp-backups") return true;
     }
     return false;
 }
@@ -152,6 +136,48 @@ bool ReadBoundedText(const std::filesystem::path& file, std::string& text, std::
     }
     error.clear();
     return true;
+}
+
+std::string CalculateTrackedRevision(
+    const ProjectScope& scope,
+    const std::vector<std::filesystem::path>& relative_paths,
+    std::string& error) {
+    std::vector<std::filesystem::path> normalized_paths;
+    normalized_paths.reserve(relative_paths.size());
+    for (const auto& relative_path : relative_paths) {
+        std::filesystem::path absolute_path;
+        if (!scope.ResolveRelative(relative_path, absolute_path, error)) return {};
+        if (!std::filesystem::is_regular_file(absolute_path)) {
+            error = "file_not_found";
+            return {};
+        }
+        std::filesystem::path normalized;
+        if (!scope.RelativeToRoot(absolute_path, normalized, error)) return {};
+        normalized_paths.push_back(std::move(normalized));
+    }
+
+    std::sort(normalized_paths.begin(), normalized_paths.end(),
+              [](const auto& left, const auto& right) {
+                  return FoldPath(left) < FoldPath(right);
+              });
+
+    std::uint64_t hash = 14695981039346656037ull;
+    for (const auto& relative_path : normalized_paths) {
+        std::filesystem::path absolute_path;
+        if (!scope.ResolveRelative(relative_path, absolute_path, error)) return {};
+        Mix(hash, relative_path.generic_string());
+        Mix(hash, std::string_view("\0", 1));
+        if (!HashFile(absolute_path, hash)) {
+            error = "revision_failed";
+            return {};
+        }
+        Mix(hash, std::string_view("\0", 1));
+    }
+
+    std::ostringstream fingerprint;
+    fingerprint << std::hex << std::setw(16) << std::setfill('0') << hash;
+    error.clear();
+    return fingerprint.str();
 }
 
 bool IsAvailableCatalogId(const ProjectScope& scope, std::string_view value,
@@ -228,7 +254,7 @@ bool LoadObjectQsc(const ProjectScope& scope, const std::filesystem::path& level
 std::string ScalarStableText(const qsc::Node& node) {
     switch (node.kind) {
     case qsc::NodeKind::IntLit: return std::to_string(node.i_val);
-    case qsc::NodeKind::FloatLit: return std::to_string(node.f_val);
+    case qsc::NodeKind::FloatLit: return StableNumberText(static_cast<double>(node.f_val));
     case qsc::NodeKind::BoolLit: return node.b_val ? "true" : "false";
     case qsc::NodeKind::StringLit:
     case qsc::NodeKind::IdentLit: return node.s_val;
@@ -323,13 +349,6 @@ struct SnapshotRecord {
     bool ambiguous = false;
 };
 
-int McpTypeArgCount(std::string_view type) {
-    return type == "ObjectPos" || type == "Real32x3" || type == "Real64x3" ||
-                   type == "Real32x9" || type == "RGB" || type == "Colour"
-               ? 3
-               : 1;
-}
-
 void RegisterDeclaredSchemas(const qsc::Node& node) {
     if (node.kind == qsc::NodeKind::Call && node.s_val == "Task_DeclareParameters" &&
         !node.children.empty()) {
@@ -345,7 +364,7 @@ void RegisterDeclaredSchemas(const qsc::Node& node) {
                 field.name = arguments[index];
                 field.typeName = arguments[index + 1];
                 field.argOffset = offset;
-                field.argCount = McpTypeArgCount(field.typeName);
+                field.argCount = TaskSchemaNS::TypeArgCount(field.typeName);
                 offset += field.argCount;
                 schema.push_back(std::move(field));
             }
@@ -521,9 +540,14 @@ std::optional<ProjectScope> ProjectScope::Open(const std::filesystem::path& proj
 
 bool ProjectScope::ResolveRelative(const std::filesystem::path& relative_path,
                                    std::filesystem::path& resolved_path,
-                                   std::string& error) const {
+                                   std::string& error,
+                                   bool allow_internal_backup) const {
     if (relative_path.empty() || relative_path.is_absolute() || relative_path.has_root_name() ||
         HasTraversal(relative_path)) {
+        error = "path_forbidden";
+        return false;
+    }
+    if (!allow_internal_backup && IsMcpBackupPath(relative_path)) {
         error = "path_forbidden";
         return false;
     }
@@ -569,6 +593,22 @@ bool ProjectScope::RelativeToRoot(const std::filesystem::path& path,
     return true;
 }
 
+bool ProjectScope::IsSupportedPath(const std::filesystem::path& relative_path) const {
+    if (relative_path.empty() || relative_path.is_absolute() || relative_path.has_root_name() ||
+        HasTraversal(relative_path)) {
+        return false;
+    }
+
+    const std::filesystem::path normalized = relative_path.lexically_normal();
+    auto component = normalized.begin();
+    if (component == normalized.end() || FoldPath(*component) != "missions") return true;
+    ++component;
+    if (component == normalized.end()) return true;
+
+    const std::string mission_layout = FoldPath(*component);
+    return mission_layout == "location0";
+}
+
 bool ProjectScope::LevelDirectory(int level, std::filesystem::path& level_directory,
                                   std::string& error) const {
     const std::vector<std::filesystem::path> candidates = MissionDirectoryCandidatesFor(level);
@@ -577,19 +617,7 @@ bool ProjectScope::LevelDirectory(int level, std::filesystem::path& level_direct
         return false;
     }
 
-    std::vector<std::filesystem::path> ordered_candidates = candidates;
-    std::filesystem::path igi2_manifest;
-    std::string manifest_error;
-    const bool is_igi2 = ResolveRelative("missions/igi2.qvm", igi2_manifest, manifest_error) &&
-                         std::filesystem::is_regular_file(igi2_manifest);
-    if (is_igi2) {
-        std::stable_partition(ordered_candidates.begin(), ordered_candidates.end(),
-                              [](const auto& candidate) {
-                                  return candidate.generic_string().starts_with("missions/multiplayer/");
-                              });
-    }
-
-    for (const auto& mission_path : ordered_candidates) {
+    for (const auto& mission_path : candidates) {
         std::filesystem::path candidate_directory;
         std::string candidate_error;
         if (!ResolveRelative(mission_path, candidate_directory, candidate_error)) continue;
@@ -707,12 +735,6 @@ JsonValue GameDataService::ProjectInfo() const {
     JsonValue::Object info;
     info["schema_version"] = "1";
     info["project_type"] = "igi1";
-    std::filesystem::path igi2_manifest;
-    std::string ignored;
-    if (scope_.ResolveRelative("missions/igi2.qvm", igi2_manifest, ignored) &&
-        std::filesystem::is_regular_file(igi2_manifest)) {
-        info["project_type"] = "igi2";
-    }
     info["root_kind"] = "configured_game_root";
     info["protocol_profile"] = "2026-07-28";
     info["game_data_only"] = true;
@@ -736,8 +758,7 @@ bool GameDataService::HasOpenLevel() const {
 JsonValue GameDataService::ListLevels(std::string& error) const {
     std::lock_guard<std::mutex> lock(*mutation_mutex_);
     static constexpr int kMissionIds[] = {
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-        21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 35, 36};
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
     JsonValue::Array levels;
     for (const int level : kMissionIds) {
         std::filesystem::path directory;
@@ -746,12 +767,7 @@ JsonValue GameDataService::ListLevels(std::string& error) const {
         std::filesystem::path relative;
         if (!scope_.RelativeToRoot(directory, relative, error)) return JsonValue(nullptr);
         const std::string relative_text = relative.generic_string();
-        std::string layout = "unknown";
-        if (relative_text.find("/multiplayer/") != std::string::npos) layout = "multiplayer";
-        else if (relative_text.find("/location0/") != std::string::npos) layout = "location0";
-        else if (relative_text.find("/location1/") != std::string::npos) layout = "location1";
-        else if (relative_text.find("/location2/") != std::string::npos) layout = "location2";
-        else if (relative_text.find("/location3/") != std::string::npos) layout = "location3";
+        const std::string layout = "location0";
 
         JsonValue::Object entry;
         entry["level"] = level;
@@ -1018,6 +1034,78 @@ bool GameDataService::LoadCurrentObjectSource(std::string& source, std::string& 
     ConfigureSchemasFromProgram(*parsed.program);
     error.clear();
     return true;
+}
+
+bool GameDataService::LoadProjectText(const std::filesystem::path& relative_path,
+                                      std::string& text, std::string& error) const {
+    std::lock_guard<std::mutex> lock(*mutation_mutex_);
+    std::filesystem::path absolute_path;
+    if (!scope_.ResolveRelative(relative_path, absolute_path, error)) return false;
+    return ReadBoundedText(absolute_path, text, error);
+}
+
+std::string GameDataService::ProjectRevision(
+    const std::vector<std::filesystem::path>& relative_paths,
+    std::string& error) const {
+    std::lock_guard<std::mutex> lock(*mutation_mutex_);
+    if (relative_paths.empty()) {
+        error = "invalid_arguments";
+        return {};
+    }
+    return CalculateTrackedRevision(scope_, relative_paths, error);
+}
+
+std::unique_ptr<Transaction> GameDataService::BeginProjectMutation(
+    const MutationOptions& options,
+    const std::vector<std::filesystem::path>& tracked_paths,
+    std::string& error) {
+    if (tracked_paths.empty()) {
+        error = "invalid_arguments";
+        return nullptr;
+    }
+
+    std::unique_lock<std::mutex> mutation_lock(*mutation_mutex_);
+    const std::string baseline_revision =
+        CalculateTrackedRevision(scope_, tracked_paths, error);
+    if (!error.empty()) return nullptr;
+    if (options.expected_revision && *options.expected_revision != baseline_revision) {
+        error = "stale_revision";
+        return nullptr;
+    }
+
+    auto committed_revision = std::make_shared<std::string>();
+    auto transaction = std::make_unique<Transaction>(
+        scope_, options, std::filesystem::path{}, mutation_mutex_, std::move(mutation_lock));
+    transaction->SetCommitGuard([this, tracked_paths, baseline_revision](std::string& guard_error) {
+        const std::string current_revision =
+            CalculateTrackedRevision(scope_, tracked_paths, guard_error);
+        if (!guard_error.empty()) return false;
+        if (current_revision != baseline_revision) {
+            guard_error = "stale_revision";
+            return false;
+        }
+        return true;
+    });
+    transaction->SetCommitObserver([this, tracked_paths, committed_revision]() {
+        std::string ignored;
+        *committed_revision = CalculateTrackedRevision(scope_, tracked_paths, ignored);
+    });
+    transaction->SetRollbackGuard([this, tracked_paths, committed_revision](std::string& rollback_error) {
+        if (committed_revision->empty()) {
+            rollback_error = "rollback_unavailable";
+            return false;
+        }
+        const std::string current_revision =
+            CalculateTrackedRevision(scope_, tracked_paths, rollback_error);
+        if (!rollback_error.empty()) return false;
+        if (current_revision != *committed_revision) {
+            rollback_error = "stale_revision";
+            return false;
+        }
+        return true;
+    });
+    error.clear();
+    return transaction;
 }
 
 bool GameDataService::SaveCurrentObjectSource(std::string_view source,
