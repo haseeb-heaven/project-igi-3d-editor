@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <atomic>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -43,13 +44,19 @@ public:
                                 std::string& error);
 
 private:
+    struct ConnectionWorker {
+        std::thread thread;
+        std::shared_ptr<std::atomic_bool> done;
+    };
+
     void Run(McpServer& server);
     void HandleConnection(std::uintptr_t connection, McpServer& server);
+    void ReapCompletedWorkers();
 
     std::atomic<std::uintptr_t> listen_socket_{0};
     std::atomic_bool stopping_{false};
     std::thread worker_;
-    std::vector<std::thread> connection_workers_;
+    std::vector<ConnectionWorker> connection_workers_;
     bool winsock_started_ = false;
     HttpOptions options_;
     HttpEndpoint endpoint_;

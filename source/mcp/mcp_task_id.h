@@ -28,16 +28,25 @@ inline std::string StableNumberText(double value) {
     return output.str();
 }
 
+inline std::string SignatureToken(std::string_view kind, std::string_view value) {
+    return std::string(kind) + std::to_string(value.size()) + ":" + std::string(value);
+}
+
 inline std::string AnonymousArgumentSignature(const qsc::Node& node) {
     std::string signature;
     switch (node.kind) {
-    case qsc::NodeKind::IntLit: return std::to_string(node.i_val);
-    case qsc::NodeKind::FloatLit: return StableNumberText(static_cast<double>(node.f_val));
-    case qsc::NodeKind::BoolLit: return node.b_val ? "true" : "false";
+    case qsc::NodeKind::IntLit:
+        return SignatureToken("int:", std::to_string(node.i_val));
+    case qsc::NodeKind::FloatLit:
+        return SignatureToken("float:", StableNumberText(static_cast<double>(node.f_val)));
+    case qsc::NodeKind::BoolLit:
+        return SignatureToken("bool:", node.b_val ? "true" : "false");
     case qsc::NodeKind::StringLit:
-    case qsc::NodeKind::IdentLit: return node.s_val;
+        return SignatureToken("string:", node.s_val);
+    case qsc::NodeKind::IdentLit:
+        return SignatureToken("ident:", node.s_val);
     case qsc::NodeKind::Call:
-        signature = "call:" + node.s_val + "(";
+        signature = SignatureToken("call:", node.s_val) + "(";
         for (const auto& child : node.children) {
             signature += AnonymousArgumentSignature(*child);
             signature.push_back(';');
@@ -46,15 +55,15 @@ inline std::string AnonymousArgumentSignature(const qsc::Node& node) {
         return signature;
     case qsc::NodeKind::Unary:
     case qsc::NodeKind::Binary:
-        signature = node.kind == qsc::NodeKind::Unary ? "unary:" : "binary:";
-        signature += node.s_val + "(";
+        signature = SignatureToken(node.kind == qsc::NodeKind::Unary ? "unary:" : "binary:",
+                                   node.s_val) + "(";
         for (const auto& child : node.children) {
             signature += AnonymousArgumentSignature(*child);
             signature.push_back(';');
         }
         signature.push_back(')');
         return signature;
-    default: return "expression";
+    default: return SignatureToken("expression:", "");
     }
 }
 

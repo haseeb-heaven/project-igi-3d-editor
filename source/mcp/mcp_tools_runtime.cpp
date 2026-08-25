@@ -556,13 +556,22 @@ JsonValue CallRuntimeTool(GameDataService& service, std::string_view name,
             state.working_directory = previous_working_directory;
             return Failure(error, "screenshot_failed");
         }
+        std::error_code size_error;
+        const auto captured_bytes = std::filesystem::file_size(destination, size_error);
+        if (size_error) {
+            state.pid = previous_pid;
+            state.level = previous_level;
+            state.executable = previous_executable;
+            state.working_directory = previous_working_directory;
+            return Failure(error, "screenshot_failed");
+        }
         const DWORD capture_pid = state.pid;
         state.pid = previous_pid;
         state.level = previous_level;
         state.executable = previous_executable;
         state.working_directory = previous_working_directory;
         return JsonValue::Object{{"path", relative_path}, {"pid", static_cast<double>(capture_pid)},
-                                 {"format", "png"}, {"bytes", static_cast<double>(std::filesystem::file_size(destination))}};
+                                 {"format", "png"}, {"bytes", static_cast<double>(captured_bytes)}};
     }
 
     return Failure(error, "unknown_tool");

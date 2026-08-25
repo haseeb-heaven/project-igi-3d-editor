@@ -6,6 +6,7 @@
 #include "mcp/mcp_tools_mission.h"
 #include "mcp/mcp_tools_objects.h"
 #include "mcp/mcp_task_id.h"
+#include "level/task_schema.h"
 
 #include <filesystem>
 #include <fstream>
@@ -306,6 +307,12 @@ TEST(McpTaskIdTest, PreservesNestedArgumentIdentityInSignatures) {
               mcp::AnonymousArgumentSignature("1 + 3"));
     EXPECT_NE(mcp::AnonymousArgumentSignature("16777216"),
               mcp::AnonymousArgumentSignature("16777217"));
+    EXPECT_NE(mcp::AnonymousArgumentSignature("1"),
+              mcp::AnonymousArgumentSignature("1.0"));
+    EXPECT_NE(mcp::AnonymousArgumentSignature("true"),
+              mcp::AnonymousArgumentSignature("\"true\""));
+    EXPECT_NE(mcp::AnonymousArgumentSignature("name"),
+              mcp::AnonymousArgumentSignature("\"name\""));
 }
 
 TEST_F(McpDomainToolsTest, ReturnsInvalidArgumentsForMalformedAiFields) {
@@ -488,6 +495,17 @@ TEST_F(McpDomainToolsTest, ReportsTypeSpecificObjectLayoutIndices) {
     EXPECT_EQ(schema.at("fields").at("position").at("parameter_indices").as_array()[0].as_number(), 3);
     EXPECT_EQ(schema.at("fields").at("rotation_radians").at("parameter_indices").as_array()[0].as_number(), 9);
     EXPECT_EQ(schema.at("fields").at("model_id").at("parameter_index").as_number(), 12);
+}
+
+TEST_F(McpDomainToolsTest, DirectSchemaLookupReloadsDeclaredSchemas) {
+    TaskSchemaNS::ClearRegisteredSchemas();
+    std::string error;
+    const auto schema = mcp::CallObjectTool(
+        *service_, "object_get_schema", mcp::JsonValue::Object{{"type", "CustomLayoutTask"}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(schema.at("type").as_string(), "CustomLayoutTask");
+    ASSERT_TRUE(schema.at("fields").contains("model_id"));
+    EXPECT_EQ(schema.at("fields").at("model_id").at("parameter_index").as_number(), 4);
 }
 
 TEST_F(McpDomainToolsTest, DerivesTransformAndModelLayoutsFromSchemas) {

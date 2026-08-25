@@ -837,6 +837,7 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
             }
             JsonValue::Array applied;
             bool first = true;
+            std::size_t operation_index = 0;
             for (const auto& operation : arguments.at("operations").as_array()) {
                 JsonValue::Object applied_arguments = operation.as_object();
                 applied_arguments["backup"] = options.backup;
@@ -848,9 +849,16 @@ JsonValue CallAiTool(GameDataService& service, std::string_view name,
                                                     applied_arguments, applied_error);
                 if (!applied_error.empty()) {
                     error = "batch_partial_failure";
-                    return JsonValue(nullptr);
+                    return JsonValue::Object{
+                        {"tool", "ai_batch_set_loadout"},
+                        {"dry_run", false},
+                        {"applied", std::move(applied)},
+                        {"failed_index", static_cast<int>(operation_index)},
+                        {"failed_error", applied_error},
+                    };
                 }
                 applied.emplace_back(result);
+                ++operation_index;
             }
             return JsonValue::Object{{"tool", "ai_batch_set_loadout"}, {"dry_run", false},
                                      {"operations", std::move(applied)}};

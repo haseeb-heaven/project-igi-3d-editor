@@ -142,7 +142,8 @@ struct ParsedGeometry {
 ParsedGeometry ParseMefFile(const std::string& filepath);
 
 // Parse a MEF that is already in memory (no disk I/O).
-ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes);
+ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes,
+                                      const std::string& modelId = {});
 
 // Cumulative parent-chain sum of each bone's (parent-relative) rest pivot,
 // giving each bone's absolute rest-pose position (raw, unscaled units).

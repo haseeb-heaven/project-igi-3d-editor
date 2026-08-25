@@ -16,13 +16,13 @@
 
 ## 🏆 Top 5 Major Modding Prompts
 
-### 1. 🏰 The Fortified Military Base & Horde Defense
+### 1. 🔎 Fortified Base Inspection & Safe Loadout Update
 * **Recommended Missions:** Level 1 (Trainyard), Level 5 (WaterTower Depot)
 * **Prompt:**
   ```text
-  Build a fortified defense base at Jones' spawn in Level 1 with 3 Watchtowers, M2HB heavy machine gun turrets, 2 friendly Dragunov snipers, and give me all weapons with 9999 ammo.
+  Inspect the existing defenses at Jones' spawn in Level 1, list the nearby objects and soldier loadouts, then update the supported weapon fields on the existing guards.
   ```
-* **What it Does:** Injects 3 elevated watchtowers, mounts stationary M2HB turrets, deploys a friendly allied squad on team 0, and loads maximum ammunition reserves.
+* **What it Does:** Reads the existing level objects and applies validated updates to supported existing loadouts. Structural creation, turret mounting, allied-squad deployment, and arbitrary ammunition injection are outside this editor's supported MCP boundary.
 
 ---
 

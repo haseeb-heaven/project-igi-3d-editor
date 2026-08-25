@@ -246,31 +246,7 @@ For the full test reference — suites, filters, fixture descriptions, and build
 ## 🛠️ Future Roadmap
 
 With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
-- **Native Game Converter tool**: `igi1conv` — a standalone Project IGI 1 asset converter developed in its own repo at [project-igi-conv](https://github.com/heaven-hm/project-igi-conv). It ships as a **Qt application** with both a GUI mode and a headless CLI mode; the editor uses only the CLI. The full prebuilt package (exe + Qt runtime DLLs) is bundled at `editor/tools/igi1conv/`.
-- **Upgraded compatibility**: A better upgraded version to support the Neo Remastered mod.
-- **Visual 3D Graph Editor (Completed)**: Full-featured interactive 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections. See [docs/graph_editor.md](docs/graph_editor.md).
-- **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.
-- **Full 14 Levels campaign run**: Complete, verified playthroughs of all custom compiled maps to guarantee total end-to-end stability.
-
----
-
-## 🏆 Credits and Contributors
-
-Credits and contributions of the people in this project:
-
-- **[Artiom](https://github.com/NEWME0)** 👑 - **Game file formats** (*models, textures, animations*) and his **game conversion tools**. (**Huge Help!** )
-
-- **[GM123](https://www.youtube.com/@gm1233)** 👑 - **Game Models & Animations** (*MEF / IFF formats*) and **development tools**. (**Huge Help!**)
-
-For the full test reference — suites, filters, fixture descriptions, and build/deploy instructions — see:
-👉 **[Test Suite Documentation](docs/TESTS.md)**
-
----
-
-## 🛠️ Future Roadmap
-
-With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
-- **Native Game Converter tool**: `igi1conv` — a standalone Project IGI 1 asset converter developed in its own repo at [project-igi-conv](https://github.com/heaven-hm/project-igi-conv). It ships as a **Qt application** with both a GUI mode and a headless CLI mode; the editor uses only the CLI. The full prebuilt package (exe + Qt runtime DLLs) is bundled at `editor/tools/igi1conv/`.
+- **Native Game Converter tool (Current)**: `igi1conv` is already bundled at `editor/tools/igi1conv/` and used by the editor through its headless CLI. Its standalone implementation is maintained in [project-igi-conv](https://github.com/heaven-hm/project-igi-conv); this editor PR does not modify that converter.
 - **Upgraded compatibility**: A better upgraded version to support the Neo Remastered mod.
 - **Visual 3D Graph Editor (Completed)**: Full-featured interactive 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections. See [docs/graph_editor.md](docs/graph_editor.md).
 - **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.
@@ -307,7 +283,7 @@ With the successful release of **Version 2.0.0**, core features like the **Nativ
 
 ## 🤖 AI & MCP Integration
 
-Project IGI Editor and Converter feature full **Model Context Protocol (MCP)** support for autonomous level editing, physics tuning, asset extraction, and modding via AI agents.
+Project IGI Editor provides **Model Context Protocol (MCP)** support for the supported `editor-gameplay-mode` scope: IGI 1 level inspection and validated updates. Structural task operations, AI script-file replacement, graph/terrain/lightmap/asset-converter writes, and client-visible save/backup/restore commands remain excluded; see the [MCP Architecture & Setup Guide](docs/MCP.md) for the boundary.
 
 * 📖 **[MCP Architecture & Setup Guide](docs/MCP.md)** — Protocol specifications and server setup.
 * 💬 **[MCP Prompt Playbook](MCP_PROMPTS.md)** — Ready-to-use prompts for level modding, physics, audio conversion, and 3D mesh exports across Codex, Claude Code, Antigravity, OpenCode, and Pi Agents.

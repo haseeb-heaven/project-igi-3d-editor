@@ -616,7 +616,10 @@ std::vector<TamcRecord> ParseTamcRecords(const std::vector<uint8_t>& bytes, cons
     return recs;
 }
 
-ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::vector<ChunkInfo>& chunks, const std::string& filepath = "") {
+ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes,
+                                const std::vector<ChunkInfo>& chunks,
+                                const std::string& filepath = "",
+                                const std::string& modelId = {}) {
     ParsedGeometry geometry;
     const ChunkInfo* hsem = FindChunk(chunks, "HSEM");
     if (hsem == nullptr || hsem->size != 156) {
@@ -634,8 +637,8 @@ ParsedGeometry ParseMefGeometry(const std::vector<uint8_t>& bytes, const std::ve
         geometry.vertices = ParseRenderVertices(bytes, *xtrv, modelType);
 
         if (modelType == 1) {
-            std::string modelName;
-            if (!filepath.empty()) {
+            std::string modelName = modelId;
+            if (modelName.empty() && !filepath.empty()) {
                 std::string filename = filepath;
                 size_t lastSlash = filename.find_last_of("\\/");
                 if (lastSlash != std::string::npos) filename = filename.substr(lastSlash + 1);
@@ -882,9 +885,10 @@ ParsedGeometry ParseMefFile(const std::string& filepath) {
     return ParseMefGeometry(bytes, chunks, filepath);
 }
 
-ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes) {
+ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes,
+                                      const std::string& modelId) {
     const std::vector<ChunkInfo> chunks = ParseIlffChunks(bytes, "<memory>");
-    return ParseMefGeometry(bytes, chunks, "<memory>");
+    return ParseMefGeometry(bytes, chunks, "<memory>", modelId);
 }
 
 std::vector<glm::vec3> ComputeBoneWorldPositionsPublic(const std::vector<BoneInfo>& bones) {

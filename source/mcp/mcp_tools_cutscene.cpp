@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -137,6 +138,7 @@ ToolDefinitionList CutsceneToolDefinitions() {
 JsonValue CallCutsceneTool(GameDataService& service, std::string_view name,
                            const JsonValue& arguments, std::string& error) {
     error.clear();
+    try {
     if (name == "cutscene_list") {
         if (!HasOnlyKeys(arguments, {"level"})) return Failure(error, "invalid_arguments");
         int level = 0;
@@ -184,7 +186,9 @@ JsonValue CallCutsceneTool(GameDataService& service, std::string_view name,
         JsonValue result = CallObjectTool(service, "object_set_transform", forwarded, error);
         if (!error.empty()) return JsonValue(nullptr);
         result["tool"] = "cutscene_edit_camera";
-        result["cutscene"] = CutsceneSnapshot(service.GetObject(level, task_id, error));
+        const JsonValue refreshed = service.GetObject(level, task_id, error);
+        if (!error.empty()) return JsonValue(nullptr);
+        result["cutscene"] = CutsceneSnapshot(refreshed);
         return result;
     }
 
@@ -215,6 +219,9 @@ JsonValue CallCutsceneTool(GameDataService& service, std::string_view name,
     }
 
     return Failure(error, "unknown_tool");
+    } catch (const std::exception&) {
+        return Failure(error, "service_error");
+    }
 }
 
 }  // namespace mcp

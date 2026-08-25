@@ -941,6 +941,11 @@ JsonValue CallObjectTool(GameDataService& service, std::string_view name,
                 type = object.at("type").as_string();
             } else if (!ReadNonEmptyString(arguments.at("type"), type)) {
                 return Failure(error, "invalid_arguments");
+            } else {
+                std::string source;
+                std::string domain_error;
+                if (!service.LoadCurrentObjectSource(source, domain_error))
+                    return DomainFailure(error, domain_error);
             }
             if (TaskSchemaNS::GetSchema(type) == nullptr)
                 return Failure(error, "unsupported_operation");

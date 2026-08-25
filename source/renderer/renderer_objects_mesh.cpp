@@ -51,7 +51,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
                 // LoadAttachmentsRecursive doesn't need to call FindMeshData again
                 // for this model (avoids a second costly .res read under memory pressure).
                 try {
-                    ParsedGeometry geoForAtta = ParseMefFileFromMemory(meshBytes);
+                    ParsedGeometry geoForAtta = ParseMefFileFromMemory(meshBytes, modelId);
                     PrePopulateAttaFromParsed(modelId, isBuilding, geoForAtta.mefAttachments);
                 } catch (...) {}
 
@@ -359,7 +359,7 @@ const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string&
     {
         std::vector<uint8_t> mefBytes = FindMeshData(modelId);
         if (!mefBytes.empty()) {
-            try { geo = ParseMefFileFromMemory(mefBytes); } catch (...) {}
+            try { geo = ParseMefFileFromMemory(mefBytes, modelId); } catch (...) {}
         }
         if (geo.vertices.empty()) {
             std::string filepath = FindModelFile(modelId, isBuilding);

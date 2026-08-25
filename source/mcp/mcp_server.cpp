@@ -71,11 +71,14 @@ JsonValue DomainResult(JsonValue value, const std::string& error) {
         };
     }
     const JsonValue safe_error = SafeToolError(error);
+    JsonValue::Object structured{{"error", safe_error}};
+    if (!value.is_null()) structured["details"] = std::move(value);
+    const JsonValue structured_value = structured;
     return JsonValue::Object{
         {"content", JsonValue::Array{JsonValue::Object{{"type", "text"},
-                                                        {"text", JsonStringify(safe_error)}}}},
+                                                        {"text", JsonStringify(structured_value)}}}},
         {"isError", true},
-        {"structuredContent", JsonValue::Object{{"error", std::move(safe_error)}}},
+        {"structuredContent", std::move(structured)},
     };
 }
 

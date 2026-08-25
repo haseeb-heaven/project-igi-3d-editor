@@ -340,7 +340,7 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
             if (mefBytes.empty()) continue;
 
             ParsedGeometry geo;
-            try { geo = ParseMefFileFromMemory(mefBytes); } catch (...) { continue; }
+            try { geo = ParseMefFileFromMemory(mefBytes, cur); } catch (...) { continue; }
 
             for (const auto& a : geo.mefAttachments) {
                 std::string aname(a.name, strnlen(a.name, 16));
@@ -777,7 +777,7 @@ void Renderer_Objects::LoadAttachmentsRecursive(const std::string& modelId, bool
         bool parsedOk = false;
         std::vector<uint8_t> mefBytes = FindMeshData(modelId);
         if (!mefBytes.empty()) {
-            try { geo = ParseMefFileFromMemory(mefBytes); parsedOk = true; } catch (...) {}
+            try { geo = ParseMefFileFromMemory(mefBytes, modelId); parsedOk = true; } catch (...) {}
         }
         if (!parsedOk) {
             std::string filepath = FindModelFile(modelId, isBuilding);

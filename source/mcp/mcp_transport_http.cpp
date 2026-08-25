@@ -255,7 +255,7 @@ bool HttpTransport::Start(const HttpOptions& options, McpServer& server,
 
 void HttpTransport::Stop() noexcept {
 #ifdef _WIN32
-    std::vector<std::thread> connection_workers;
+    std::vector<ConnectionWorker> connection_workers;
     stopping_.store(true);
     const std::uintptr_t listener_value = listen_socket_.exchange(0);
     if (listener_value != 0) {
@@ -269,8 +269,8 @@ void HttpTransport::Stop() noexcept {
         }
         connection_workers.swap(connection_workers_);
     }
-    for (std::thread& connection_worker : connection_workers) {
-        if (connection_worker.joinable()) connection_worker.join();
+    for (ConnectionWorker& connection_worker : connection_workers) {
+        if (connection_worker.thread.joinable()) connection_worker.thread.join();
     }
     if (winsock_started_) {
         WSACleanup();
@@ -279,10 +279,41 @@ void HttpTransport::Stop() noexcept {
 #endif
 }
 
+void HttpTransport::ReapCompletedWorkers() {
+    std::vector<std::thread> completed;
+    {
+        std::lock_guard<std::mutex> lock(active_mutex_);
+        for (auto it = connection_workers_.begin(); it != connection_workers_.end();) {
+            if (!it->done->load(std::memory_order_acquire)) {
+                ++it;
+                continue;
+            }
+            completed.emplace_back(std::move(it->thread));
+            it = connection_workers_.erase(it);
+        }
+    }
+    for (std::thread& thread : completed) {
+        if (thread.joinable()) thread.join();
+    }
+}
+
 void HttpTransport::Run(McpServer& server) {
 #ifdef _WIN32
     const SOCKET listener = static_cast<SOCKET>(listen_socket_.load());
     while (!stopping_.load()) {
+        ReapCompletedWorkers();
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(listener, &read_set);
+        timeval poll_timeout{};
+        poll_timeout.tv_usec = 100000;
+        const int ready = select(0, &read_set, nullptr, nullptr, &poll_timeout);
+        if (ready == 0) continue;
+        if (ready == SOCKET_ERROR) {
+            if (stopping_.load()) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
         const SOCKET connection = accept(listener, nullptr, nullptr);
         if (connection == INVALID_SOCKET) {
             if (stopping_.load()) break;
@@ -300,14 +331,16 @@ void HttpTransport::Run(McpServer& server) {
             std::lock_guard<std::mutex> lock(active_mutex_);
             if (!stopping_.load() && active_connections_.size() < options_.max_connections) {
                 active_connections_.insert(static_cast<std::uintptr_t>(connection));
-                connection_workers_.emplace_back([this, &server, connection]() {
+                const auto done = std::make_shared<std::atomic_bool>(false);
+                connection_workers_.push_back(ConnectionWorker{std::thread([this, &server, connection, done]() {
                     HandleConnection(static_cast<std::uintptr_t>(connection), server);
                     {
                         std::lock_guard<std::mutex> lock(active_mutex_);
                         active_connections_.erase(static_cast<std::uintptr_t>(connection));
                     }
                     closesocket(connection);
-                });
+                    done->store(true, std::memory_order_release);
+                }), done});
                 accepted = true;
             }
         }
