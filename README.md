@@ -200,6 +200,65 @@ scope.
 See the complete tool list, transport requirements, and intentionally
 unsupported mutation boundaries in **[MCP game-data integration](docs/MCP.md)**.
 
+#### Quick MCP examples
+
+The server must be run against a complete IGI 1 installation. The project root
+is always the game directory, and this release accepts only
+`missions/location0/level1` through `level14`.
+
+Start the stdio transport from the directory containing the release binaries:
+
+```powershell
+$env:IGI_GAME_PATH = "D:\IGI1"
+.\igi_mcp.exe --stdio --project D:\IGI1
+```
+
+Every JSON-RPC request carries the pinned protocol metadata. A first request
+can discover the server:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+
+Use `tools/call` for game-data operations. A safe read-only inspection flow is
+to inspect the project, open level 1, then list its tasks:
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"project_info","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"level_open","arguments":{"level":1},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"task_list","arguments":{"level":1},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+
+For a supported persistent edit, first take the `revision` and a real `task_id`
+from `level_open`/`task_list`. Preview a transform with `dry_run`, then repeat
+the request with `dry_run:false` and `backup:true` only after reviewing the
+preview:
+
+```json
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"object_set_transform","arguments":{"level":1,"task_id":"<task-id-from-task-list>","position":[100.0,200.0,30.0],"rotation_radians":[0.0,1.5708,0.0],"expected_revision":"<revision-from-level-open>","dry_run":true},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
+```
+
+Then run `level_validate` after an applied mutation. The server rejects stale
+revisions, unknown arguments, path traversal, and unsupported structural
+creation/deletion or graph/terrain/lightmap/asset writes.
+
+For a local HTTP client, start the loopback transport and copy the bearer token
+from stderr. Replace `<port>` and `<token>` with the values printed by the
+server:
+
+```powershell
+.\igi_mcp.exe --http --project D:\IGI1 --host 127.0.0.1 --port 8765
+$body = '{"jsonrpc":"2.0","id":6,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}'
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:<port>/mcp" `
+  -Headers @{
+    Authorization = "Bearer <token>"
+    "MCP-Protocol-Version" = "2026-07-28"
+    "Mcp-Method" = "server/discover"
+    "Mcp-Name" = "my-igi-client"
+    Origin = "http://127.0.0.1"
+  } -ContentType "application/json" -Body $body
+```
+
 And for detailed information about file formats of IGI game 👉 **[IGI File Formats](docs/file-formats.md)**
 
 ---
@@ -236,7 +295,7 @@ $env:IGI_TEST_LEVEL="10"; .\igi_tests.exe
 .\igi_tests.exe
 ```
 
-**570 tests** across 79 suites: QSC lexer/parser, QVM round-trips (synthetic + real game data for all 14 levels), MCP protocol/domain/transport coverage, file-format parsers (DAT, RES, TEX, MTP, FNT, Graph), verify-core units, and level-verification integration tests.
+**594 tests** across 84 suites: QSC lexer/parser, QVM round-trips (synthetic + real game data for all 14 levels), MCP protocol/domain/transport coverage, file-format parsers (DAT, RES, TEX, MTP, FNT, Graph), verify-core units, and level-verification integration tests.
 
 For the full test reference — suites, filters, fixture descriptions, and build/deploy instructions — see:
 👉 **[Test Suite Documentation](docs/TESTS.md)**

@@ -1,28 +1,34 @@
 # Changelogs
 
-## Unreleased — MCP game-data integration
+## 3.6.8-pre — MCP game-data integration and stability fixes
+
+### ✨ MCP game-data integration
 
 - Added the Win32 `igi_mcp.exe` headless MCP server with stateless
   `2026-07-28` JSON-RPC over stdio and authenticated loopback HTTP.
 - Added project/level resources and game-data tools for task/object snapshots,
   persistent transform/model/type/parameter edits, AI and weapon fields,
   mission objectives, and graph/terrain/lightmap/asset inspection.
+- The editor MCP release is scoped to Project IGI 1's `missions/location0`
+  layout and levels 1-14. It does not add IGI 2 locations or editor support.
+
+### 🔐 Safety and review hardening
+
 - Added revision guards, dry-run QSC/QVM validation, transactional backups,
   rollback, reparse-point checks, bounded requests, and redacted structured
   errors.
 - Explicitly reject unsupported structural, graph, terrain, lightmap, script
   file, converter, and asset-packing writes instead of guessing or invoking
   arbitrary commands.
-- Hardened MCP review boundaries: `level_validate` now matches its advertised
-  level argument, weapon-loadout item schemas enforce their object shape,
-  anonymous task IDs are shared between snapshots and mutations, unknown task
-  layouts are rejected, type-specific object indices are reported, and
-  structurally invalid JSON-RPC requests return a null-id error.
+- Hardened anonymous task identity across snapshots and mutations, validated
+  batch loadout failures, rejected unknown task layouts and malformed JSON-RPC
+  requests, and preserved useful structured error details.
+- Stabilized the loopback HTTP worker lifecycle and made direct object-schema
+  requests reload the current QSC schema before resolving fields.
 
-## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
+### 🐛 Cross-family ATTA dependency fix
 
-### 🐛 Bug Fixes
-- **Fixed in-game `VirModel "235_01_1" not available` warning when adding foreign models.** `AddModelToLevelRes` (the pipeline that packs a foreign model's `.mef`/textures into a level's `.res`/`.dat`/`.mtp` when it's added via the editor) only ever scanned for other models sharing the same leading numeric prefix (e.g. adding `420_01_1` also swept in `420_04_1`). It had no mechanism to detect that a swept-in model's `.mef` could itself contain an `ATTA` sub-model reference into a *completely different* prefix family (`420_04_1` → `235_01_1`). That dependency was silently never packed, so the game reported the model as an unresolved virtual model at runtime even though it rendered fine in the editor.
+- **Fixed in-game `VirModel "235_01_1" not available` warnings when adding foreign models.** Cross-family `ATTA` dependencies are now discovered recursively and packed with the owning level's resources.
 - **Fixed ATTA sub-models from other levels not rendering in the editor viewport.** `LoadAttachmentsRecursive` looked up sub-model bytes via the in-memory `FindMeshData` ResCache *before* calling `FindModelFile`, but it's `FindModelFile`'s lazy cross-level `.res` indexing side effect that actually populates that cache for models living in another level's archive — so the retry never happened and the lookup failed even though the indexing had just succeeded.
 
 ### 🔧 Technical
@@ -33,6 +39,12 @@
 ### ✅ Preserved
 - Same-family (same-prefix) model resolution behavior unchanged.
 - No changes to `.dat`/`.mtp` binary formats — new dependencies are packed using the exact existing `DAT_AddModel` / `igi1conv dat to-mtp` mechanics.
+
+### 📦 Release contents
+
+- Win32 release archives contain `igi1ed.exe`, `igi_mcp.exe`, `igi_tests.exe`,
+  the required OpenGL DLLs, editor runtime files, and bundled runtime assets.
+  No converter source changes are part of this release.
 
 ---
 

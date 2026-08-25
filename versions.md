@@ -1,6 +1,6 @@
 # Project IGI Editor - Version History
 
-## Current Version: 3.4.1-pre
+## Current Version: 3.6.8-pre
 
 ---
 
@@ -8,6 +8,7 @@
 
 | Version | Release Date | Status | Major Features |
 |---------|--------------|--------|----------------|
+| **3.6.8-pre** | 2026-08-25 | Pre-release | Win32 IGI1/location0 MCP server over stdio and loopback HTTP; validated game-data edits, revision-safe transactions, and cross-family ATTA dependency fixes |
 | **3.4.1-pre** | 2026-06-21 | Pre-release | Live graph-overlay sync when AIGraph task moves (F7 view follows the task live via property panel / position pad / Z slider / Undo / Redo); exact-match `TaskFindByTaskID` (pixel-perfect IDs, no substring); AI Script editor notepad surface (Ctrl+A/C/X/V/Z/Y + mouse drag selection) scoped to the AI Script text only; local AI Script undo/redo stack (capped at 100); selection highlight rendered on the correct visual lines |
 | **3.4.0-pre** | 2026-06-21 | Pre-release | `source/parsers/` folder removed; every file conversion (dat/mtp/qsc/qvm/res/graph/tex/fnt/mef/terrain) now goes through the bundled `igi1conv.exe` via the new `source/utils_igi1conv.{h,cpp}` shared runner; in-process loaders kept only where no CLI subcommand can supply the runtime data (mef_native, fnt_parser, qsc_lexer/parser, terrain_files, qvm_pipeline); dead `mef_parser`/`mef_exporter`/`mtp_tool` deleted |
 | **3.3.0-pre** | 2026-06-19 | Pre-release | Auto-save system (toggle + interval), unified undo/redo (objects/AI/terrain/graphs/ATTA), AI script save via Ctrl+W/Ctrl+S, full-folder level reset with backup, hotkey-driven from qedkeybindings.qsc, recursive HumanAI child search, pause-menu reorder, centering & alignment polish |
