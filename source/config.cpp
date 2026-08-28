@@ -215,7 +215,8 @@ void Config::Load() {
                     RENDER_Z_NEAR = data_.renderZNear;
                     WORLD_Z_NEAR = RENDER_Z_NEAR / 0.001f;
                 }
-                else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "Logs" || key == "Enable") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "SaveConfigOnExit") data_.saveConfigOnExit = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lightmaps") data_.enableLightmaps = (val == "TRUE" || val == "true" || val == "1");
@@ -319,7 +320,8 @@ void Config::Load() {
                 RENDER_Z_NEAR = data_.renderZNear;
                 WORLD_Z_NEAR = RENDER_Z_NEAR / 0.001f;
             }
-            else if (key == "Logs" || key == "Enable" || key == "SaveConfigOnExit") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
+            else if (key == "Logs" || key == "Enable") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
+            else if (key == "SaveConfigOnExit") data_.saveConfigOnExit = (val == "TRUE" || val == "true" || val == "1");
             else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
             else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
             else if (key == "SearchType") data_.searchType = std::stoll(val);

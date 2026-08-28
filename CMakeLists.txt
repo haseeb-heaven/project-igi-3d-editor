@@ -255,6 +255,7 @@ add_executable(igi_tests
     tests/test_qsc_parser.cpp
     tests/test_qvm_roundtrip.cpp
     tests/test_config.cpp
+    tests/test_logger.cpp
     tests/test_utils.cpp
     tests/test_verify_unit.cpp
     tests/test_verify_level.cpp

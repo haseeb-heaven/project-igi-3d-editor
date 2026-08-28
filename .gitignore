@@ -133,6 +133,7 @@ node_modules/
 .yarn/
 .pnpm-store/
 *.qsc
+!assets/editor/qed/qedconfig.qsc
 *.qas
 *qvm.worktrees
 package.json

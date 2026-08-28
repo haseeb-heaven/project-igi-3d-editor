@@ -2,16 +2,81 @@
 #include "logger.h"
 #include "config.h"
 #include <ctime>
+#include <cstdlib>
+#include <system_error>
+
+namespace {
+
+namespace fs = std::filesystem;
+
+void AddCandidate(std::vector<fs::path>& candidates, const fs::path& path) {
+    if (path.empty()) return;
+    for (const auto& existing : candidates) {
+        if (existing.lexically_normal() == path.lexically_normal()) return;
+    }
+    candidates.push_back(path);
+}
+
+std::vector<fs::path> LogCandidates(const std::string& requested) {
+    const fs::path requested_path = requested.empty() ? fs::path("igi1ed.log")
+                                                      : fs::path(requested);
+    std::vector<fs::path> candidates;
+    AddCandidate(candidates, requested_path);
+
+    // Installing under Program Files or another read-only location is a
+    // normal Windows deployment. Keep the executable-directory path as the
+    // first choice, then use per-user writable locations.
+    const char* local_app_data = std::getenv("LOCALAPPDATA");
+    if (local_app_data != nullptr && *local_app_data != '\0') {
+        fs::path fallback(local_app_data);
+        fallback /= "Project IGI";
+        fallback /= requested_path.filename().empty() ? fs::path("igi1ed.log")
+                                                       : requested_path.filename();
+        AddCandidate(candidates, fallback);
+    }
+
+    std::error_code temp_error;
+    const fs::path temp_dir = fs::temp_directory_path(temp_error);
+    if (!temp_error) {
+        AddCandidate(candidates, temp_dir /
+            (requested_path.filename().empty() ? fs::path("igi1ed.log")
+                                                : requested_path.filename()));
+    }
+    return candidates;
+}
+
+}  // namespace
 
 void Logger::Init(const std::string& logFile) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (file_.is_open()) {
         return;
     }
-    file_.open(logFile, std::ios::out | std::ios::app);
-    if (!file_.is_open()) {
-        std::cerr << "Failed to open log file: " << logFile << std::endl;
+
+    const auto candidates = LogCandidates(logFile);
+    for (const auto& candidate : candidates) {
+        std::error_code directory_error;
+        if (!candidate.parent_path().empty()) {
+            std::filesystem::create_directories(candidate.parent_path(), directory_error);
+            if (directory_error &&
+                !std::filesystem::is_directory(candidate.parent_path())) {
+                continue;
+            }
+        }
+
+        file_.open(candidate, std::ios::out | std::ios::app);
+        if (file_.is_open()) {
+            log_path_ = candidate;
+            unflushed_lines_ = 0;
+            return;
+        }
+        // std::ofstream keeps its failbit after a failed open; clear it before
+        // trying the next writable location.
+        file_.clear();
     }
+
+    std::cerr << "[Logger] Failed to open a log file; tried "
+              << candidates.size() << " location(s)." << std::endl;
 }
 
 void Logger::Log(LogLevel level, const std::string& message) {
@@ -55,7 +120,9 @@ void Logger::Log(LogLevel level, const std::string& message) {
             // every log call a synchronous disk stall and stuttered frames.
             file_ << fullMessage << '\n';
             static constexpr int kFlushEveryLines = 64;
-            if (++unflushed_lines_ >= kFlushEveryLines ||
+            // Flush the first line immediately so startup failures leave
+            // useful evidence even if the process exits before 64 messages.
+            if (++unflushed_lines_ >= kFlushEveryLines || unflushed_lines_ == 1 ||
                 level >= LogLevel::ERR) {
                 file_.flush();
                 unflushed_lines_ = 0;
@@ -66,4 +133,22 @@ void Logger::Log(LogLevel level, const std::string& message) {
     if (level == LogLevel::ERR || level == LogLevel::FATAL) {
         std::cerr << fullMessage << std::endl;
     }
+}
+
+void Logger::Flush() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (file_.is_open()) {
+        file_.flush();
+        unflushed_lines_ = 0;
+    }
+}
+
+bool Logger::IsOpen() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return file_.is_open();
+}
+
+std::string Logger::GetLogPath() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return log_path_.string();
 }
