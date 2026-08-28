@@ -19,14 +19,16 @@
   layouts are rejected, type-specific object indices are reported, and
   structurally invalid JSON-RPC requests return a null-id error.
 
-## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
+## 3.6.9-pre — Logging and Configuration Fixes
 
-### Logging and configuration fixes
 - Added the missing editable `editor/qed/qedconfig.qsc` source with `QEDLogs(TRUE)` and the correct `missions/location0` default path.
 - Fixed the embedded config artifact's stale `location1` path.
 - Made `igi1ed.log` fall back to `%LOCALAPPDATA%\Project IGI` or `%TEMP%` when the executable directory is not writable (for example, under `Program Files`).
 - Flush the first log entry immediately so startup failures are captured before an early exit.
+- Fixed `QEDSaveConfigOnExit` parsing so it cannot toggle logging.
 - Added a regression test covering log-file creation and flushing.
+
+## 3.6.8-pre — Fix "VirModel not available" for Cross-Family ATTA Dependencies
 
 ### 🐛 Bug Fixes
 - **Fixed in-game `VirModel "235_01_1" not available` warning when adding foreign models.** `AddModelToLevelRes` (the pipeline that packs a foreign model's `.mef`/textures into a level's `.res`/`.dat`/`.mtp` when it's added via the editor) only ever scanned for other models sharing the same leading numeric prefix (e.g. adding `420_01_1` also swept in `420_04_1`). It had no mechanism to detect that a swept-in model's `.mef` could itself contain an `ATTA` sub-model reference into a *completely different* prefix family (`420_04_1` → `235_01_1`). That dependency was silently never packed, so the game reported the model as an unresolved virtual model at runtime even though it rendered fine in the editor.
