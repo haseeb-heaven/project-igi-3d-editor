@@ -47,12 +47,13 @@ float WORLD_Z_NEAR = 2.8672f / 0.001f;
 ================================================================================
 */
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || (defined(_WIN32) && defined(__GNUC__))
+# if defined(__GNUC__)
+#  include <malloc.h>
+# endif
 # define ALIGNED_ALLOC(sz, align)		_aligned_malloc(sz, align)
 # define ALIGNED_FREE(ptr)				_aligned_free(ptr)
-#endif
-
-#if defined(__GNUC__)
+#elif defined(__GNUC__)
 # define ALIGNED_ALLOC(sz, align)		aligned_alloc(static_cast<std::size_t>(align), sz)
 # define ALIGNED_FREE(ptr)				free(ptr)
 #endif
