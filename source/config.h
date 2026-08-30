@@ -77,8 +77,8 @@ struct ConfigData {
     KeyBinding keyReloadSettings;
 
     // NEW: Logging
-    bool enableLogging;
-    bool debugLogging;
+    bool enableLogging = true;
+    bool debugLogging = false;
 
     // [Renderer]
     bool enableLOD; // Portal/attachment distance culling for buildings
@@ -93,7 +93,7 @@ struct ConfigData {
     bool invertMouse;
     bool displayTaskNote;
     bool allowDynamicSwitching;
-    bool saveConfigOnExit;
+    bool saveConfigOnExit = true;
     bool auto_save_enabled;
     int auto_save_interval_seconds;
     bool runEvent;

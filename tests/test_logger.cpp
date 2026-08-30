@@ -32,3 +32,15 @@ TEST(LoggerTest, CreatesAndFlushesConfiguredLogFile) {
                                std::istreambuf_iterator<char>());
     EXPECT_NE(contents.find("logger regression test"), std::string::npos);
 }
+
+TEST(ConfigAssetTest, ShipsLoggingEnabledByDefault) {
+    const std::filesystem::path config_path =
+        std::filesystem::path("assets") / "editor" / "qed" / "qedconfig.qsc";
+    std::ifstream in(config_path);
+    ASSERT_TRUE(in.is_open()) << "missing " << config_path.string();
+    const std::string source((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+    EXPECT_NE(source.find("QEDLogs(TRUE)"), std::string::npos);
+    EXPECT_NE(source.find("QEDDebug(FALSE)"), std::string::npos);
+    EXPECT_NE(source.find("missions/location0"), std::string::npos);
+}

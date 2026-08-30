@@ -55,20 +55,28 @@ void Logger::Init(const std::string& logFile) {
 
     const auto candidates = LogCandidates(logFile);
     for (const auto& candidate : candidates) {
-        std::error_code directory_error;
-        if (!candidate.parent_path().empty()) {
-            std::filesystem::create_directories(candidate.parent_path(), directory_error);
-            if (directory_error &&
-                !std::filesystem::is_directory(candidate.parent_path())) {
-                continue;
+        try {
+            std::error_code directory_error;
+            if (!candidate.parent_path().empty()) {
+                std::filesystem::create_directories(candidate.parent_path(), directory_error);
+                if (directory_error) {
+                    std::error_code exists_error;
+                    if (!std::filesystem::is_directory(candidate.parent_path(), exists_error)) {
+                        continue;
+                    }
+                }
             }
-        }
 
-        file_.open(candidate, std::ios::out | std::ios::app);
-        if (file_.is_open()) {
-            log_path_ = candidate;
-            unflushed_lines_ = 0;
-            return;
+            file_.open(candidate, std::ios::out | std::ios::app);
+            if (file_.is_open()) {
+                log_path_ = candidate;
+                unflushed_lines_ = 0;
+                std::cerr << "[Logger] Writing to " << log_path_.string() << std::endl;
+                return;
+            }
+        } catch (const std::exception&) {
+            // A malformed or inaccessible path must not prevent the next
+            // per-user/temp candidate from being tried.
         }
         // std::ofstream keeps its failbit after a failed open; clear it before
         // trying the next writable location.
