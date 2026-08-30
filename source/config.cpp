@@ -353,6 +353,27 @@ void Config::Load() {
         }
     }
 
+    // The editable source is authoritative for editor settings.  Loading it
+    // after the compiled QVMs means a user change such as QEDLogs(TRUE) takes
+    // effect even when the adjacent QVM is stale or cannot be rewritten.
+    {
+        std::ifstream configFile(GetConfigPath());
+        if (configFile.is_open()) {
+            std::string line;
+            int n = 0;
+            while (std::getline(configFile, line)) {
+                ParseLine(line);
+                ++n;
+            }
+            Logger::Get().Log(LogLevel::INFO,
+                "[Config] Loaded editor settings from qedconfig.qsc (" +
+                std::to_string(n) + " lines)");
+        } else {
+            Logger::Get().Log(LogLevel::WARNING,
+                "[Config] qedconfig.qsc not found at: " + GetConfigPath());
+        }
+    }
+
     // Event bindings are authoritative from the human-readable keybindings file.
     // Parse it last so it overrides any stale bindings from a compiled .qvm and so
     // the full set (TaskMagicObjToggle, AutoComplete*, SaveSubTask*, ...) is loaded.
