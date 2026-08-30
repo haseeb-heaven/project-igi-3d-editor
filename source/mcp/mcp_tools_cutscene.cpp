@@ -186,6 +186,10 @@ JsonValue CallCutsceneTool(GameDataService& service, std::string_view name,
         JsonValue result = CallObjectTool(service, "object_set_transform", forwarded, error);
         if (!error.empty()) return JsonValue(nullptr);
         result["tool"] = "cutscene_edit_camera";
+        if (result.at("dry_run").as_bool()) {
+            result["cutscene"] = CutsceneSnapshot(result.at("after"));
+            return result;
+        }
         const JsonValue refreshed = service.GetObject(level, task_id, error);
         if (!error.empty()) return JsonValue(nullptr);
         result["cutscene"] = CutsceneSnapshot(refreshed);

@@ -72,6 +72,19 @@ TEST_F(McpCutsceneToolsTest, ListsCameraStateAndEditsDialogueThroughExistingTask
     ASSERT_TRUE(error.empty()) << error;
     EXPECT_FALSE(camera.is_null());
 
+    const auto dry_run_camera = mcp::CallCutsceneTool(
+        *service_, "cutscene_edit_camera",
+        mcp::JsonValue::Object{{"task_id", "1200"},
+                               {"position", mcp::JsonValue::Array{40.0, 50.0, 60.0}},
+                               {"dry_run", true}}, error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_TRUE(dry_run_camera.at("dry_run").as_bool());
+    EXPECT_EQ(dry_run_camera.at("cutscene").at("position").as_array()[0].as_number(), 40.0);
+
+    const auto persisted_camera = service_->GetObject(1, "1200", error);
+    ASSERT_TRUE(error.empty()) << error;
+    EXPECT_EQ(persisted_camera.at("position").as_array()[0].as_number(), 10.0);
+
     const auto dialogue = mcp::CallCutsceneTool(
         *service_, "cutscene_set_dialogue",
         mcp::JsonValue::Object{{"task_id", "1201"}, {"text", "new dialogue"}}, error);
