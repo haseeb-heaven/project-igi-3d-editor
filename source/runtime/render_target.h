@@ -48,4 +48,11 @@ constexpr bool IsPauseMenuInputActive(
     return pause_menu_open;
 }
 
+constexpr bool IsEditorInteractionActive(
+    bool pause_menu_open,
+    bool in_game_mode,
+    bool gameplay_input_focused) noexcept {
+    return !pause_menu_open && (!in_game_mode || !gameplay_input_focused);
+}
+
 } // namespace igi
