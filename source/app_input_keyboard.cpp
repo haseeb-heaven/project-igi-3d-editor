@@ -578,7 +578,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	if (pause_mode_ && IsGameplayInputFocused()) {
+	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
 		if (key == 13) { // Enter
 			if (pause_active_input_ == 1) {
 				// Submit model search
@@ -1385,7 +1385,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		return;
 	}
 
-	if (pause_mode_ && IsGameplayInputFocused()) {
+	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
 		return;
 
 	}

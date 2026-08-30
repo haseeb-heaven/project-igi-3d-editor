@@ -261,6 +261,15 @@ TEST(RuntimeRenderTargetTest, SimulationUsesGameplaySnapshotDuringEditorRepaint)
         RuntimeAssetTarget::GameplaySnapshot);
 }
 
+TEST(RuntimeRenderTargetTest, PauseMenuRemainsVisibleAndInteractiveInEditorMode) {
+    EXPECT_TRUE(IsPauseMenuVisible(true, false));
+    EXPECT_TRUE(IsPauseMenuInputActive(true, false));
+    EXPECT_TRUE(IsPauseMenuVisible(true, true));
+    EXPECT_TRUE(IsPauseMenuInputActive(true, true));
+    EXPECT_FALSE(IsPauseMenuVisible(false, false));
+    EXPECT_FALSE(IsPauseMenuInputActive(false, true));
+}
+
 TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
     WeaponViewSway weapon_view_sway;
 
