@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "renderer/object_lightmap.h"
+#include "runtime/pause_menu_layout.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 	if (in_game_mode_ && IsGameplayInputFocused() &&
@@ -17,7 +18,7 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		}
 		return;
 	}
-	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) return;
+	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) return;
 	if (show_help_) {
 		// Scroll keybindings help panel
 		if (direction > 0) { if (help_scroll_offset_ > 0) help_scroll_offset_--; }
@@ -73,7 +74,7 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 			// current selection so stale highlighting doesn't linger. The
 			// AIScriptText click handler re-installs the selection if the
 			// user is dragging inside the text box.
-			if (!ai_text_dragging_) {
+			if (!pause_mode_ && !ai_text_dragging_) {
 				ClearPropTextSelection();
 			}
 
@@ -342,10 +343,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 			if (pause_mode_) {
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
-				const int menu_w = 460;
-				const int menu_h = 714; // matches renderer_draw.cpp (Bake All Lightmaps row added)
+				const int menu_w = igi::kPauseMenuWidth;
+				const int menu_h = igi::kPauseMenuHeight;
 				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
-				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
+				const int screen_menu_top = igi::PauseMenuTop(window_state_.viewport_height_);
 
 				if (x >= menu_x && x <= menu_x + menu_w &&
 				    y >= screen_menu_top && y <= screen_menu_top + menu_h) {
@@ -376,11 +377,9 @@ int RESUME_ROW = btn_idx++;
 					int SAVE_ROW = btn_idx++;
 					int QUIT_ROW = btn_idx++;
 
-					const int row_h = 38;
-					const int first_row_y = screen_menu_top + 90;
 					auto btn_hit2 = [&](int idx) -> bool {
-						int ry = first_row_y + idx * row_h;
-						return (y >= ry - 16 && y <= ry + 16);
+						return igi::IsPauseMenuRowHit(
+							window_state_.viewport_height_, pause_terrain_expanded_, idx, y);
 					};
 
 					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
@@ -653,9 +652,9 @@ void App::Input_OnMotion(int x, int y) {
 		}
 		return;
 	}
-	if (in_game_mode_ && IsGameplayInputFocused() && pause_mode_) {
-		// Paused with the pause menu up: gameplay look is frozen but the
-		// pointer drives the menu, so keep tracking its position for hover.
+	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
+		// Paused menus keep pointer hover but never feed motion into editor or
+		// gameplay tools behind the modal overlay.
 		mouse_state_.prior_x_ = x;
 		mouse_state_.prior_y_ = y;
 		return;

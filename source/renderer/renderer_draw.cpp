@@ -8,6 +8,7 @@
 #include "object_lightmap.h"
 #include "tex_writer.h"
 #include "../runtime/map_computer_projection.h"
+#include "../runtime/pause_menu_layout.h"
 #include "../utils.h"
 #include <vector>
 #include <unordered_map>
@@ -1564,10 +1565,10 @@ void Renderer::Draw(const draw_params_s &params,
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
     if (task_tree_view.pause_mode_) {
-      const int menu_w = 460;
-      const int menu_h = 714; // +38 for Bake All Lightmaps button row
+      const int menu_w = igi::kPauseMenuWidth;
+      const int menu_h = igi::kPauseMenuHeight;
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
-      const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
+      const int menu_y = igi::PauseMenuTop(params.view_define_->viewport_height_);
       const int viewport_h = params.view_define_->viewport_height_;
 
       // Glassmorphism-style background
@@ -1599,7 +1600,7 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glLineWidth(1.0f);
 
-      int screen_menu_top = (viewport_h - menu_h) / 2;
+      int screen_menu_top = igi::PauseMenuTop(viewport_h);
       // Title — centered, bright green
       const char* title = "IGI EDITOR";
       draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(title) * 3),
@@ -1681,12 +1682,8 @@ void Renderer::Draw(const draw_params_s &params,
 
       const int NUM_BTNS = btn_labels.size();
 
-      // Consistent row spacing — 38px between centres for a clean, airy layout
-      const int row_h = 38;
-      const int first_row_y = screen_menu_top + 90;
-
       auto row_screen_y = [&](int idx) {
-        return first_row_y + idx * row_h;
+        return igi::PauseMenuRowCenter(viewport_h, exp, idx);
       };
 
       // Shared spinner-box draw helper (reused for FONT_ROW and LEVEL_ROW)

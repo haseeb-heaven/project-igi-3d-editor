@@ -566,7 +566,8 @@ private:
       igi::WindowFocusTarget::GameplayWindow;
   }
   bool IsEditorInputActive() const {
-    return !in_game_mode_ || !IsGameplayInputFocused();
+    return igi::IsEditorInteractionActive(
+      pause_mode_, in_game_mode_, IsGameplayInputFocused());
   }
   void UpdateViewerVectors(viewer_s& viewer);
   void UpdateViewDefine();

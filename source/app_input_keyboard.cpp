@@ -6,6 +6,10 @@
 #include "app_internal.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
+	// The pause menu owns keyboard input while it is visible.  In particular,
+	// editor shortcuts such as F8 must not alter the mode behind the overlay.
+	if (pause_mode_) return;
+
 	// F8 toggles Editor <-> Game Play from anywhere; it must run before every
 	// mode-specific branch so it works in both directions.
 	if (key == GLUT_KEY_F8) {
@@ -454,6 +458,7 @@ void App::Input_OnSpecialUp(int key, int x, int y) {
 	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
 		return;
 	}
+	if (pause_mode_) return;
 
 	auto& config = Config::Get();
 
@@ -555,6 +560,43 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		gameplay_host_.GetInputRouter().OnKeyboardKey(key, true);
 		return;
 	}
+	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
+		if (key == 13) { // Enter
+			if (pause_active_input_ == 1) {
+				if (!pause_search_input_.empty()) {
+					bool isId = true;
+					if (pause_search_input_.length() != 8 || pause_search_input_[3] != '_' || pause_search_input_[6] != '_') isId = false;
+					for (int i = 0; i < (int)pause_search_input_.length(); i++) {
+						if (i != 3 && i != 6 && !isdigit(pause_search_input_[i])) isId = false;
+					}
+					if (isId) SearchModelById(pause_search_input_);
+					else       SearchModelByName(pause_search_input_);
+					TogglePauseMenu();
+				}
+				pause_active_input_ = -1;
+			} else if (!pause_level_input_.empty()) {
+				int lvl = std::atoi(pause_level_input_.c_str());
+				if (lvl >= 1 && lvl <= 14) {
+					if (in_game_mode_) ToggleGamePlayMode();
+					LoadLevel(lvl);
+					TogglePauseMenu();
+				} else {
+					Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
+				}
+			}
+			return;
+		}
+		if (key == 27) {
+			if (pause_active_input_ != -1) { pause_active_input_ = -1; return; }
+			TogglePauseMenu();
+			return;
+		}
+		if (pause_active_input_ == 1) {
+			if (key == 8 && !pause_search_input_.empty()) { pause_search_input_.pop_back(); return; }
+			if (key >= 32 && key < 127) { pause_search_input_ += (char)key; return; }
+		}
+		return;
+	}
 
 	bool ctrlDown = (glutGetModifiers() & GLUT_ACTIVE_CTRL) != 0 ||
 	                (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -576,53 +618,6 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	if (ctrlDown && (key == 8 || key == 'h' || key == 'H')) { // CTRL+H
 		ToggleOverlayWireframe();
 		return;
-	}
-
-	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
-		if (key == 13) { // Enter
-			if (pause_active_input_ == 1) {
-				// Submit model search
-				if (!pause_search_input_.empty()) {
-					bool isId = true;
-					if (pause_search_input_.length() != 8 || pause_search_input_[3] != '_' || pause_search_input_[6] != '_') isId = false;
-					for (int i = 0; i < (int)pause_search_input_.length(); i++) {
-						if (i != 3 && i != 6 && !isdigit(pause_search_input_[i])) isId = false;
-					}
-					if (isId) SearchModelById(pause_search_input_);
-					else       SearchModelByName(pause_search_input_);
-					TogglePauseMenu();
-				}
-				pause_active_input_ = -1;
-			} else {
-				// Load level from spinner
-				if (!pause_level_input_.empty()) {
-					int lvl = std::atoi(pause_level_input_.c_str());
-					if (lvl >= 1 && lvl <= 14) {
-						if (in_game_mode_) {
-							// Switching levels is allowed mid-run: close the
-							// gameplay session cleanly first, then load.
-							ToggleGamePlayMode();
-						}
-						LoadLevel(lvl);
-						TogglePauseMenu();
-					} else {
-						Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
-					}
-				}
-			}
-			return;
-		}
-		if (key == 27) { // ESC: clear search focus or close menu
-			if (pause_active_input_ != -1) { pause_active_input_ = -1; return; }
-			TogglePauseMenu();
-			return;
-		}
-		if (pause_active_input_ == 1) {
-			// Search text input
-			if (key == 8 && !pause_search_input_.empty()) { pause_search_input_.pop_back(); return; }
-			if (key >= 32 && key < 127) { pause_search_input_ += (char)key; return; }
-		}
-		if (key != 27) return;
 	}
 
 	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.
@@ -1384,12 +1379,6 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 		Logger::Get().Log(LogLevel::INFO, std::string("[App] Animation skeleton overlay ") + (show_anim_skeleton_ ? "shown" : "hidden"));
 		return;
 	}
-
-	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
-		return;
-
-	}
-
 
 	if ((key == 13) && (glutGetModifiers() & GLUT_ACTIVE_ALT)) { // ALT + ENTER toggle full screen mode
 		window_state_.full_screen_ = !window_state_.full_screen_;

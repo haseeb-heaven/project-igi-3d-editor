@@ -34,6 +34,7 @@
 #include "../source/runtime/window_input_router.h"
 #include "../source/runtime/human_player_config.h"
 #include "../source/runtime/render_target.h"
+#include "../source/runtime/pause_menu_layout.h"
 #include "../source/runtime/runtime_renderer.h"
 #include "../source/runtime/magic_object_registry.h"
 #include "../source/runtime/simulation_scheduler.h"
@@ -270,6 +271,27 @@ TEST(RuntimeRenderTargetTest, PauseMenuRemainsVisibleAndInteractiveInEditorMode)
     EXPECT_FALSE(IsPauseMenuInputActive(false, true));
 }
 
+TEST(RuntimeRenderTargetTest, PauseMenuBlocksEditorInteractionsInEveryMode) {
+    EXPECT_TRUE(IsEditorInteractionActive(false, false, false));
+    EXPECT_TRUE(IsEditorInteractionActive(false, true, false));
+    EXPECT_FALSE(IsEditorInteractionActive(false, true, true));
+    EXPECT_FALSE(IsEditorInteractionActive(true, false, false));
+    EXPECT_FALSE(IsEditorInteractionActive(true, true, false));
+    EXPECT_FALSE(IsEditorInteractionActive(true, true, true));
+}
+
+TEST(PauseMenuLayoutTest, ExpandedTerrainOptionsKeepQuitRowOnScreen) {
+    constexpr int viewportHeight = 576;
+    constexpr int quitRow = 18;
+
+    EXPECT_EQ(PauseMenuRowHeight(false), 38);
+    EXPECT_EQ(PauseMenuRowHeight(true), 29);
+
+    const int quitY = PauseMenuRowCenter(viewportHeight, true, quitRow);
+    EXPECT_GE(quitY, 0);
+    EXPECT_LT(quitY, viewportHeight);
+    EXPECT_TRUE(IsPauseMenuRowHit(viewportHeight, true, quitRow, quitY));
+}
 TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
     WeaponViewSway weapon_view_sway;
 
