@@ -944,7 +944,8 @@ void App::Frame(float delta_seconds) {
 		.show_hud_ = render_gameplay ? false : show_hud_,
 		.hud_overlay_visible_ = hud_overlay_visible_,
 		.status_msg_ = status_message_,
-		.pause_mode_ = render_gameplay ? pause_mode_ : false,
+		.pause_mode_ = igi::IsPauseMenuVisible(
+			pause_mode_, IsGameplayInputFocused()),
 		.pause_active_input_ = pause_active_input_,
 		.pause_level_input_ = pause_level_input_,
 		.pause_search_input_ = pause_search_input_,

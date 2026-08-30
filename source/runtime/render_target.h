@@ -34,4 +34,18 @@ constexpr RuntimeAssetTarget ResolveRuntimeAssetTarget(
         : RuntimeAssetTarget::EditorSource;
 }
 
+// The pause menu is shared by editor and gameplay. It must remain interactive
+// while the editor owns input, otherwise the level spinner cannot submit.
+constexpr bool IsPauseMenuVisible(
+    bool pause_menu_open,
+    bool /*gameplay_input_focused*/) noexcept {
+    return pause_menu_open;
+}
+
+constexpr bool IsPauseMenuInputActive(
+    bool pause_menu_open,
+    bool /*gameplay_input_focused*/) noexcept {
+    return pause_menu_open;
+}
+
 } // namespace igi
