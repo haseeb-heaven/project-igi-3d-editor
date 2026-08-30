@@ -59,7 +59,10 @@ private:
 
     std::vector<LogEntry> entries_;
     std::ofstream file_;
+    std::filesystem::path requested_log_path_;
     std::filesystem::path log_path_;
     int unflushed_lines_ = 0;
     mutable std::mutex mutex_;
+
+    void OpenLogFileLocked();
 };

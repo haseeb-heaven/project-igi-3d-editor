@@ -100,7 +100,7 @@ struct ConfigData {
     bool cameraLock;
     bool enableBackup;
     bool useEditorFont;  // TRUE: render HUD with editor/qed/editor.fnt; FALSE: GLUT system font
-    int  systemFontSize; // GLUT system font point size: 10, 12 (default), or 18
+    int  systemFontSize; // UI point size 8-32; GLUT fallback uses the nearest 10/12/18 bitmap font
     std::string findTaskName;
     std::string findTaskNote;
     std::string findTaskID;
@@ -133,7 +133,7 @@ public:
     static void Save();
     
 private:
-    static void Load();
+    static void Load(bool configQvmReady);
     static void CreateDefault();
     static std::string GetConfigPath();
     static std::string GetKeybindingsPath();

@@ -49,11 +49,21 @@ std::vector<fs::path> LogCandidates(const std::string& requested) {
 
 void Logger::Init(const std::string& logFile) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (file_.is_open()) {
+    if (file_.is_open() || !requested_log_path_.empty()) {
         return;
     }
 
-    const auto candidates = LogCandidates(logFile);
+    // Do not create a file until the first message which is permitted by the
+    // loaded logging configuration. Config::Init runs after Logger::Init.
+    requested_log_path_ = logFile.empty() ? "igi1ed.log" : logFile;
+}
+
+void Logger::OpenLogFileLocked() {
+    if (file_.is_open() || requested_log_path_.empty()) {
+        return;
+    }
+
+    const auto candidates = LogCandidates(requested_log_path_.string());
     for (const auto& candidate : candidates) {
         std::error_code directory_error;
         if (!candidate.parent_path().empty()) {
@@ -115,6 +125,7 @@ void Logger::Log(LogLevel level, const std::string& message) {
             entries_.erase(entries_.begin());
         }
 
+        OpenLogFileLocked();
         if (file_.is_open()) {
             // Buffered write with periodic flush: an endl-flush per line made
             // every log call a synchronous disk stall and stuttered frames.

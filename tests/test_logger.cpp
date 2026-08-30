@@ -8,7 +8,7 @@
 #include <fstream>
 #include <string>
 
-TEST(LoggerTest, CreatesAndFlushesConfiguredLogFile) {
+TEST(LoggerTest, DoesNotCreateFileUntilLoggingIsEnabled) {
     namespace fs = std::filesystem;
     const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
     const fs::path path = fs::temp_directory_path() /
@@ -16,19 +16,35 @@ TEST(LoggerTest, CreatesAndFlushesConfiguredLogFile) {
     std::error_code ec;
     fs::remove(path, ec);
 
-    Config::Get().enableLogging = true;
-    Config::Get().debugLogging = true;
+    Config::Get().enableLogging = false;
+    Config::Get().debugLogging = false;
     Logger& logger = Logger::Get();
     logger.Init(path.string());
+    EXPECT_FALSE(fs::exists(path));
+    EXPECT_FALSE(logger.IsOpen());
+
+    logger.Log(LogLevel::INFO, "logger disabled message");
+    EXPECT_FALSE(fs::exists(path));
+
+    Config::Get().enableLogging = true;
+    logger.Log(LogLevel::INFO, "logger enabled message");
     ASSERT_TRUE(logger.IsOpen());
     ASSERT_EQ(fs::path(logger.GetLogPath()).lexically_normal(), path.lexically_normal());
-
-    logger.Log(LogLevel::INFO, "logger regression test");
+    logger.Log(LogLevel::DEBUG, "logger debug disabled message");
+    Config::Get().enableLogging = false;
+    logger.Log(LogLevel::INFO, "logger disabled after opening message");
+    Config::Get().enableLogging = true;
+    Config::Get().debugLogging = true;
+    logger.Log(LogLevel::DEBUG, "logger debug enabled message");
     logger.Flush();
 
     ASSERT_TRUE(fs::exists(path));
     std::ifstream in(path);
     const std::string contents((std::istreambuf_iterator<char>(in)),
                                std::istreambuf_iterator<char>());
-    EXPECT_NE(contents.find("logger regression test"), std::string::npos);
+    EXPECT_NE(contents.find("logger enabled message"), std::string::npos);
+    EXPECT_EQ(contents.find("logger debug disabled message"), std::string::npos);
+    EXPECT_EQ(contents.find("logger disabled message"), std::string::npos);
+    EXPECT_EQ(contents.find("logger disabled after opening message"), std::string::npos);
+    EXPECT_NE(contents.find("logger debug enabled message"), std::string::npos);
 }

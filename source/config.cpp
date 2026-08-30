@@ -15,6 +15,46 @@
 
 ConfigData Config::data_;
 
+static std::filesystem::path GetQEDDirectory() {
+    const std::filesystem::path gameQED =
+        std::filesystem::path(Utils::GetIGIRootPath()) / "editor" / "qed";
+    if (std::filesystem::is_directory(gameQED)) {
+        return gameQED;
+    }
+    return std::filesystem::path(Utils::GetExeDirectory()) / "editor" / "qed";
+}
+
+static bool CompileQscFile(const std::filesystem::path& qscPath) {
+    std::ifstream qscIn(qscPath);
+    if (!qscIn.is_open()) {
+        std::cerr << "[Config] Cannot open QSC: " << qscPath << "\n";
+        return false;
+    }
+
+    const std::string qscSrc((std::istreambuf_iterator<char>(qscIn)),
+                             std::istreambuf_iterator<char>());
+    const qsc::LexResult lexResult = qsc::Lex(qscSrc);
+    if (!lexResult.ok) {
+        std::cerr << "[Config] Cannot lex " << qscPath << ": " << lexResult.error << "\n";
+        return false;
+    }
+
+    const qsc::ParseResult parseResult = qsc::Parse(lexResult.tokens);
+    if (!parseResult.ok) {
+        std::cerr << "[Config] Cannot parse " << qscPath << ": " << parseResult.error << "\n";
+        return false;
+    }
+
+    std::string compileError;
+    const std::filesystem::path qvmPath = qscPath.parent_path() /
+                                          (qscPath.stem().string() + ".qvm");
+    if (!qvm::CompileToFile(*parseResult.program, qvmPath.string(), &compileError)) {
+        std::cerr << "[Config] Cannot compile " << qscPath << ": " << compileError << "\n";
+        return false;
+    }
+    return true;
+}
+
 static std::string Trim(const std::string& s) {
     auto start = s.find_first_not_of(" \t\r\n");
     if (start == std::string::npos) return "";
@@ -80,11 +120,11 @@ static KeyBinding ParseKeyBinding(const std::string& binding) {
 }
 
 std::string Config::GetConfigPath() {
-    return Utils::GetExeDirectory() + "\\editor\\qed\\qedconfig.qsc";
+    return (GetQEDDirectory() / "qedconfig.qsc").string();
 }
 
 std::string Config::GetKeybindingsPath() {
-    return Utils::GetExeDirectory() + "\\editor\\qed\\qedkeybindings.qsc";
+    return (GetQEDDirectory() / "qedkeybindings.qsc").string();
 }
 
 void Config::CreateDefault() {
@@ -155,38 +195,38 @@ void Config::CreateDefault() {
 
 void Config::Init() {
     CreateDefault();
-    std::string contentDir = Utils::GetExeDirectory() + "\\editor";
-    if (!std::filesystem::exists(contentDir)) {
+    // Do not let startup diagnostics create a log until the authoritative
+    // qedconfig.qsc has been compiled and loaded successfully.
+    data_.enableLogging = false;
+    data_.debugLogging = false;
+    const std::filesystem::path qedDir = GetQEDDirectory();
+    const std::string contentDir = qedDir.parent_path().string();
+    if (!std::filesystem::is_directory(qedDir)) {
         Logger::Get().Log(LogLevel::FATAL, "FATAL: editor directory not found: " + contentDir);
         Utils::ShowError("ERROR: FATAL\neditor directory not found:\n" + contentDir + "\nEditor will now exit.", "IGI Editor - Launch Error");
         std::exit(1);
     }
-    std::string qedDir = contentDir + "\\qed";
 
-    // Compile all .qsc files to .qvm
+    const std::filesystem::path configQscPath = qedDir / "qedconfig.qsc";
+    const bool configQvmReady = CompileQscFile(configQscPath);
+    if (!configQvmReady) {
+        std::cerr << "[Config] qedconfig.qsc is invalid; global configuration "
+                     "and logging remain disabled.\n";
+    }
+
+    // Compile the remaining QSC files to sibling QVM files. These files hold
+    // task schemas and keybindings, not the global editor configuration.
     for (const auto& entry : std::filesystem::directory_iterator(qedDir)) {
-        if (entry.path().extension() == ".qsc") {
-            std::string qscPath = entry.path().string();
-            std::string qvmPath = entry.path().parent_path().string() + "\\" + entry.path().stem().string() + ".qvm";
-            std::ifstream qscIn(qscPath);
-            std::string qscSrc((std::istreambuf_iterator<char>(qscIn)), std::istreambuf_iterator<char>());
-            qscIn.close();
-            auto lexResult = qsc::Lex(qscSrc);
-            if (lexResult.ok) {
-                auto parseResult = qsc::Parse(lexResult.tokens);
-                if (parseResult.ok) {
-                    std::string compileErr;
-                    qvm::CompileToFile(*parseResult.program, qvmPath, &compileErr);
-                }
-            }
+        if (entry.path().extension() == ".qsc" && entry.path() != configQscPath) {
+            CompileQscFile(entry.path());
         }
     }
-    Load();
+    Load(configQvmReady);
 }
 
-void Config::Load() {
-    std::string qedDir = Utils::GetExeDirectory() + "\\editor\\qed";
-    if (!std::filesystem::exists(qedDir)) return;
+void Config::Load(bool configQvmReady) {
+    const std::filesystem::path qedDir = GetQEDDirectory();
+    if (!std::filesystem::is_directory(qedDir)) return;
 
     auto ParseLine = [&](const std::string& line) {
         std::string clean = Trim(line);
@@ -340,16 +380,20 @@ void Config::Load() {
         }
     };
 
-    for (const auto& entry : std::filesystem::directory_iterator(qedDir)) {
-        if (entry.path().extension() == ".qvm") {
-            QVMFile qvm = QVM_Parse(entry.path().string());
-            if (qvm.valid) {
-                std::string decompiled = QVM_DecompileToString(qvm);
-                std::stringstream ss(decompiled);
-                std::string line;
-                while (std::getline(ss, line)) ParseLine(line);
-                Logger::Get().Log(LogLevel::INFO, "[Config] Loaded from memory-decompiled: " + entry.path().filename().string());
-            }
+    if (configQvmReady) {
+        const std::filesystem::path configQvmPath = qedDir / "qedconfig.qvm";
+        QVMFile qvm = QVM_Parse(configQvmPath.string());
+        if (qvm.valid) {
+            std::string decompiled = QVM_DecompileToString(qvm);
+            std::stringstream ss(decompiled);
+            std::string line;
+            while (std::getline(ss, line)) ParseLine(line);
+            Logger::Get().Log(LogLevel::INFO, "[Config] Loaded from memory-decompiled: qedconfig.qvm");
+        } else {
+            data_.enableLogging = false;
+            data_.debugLogging = false;
+            std::cerr << "[Config] Cannot load qedconfig.qvm: " << qvm.error
+                      << "; logging remains disabled.\n";
         }
     }
 
