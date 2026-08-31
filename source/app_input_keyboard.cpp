@@ -482,49 +482,14 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 	if (pause_mode_) {
-		if (key == 13) { // Enter
-			if (pause_active_input_ == 1) {
-				// Submit model search
-				if (!pause_search_input_.empty()) {
-					bool isId = true;
-					if (pause_search_input_.length() != 8 || pause_search_input_[3] != '_' || pause_search_input_[6] != '_') isId = false;
-					for (int i = 0; i < (int)pause_search_input_.length(); i++) {
-						if (i != 3 && i != 6 && !isdigit(pause_search_input_[i])) isId = false;
-					}
-					if (isId) SearchModelById(pause_search_input_);
-					else       SearchModelByName(pause_search_input_);
-					TogglePauseMenu();
-				}
-				pause_active_input_ = -1;
-			} else {
-				// Load level from spinner
-				if (!pause_level_input_.empty()) {
-					int lvl = std::atoi(pause_level_input_.c_str());
-					const auto selection = igi::ResolvePauseLevelSelection(lvl, in_game_mode_);
-					if (selection.valid) {
-						if (selection.leave_gameplay) {
-							ToggleGamePlayMode();
-						}
-						LoadLevel(selection.level);
-						TogglePauseMenu();
-					} else {
-						Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
-					}
-				}
-			}
+		if (key == 27) {
+			const auto transition = igi::ApplyPauseMenuAction(
+				pause_menu_page_, igi::PauseMenuAction::Resume);
+			pause_menu_page_ = transition.page;
+			if (transition.outcome == igi::PauseMenuOutcome::Close) TogglePauseMenu();
 			return;
 		}
-		if (key == 27) { // ESC: clear search focus or close menu
-			if (pause_active_input_ != -1) { pause_active_input_ = -1; return; }
-			TogglePauseMenu();
-			return;
-		}
-		if (pause_active_input_ == 1) {
-			// Search text input
-			if (key == 8 && !pause_search_input_.empty()) { pause_search_input_.pop_back(); return; }
-			if (key >= 32 && key < 127) { pause_search_input_ += (char)key; return; }
-		}
-		if (key != 27) return;
+		return;
 	}
 
 	// Autocomplete Ctrl combos — intercept before prop text editor so they work while editing.

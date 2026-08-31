@@ -376,10 +376,7 @@ void App::Frame(float delta_seconds) {
 			.show_hud_ = show_hud_,
 			.status_msg_ = status_message_,
 			.pause_mode_ = true,
-			.pause_active_input_ = pause_active_input_,
-			.pause_level_input_ = pause_level_input_,
-			.pause_search_input_ = pause_search_input_,
-			.pause_terrain_expanded_ = pause_terrain_expanded_,
+			.pause_menu_page_ = pause_menu_page_,
 			.show_debug_ = show_debug_,
 			.show_help_ = show_help_,
 			.edit_mode_ = edit_mode_,
@@ -547,10 +544,7 @@ void App::Frame(float delta_seconds) {
 		.show_hud_ = show_hud_,
 		.status_msg_ = status_message_,
 		.pause_mode_ = pause_mode_,
-		.pause_active_input_ = pause_active_input_,
-		.pause_level_input_ = pause_level_input_,
-		.pause_search_input_ = pause_search_input_,
-		.pause_terrain_expanded_ = pause_terrain_expanded_,
+		.pause_menu_page_ = pause_menu_page_,
 		.show_debug_ = show_debug_,
 		.show_help_ = show_help_,
 		.edit_mode_ = edit_mode_,
@@ -673,9 +667,7 @@ void App::TogglePauseMenu() {
 	// Hiding the cursor permanently caused the "mouse stuck" bug after resuming.
 	window_state_.cursor_visible_ = true;
 	if (pause_mode_) {
-		// Opening pause menu: seed level spinner with current level
-		int cur = level_.GetLevelNo();
-		if (cur > 0) pause_level_input_ = std::to_string(cur);
+		pause_menu_page_ = igi::PauseMenuPage::Main;
 		glutSetCursor(GLUT_CURSOR_NONE);
 	} else {
 		// Closing pause menu: reset mouse state so no stale drag occurs

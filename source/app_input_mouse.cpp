@@ -13,102 +13,43 @@ void App::HandlePauseMenuClick(int x, int y) {
 	const int menu_x = (window_state_.viewport_width_ - menu_w) / 2;
 	const int menu_top = igi::PauseMenuTop(window_state_.viewport_height_);
 	if (x < menu_x || x > menu_x + menu_w || y < menu_top || y > menu_top + menu_h) {
-		pause_active_input_ = -1;
 		return;
 	}
 
-	int button = 0;
-	const int resume_row = button++;
-	const int mode_row = button++;
-	const int font_row = button++;
-	const int level_row = button++;
-	const int search_row = button++;
-	const int lightmap_row = button++;
-	const int terrain_header_row = button++;
-	int terrain_tex_row = -1;
-	int terrain_hgt_row = -1;
-	int terrain_discard_row = -1;
-	if (pause_terrain_expanded_) {
-		terrain_tex_row = button++;
-		terrain_hgt_row = button++;
-		terrain_discard_row = button++;
-	}
-	const int reset_row = button++;
-	const int save_row = button++;
-	const int quit_row = button++;
+	for (int row = 0; row < igi::PauseMenuActionCount(pause_menu_page_); ++row) {
+		if (!igi::IsPauseMenuRowHit(window_state_.viewport_height_, row, y)) continue;
 
-	auto row_hit = [&](int row) {
-		return igi::IsPauseMenuRowHit(window_state_.viewport_height_,
-		                              pause_terrain_expanded_, row, y);
-	};
-
-	int clicked_input = -1;
-	if (row_hit(resume_row)) {
-		TogglePauseMenu();
-	} else if (row_hit(mode_row)) {
-		ToggleGamePlayMode();
-		TogglePauseMenu();
-	} else if (row_hit(font_row)) {
-		const int size_box_width = 34;
-		const int button_width = 22;
-		const int gap = 6;
-		const int label_width = 96;
-		const int label_gap = 16;
-		const int group_width = label_width + label_gap + button_width + gap +
-		                        size_box_width + gap + button_width;
-		const int group_x = menu_x + (menu_w - group_width) / 2;
-		const int minus_x = group_x + label_width + label_gap;
-		const int box_x = minus_x + button_width + gap;
-		const int plus_x = box_x + size_box_width + gap;
-		int& font_size = Config::Get().systemFontSize;
-		if (x >= minus_x && x < minus_x + button_width) {
-			font_size = std::max(8, font_size - 1);
-			Config::Save();
-		} else if (x >= plus_x && x < plus_x + button_width) {
-			font_size = std::min(32, font_size + 1);
-			Config::Save();
-		} else if (x < minus_x) {
+		const auto action = igi::PauseMenuActionForRow(pause_menu_page_, row);
+		const auto transition = igi::ApplyPauseMenuAction(pause_menu_page_, action);
+		if (action == igi::PauseMenuAction::ToggleGameMode) {
+			ToggleGamePlayMode();
+			TogglePauseMenu();
+			return;
+		}
+		if (action == igi::PauseMenuAction::ToggleEditorFont) {
 			Config::Get().useEditorFont = !Config::Get().useEditorFont;
 			Config::Save();
+			return;
 		}
-	} else if (row_hit(level_row)) {
-		const int number_width = 40;
-		const int button_width = 22;
-		const int gap = 6;
-		const int label_width = 96;
-		const int label_gap = 16;
-		const int group_width = label_width + label_gap + button_width + gap +
-		                        number_width + gap + button_width;
-		const int group_x = menu_x + (menu_w - group_width) / 2;
-		const int minus_x = group_x + label_width + label_gap;
-		const int plus_x = minus_x + button_width + gap + number_width + gap;
-		int current = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
-		if (x >= minus_x && x < minus_x + button_width) {
-			pause_level_input_ = std::to_string(std::max(1, current - 1));
-		} else if (x >= plus_x && x < plus_x + button_width) {
-			pause_level_input_ = std::to_string(std::min(14, current + 1));
+		if (action == igi::PauseMenuAction::ShowLevelSelectionHint) {
+			status_message_ = "Use middle-click > Choose Level while in Editor mode";
+			return;
 		}
-	} else if (row_hit(search_row)) {
-		clicked_input = 1;
-	} else if (row_hit(lightmap_row)) {
-		igi::ObjectLightmapManager::Get().CycleRenderMode();
-	} else if (row_hit(terrain_header_row)) {
-		pause_terrain_expanded_ = !pause_terrain_expanded_;
-	} else if (pause_terrain_expanded_ && row_hit(terrain_tex_row)) {
-		ToggleTerrainModOption(1);
-	} else if (pause_terrain_expanded_ && row_hit(terrain_hgt_row)) {
-		ToggleTerrainModOption(2);
-	} else if (pause_terrain_expanded_ && row_hit(terrain_discard_row)) {
-		ToggleTerrainModOption(4);
-	} else if (row_hit(reset_row)) {
-		ResetLevel();
-		TogglePauseMenu();
-	} else if (row_hit(save_row)) {
-		SaveCurrentLevel();
-	} else if (row_hit(quit_row)) {
-		exit(0);
+		if (action == igi::PauseMenuAction::SaveEditorLevel) {
+			SaveCurrentLevel();
+			return;
+		}
+		pause_menu_page_ = transition.page;
+
+		switch (transition.outcome) {
+		case igi::PauseMenuOutcome::Close:
+			TogglePauseMenu();
+			break;
+		case igi::PauseMenuOutcome::KeepOpen:
+			break;
+		}
+		return;
 	}
-	pause_active_input_ = clicked_input;
 }
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {

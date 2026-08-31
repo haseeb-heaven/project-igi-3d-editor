@@ -13,6 +13,7 @@
 #include "renderer_objects.h"
 #include "renderer_splines.h"
 #include "../level/task_schema.h"
+#include "../runtime/pause_menu_layout.h"
 #include <functional>
 
 /*
@@ -334,10 +335,7 @@ public:
 		bool show_hud_;
 		std::string status_msg_;
 		bool pause_mode_;
-		int pause_active_input_ = -1;
-		std::string pause_level_input_;
-		std::string pause_search_input_;
-		bool pause_terrain_expanded_ = false;
+		igi::PauseMenuPage pause_menu_page_ = igi::PauseMenuPage::Main;
 		bool show_debug_;
 		bool show_help_;
 		bool edit_mode_;

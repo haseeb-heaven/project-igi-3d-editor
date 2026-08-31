@@ -10,6 +10,7 @@
 #include "level/res_model_set.h"
 #include "renderer/model.h"
 #include "runtime/gameplay_host.h"
+#include "runtime/pause_menu_layout.h"
 #include <atomic>
 #include <optional>
 #include <set>
@@ -146,10 +147,7 @@ private:
   bool edit_mode_;
   bool terrain_edit_enabled_;
   bool pause_mode_;
-  std::string pause_level_input_ = "";
-  std::string pause_search_input_ = "";
-  int pause_active_input_ = -1; // -1: none, 1: search
-  bool pause_terrain_expanded_ = false;
+  igi::PauseMenuPage pause_menu_page_ = igi::PauseMenuPage::Main;
   int edit_brush_;
   double edit_brush_radius_ = 5000.0;
   double edit_brush_strength_ = 7.0;

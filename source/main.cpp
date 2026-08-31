@@ -283,6 +283,9 @@ static void UpdateScaleMenuText() {
 
 static void OnMenu(int menu) {
   if (menu >= MENU_LEVEL_FIRST && menu <= MENU_LEVEL_LAST) {
+    if (!igi::IsEditorInteractionActive(g_app.GetPauseMode(), g_app.IsGamePlayMode())) {
+      return;
+    }
     g_app.LoadLevel(menu);
     g_app.SetGameLevel(menu);
 
@@ -791,7 +794,10 @@ int main(int argc, char **argv) {
   glutAddSubMenu("Choose Level", g_menu_choose_level);
   glutAddMenuEntry("Close", MENU_CLOSE);
 
-  // Menus are defined but not attached to any mouse button since we use the pause menu and specific input handlers.
+  // Keep editor actions outside the retail in-game Escape menu.  This restores
+  // level selection in editor mode without letting the pause overlay switch
+  // missions while gameplay is frozen.
+  glutAttachMenu(GLUT_MIDDLE_BUTTON);
 
   // init menu text
   UpdateOverlayWireframeMenuText();

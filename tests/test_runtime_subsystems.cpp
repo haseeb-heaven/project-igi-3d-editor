@@ -67,34 +67,28 @@ TEST(PauseMenuInputTest, MenuIsModalInEditorAndGameplayModes) {
     EXPECT_FALSE(IsEditorInteractionActive(true, true));
 }
 
-TEST(PauseMenuLevelTest, LevelSelectionWorksInEditorAndExitsGameplaySafely) {
-    const PauseLevelSelection editor = ResolvePauseLevelSelection(2, false);
-    EXPECT_TRUE(editor.valid);
-    EXPECT_FALSE(editor.leave_gameplay);
-    EXPECT_EQ(editor.level, 2);
-
-    const PauseLevelSelection gameplay = ResolvePauseLevelSelection(14, true);
-    EXPECT_TRUE(gameplay.valid);
-    EXPECT_TRUE(gameplay.leave_gameplay);
-    EXPECT_EQ(gameplay.level, 14);
-
-    EXPECT_FALSE(ResolvePauseLevelSelection(0, false).valid);
-    EXPECT_FALSE(ResolvePauseLevelSelection(15, true).valid);
+TEST(EditorPauseMenuLayoutTest, KeepsACompactCenteredEditorFrame) {
+    EXPECT_EQ(kPauseMenuWidth, 460);
+    EXPECT_EQ(kPauseMenuHeight, 380);
+    EXPECT_EQ(PauseMenuTop(480), 50);
 }
 
-TEST(PauseMenuLayoutTest, ExpandedTerrainOptionsKeepQuitRowOnScreen) {
-    constexpr int viewport_height = 576;
-    constexpr int expanded_quit_row = 13;
+TEST(EditorPauseMenuStateTest, ExposesOnlyEditorActions) {
+    EXPECT_EQ(PauseMenuActionCount(PauseMenuPage::Main), 5);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 0), PauseMenuAction::Resume);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 1), PauseMenuAction::ToggleGameMode);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 2), PauseMenuAction::ToggleEditorFont);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 3), PauseMenuAction::ShowLevelSelectionHint);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 4), PauseMenuAction::SaveEditorLevel);
+    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 5), PauseMenuAction::None);
 
-    EXPECT_EQ(PauseMenuRowHeight(false), 35);
-    EXPECT_LT(PauseMenuRowHeight(true), PauseMenuRowHeight(false));
+    const auto resume = ApplyPauseMenuAction(PauseMenuPage::Main, PauseMenuAction::Resume);
+    EXPECT_EQ(resume.outcome, PauseMenuOutcome::Close);
 
-    const int quit_y = PauseMenuRowCenter(
-        viewport_height, true, expanded_quit_row);
-    EXPECT_GE(quit_y, 0);
-    EXPECT_LT(quit_y, viewport_height);
-    EXPECT_TRUE(IsPauseMenuRowHit(
-        viewport_height, true, expanded_quit_row, quit_y));
+    const auto editor_action = ApplyPauseMenuAction(
+        PauseMenuPage::Main, PauseMenuAction::ToggleEditorFont);
+    EXPECT_EQ(editor_action.page, PauseMenuPage::Main);
+    EXPECT_EQ(editor_action.outcome, PauseMenuOutcome::KeepOpen);
 }
 
 // 2. QVM Bytecode Execution & Native Registry Tests
