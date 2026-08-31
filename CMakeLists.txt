@@ -263,6 +263,7 @@ add_executable(igi_tests
     tests/test_dat_writer.cpp
     tests/test_graph_parser.cpp
     tests/test_graph_overlay.cpp
+    tests/test_animation.cpp
     tests/test_res_parser.cpp
     tests/test_tex_parser.cpp
     tests/test_mtp_parser.cpp
@@ -364,6 +365,7 @@ target_sources(igi_tests PRIVATE
     source/player_separation.cpp
     source/animation_motion.cpp
     source/player_animation_driver.cpp
+    source/animation.cpp
     source/weapon_view_sway.cpp
     source/weapon_view_recoil.cpp
     source/player_controller.cpp
