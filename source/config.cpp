@@ -173,13 +173,6 @@ void Config::Init() {
     InitFromDirectory(contentDir + "\\qed");
 }
 
-static int NormalizeSystemFontSize(int size) {
-    if (size == 10 || size == 12 || size == 18) return size;
-    if (size < 11) return 10;
-    if (size < 15) return 12;
-    return 18;
-}
-
 static bool CompileQscFile(const std::string& qscPath, const std::string& qvmPath) {
     std::ifstream qscIn(qscPath);
     if (!qscIn.is_open()) return false;

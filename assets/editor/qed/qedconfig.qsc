@@ -3,7 +3,7 @@ QEDFontSize(12.0);
 QEDFontColorR(255);
 QEDFontColorG(255);
 QEDFontColorB(255);
-QEDLogs(TRUE);
+QEDLogs(FALSE);
 QEDDebug(FALSE);
 QEDConsoleAutoActivate(2);
 QEDSearchType(133577004);
