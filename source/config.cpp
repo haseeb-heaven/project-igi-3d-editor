@@ -22,6 +22,13 @@ static std::string Trim(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
+static int NormalizeSystemFontSize(int size) {
+    if (size == 10 || size == 12 || size == 18) return size;
+    if (size < 11) return 10;
+    if (size < 15) return 12;
+    return 18;
+}
+
 static KeyBinding ParseKeyBinding(const std::string& binding) {
     KeyBinding kb = {0, false, false, false};
 
@@ -220,7 +227,7 @@ void Config::Load() {
                 else if (key == "CameraLock") data_.cameraLock = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Backup") data_.enableBackup = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "UseEditorFont") data_.useEditorFont = (val == "TRUE" || val == "true" || val == "1");
-                else if (key == "SystemFontSize") { int s = std::stoi(val); data_.systemFontSize = std::max(8, std::min(32, s)); }
+            else if (key == "SystemFontSize") data_.systemFontSize = NormalizeSystemFontSize(std::stoi(val));
                 else if (key == "FindTaskName") data_.findTaskName = val;
                 else if (key == "FindTaskNote") data_.findTaskNote = val;
                 else if (key == "FindTaskID") data_.findTaskID = val;

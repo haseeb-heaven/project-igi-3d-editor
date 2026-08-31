@@ -12,6 +12,7 @@
 #include "../source/runtime/runtime_world.h"
 #include "../source/runtime/editor_snapshot.h"
 #include "../source/runtime/gameplay_host.h"
+#include "../source/runtime/pause_menu_layout.h"
 
 using namespace igi;
 
@@ -38,6 +39,62 @@ TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
     clock.SetPaused(true);
     clock.Update(300);
     EXPECT_FALSE(clock.IsTickDue());
+}
+
+TEST(RuntimeClockTest, ResumeDoesNotCatchUpTimeSpentPaused) {
+    GameClock clock;
+    clock.Update(1000);
+    clock.Update(1033);
+    ASSERT_TRUE(clock.IsTickDue());
+    clock.CompleteTick();
+    ASSERT_EQ(clock.GetTickCount(), 1);
+
+    clock.SetPaused(true);
+    clock.SetPaused(false);
+    clock.Update(10000);
+
+    EXPECT_FALSE(clock.IsTickDue());
+    EXPECT_EQ(clock.GetTickCount(), 1);
+}
+
+TEST(PauseMenuInputTest, MenuIsModalInEditorAndGameplayModes) {
+    EXPECT_TRUE(IsPauseMenuInputActive(true));
+    EXPECT_FALSE(IsPauseMenuInputActive(false));
+
+    EXPECT_TRUE(IsEditorInteractionActive(false, false));
+    EXPECT_FALSE(IsEditorInteractionActive(true, false));
+    EXPECT_FALSE(IsEditorInteractionActive(false, true));
+    EXPECT_FALSE(IsEditorInteractionActive(true, true));
+}
+
+TEST(PauseMenuLevelTest, LevelSelectionWorksInEditorAndExitsGameplaySafely) {
+    const PauseLevelSelection editor = ResolvePauseLevelSelection(2, false);
+    EXPECT_TRUE(editor.valid);
+    EXPECT_FALSE(editor.leave_gameplay);
+    EXPECT_EQ(editor.level, 2);
+
+    const PauseLevelSelection gameplay = ResolvePauseLevelSelection(14, true);
+    EXPECT_TRUE(gameplay.valid);
+    EXPECT_TRUE(gameplay.leave_gameplay);
+    EXPECT_EQ(gameplay.level, 14);
+
+    EXPECT_FALSE(ResolvePauseLevelSelection(0, false).valid);
+    EXPECT_FALSE(ResolvePauseLevelSelection(15, true).valid);
+}
+
+TEST(PauseMenuLayoutTest, ExpandedTerrainOptionsKeepQuitRowOnScreen) {
+    constexpr int viewport_height = 576;
+    constexpr int expanded_quit_row = 13;
+
+    EXPECT_EQ(PauseMenuRowHeight(false), 35);
+    EXPECT_LT(PauseMenuRowHeight(true), PauseMenuRowHeight(false));
+
+    const int quit_y = PauseMenuRowCenter(
+        viewport_height, true, expanded_quit_row);
+    EXPECT_GE(quit_y, 0);
+    EXPECT_LT(quit_y, viewport_height);
+    EXPECT_TRUE(IsPauseMenuRowHit(
+        viewport_height, true, expanded_quit_row, quit_y));
 }
 
 // 2. QVM Bytecode Execution & Native Registry Tests
@@ -210,4 +267,20 @@ TEST(RuntimeHostTest, ModeSwitchingAndSnapshotRestore) {
     EXPECT_FALSE(host.IsGameplayActive());
     EXPECT_FLOAT_EQ(restored.camera_pos.x, 123.0f);
     EXPECT_FLOAT_EQ(restored.camera_yaw, 45.0f);
+}
+
+TEST(RuntimeHostTest, PausingClearsHeldGameplayInput) {
+    GameplayHost host;
+    auto dummy_terrain = [](float, float) -> float { return 0.0f; };
+    host.Initialize(dummy_terrain);
+
+    EditorSnapshot snap;
+    ASSERT_TRUE(host.OpenGameplay(snap));
+    host.GetInputRouter().OnKeyboardKey('W', true);
+    EXPECT_FLOAT_EQ(host.GetInputRouter().ConsumeGameplayInput().forward, 1.0f);
+
+    host.SetPaused(true);
+
+    EXPECT_TRUE(host.IsPaused());
+    EXPECT_FLOAT_EQ(host.GetInputRouter().ConsumeGameplayInput().forward, 0.0f);
 }

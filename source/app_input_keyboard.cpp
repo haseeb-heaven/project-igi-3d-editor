@@ -4,8 +4,12 @@
  *          Split from app_input.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "runtime/pause_menu_layout.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
+	if (pause_mode_) {
+		return;
+	}
 	if (in_game_mode_ && !pause_mode_) {
 		return;
 	}
@@ -357,6 +361,9 @@ void App::Input_OnSpecial(int key, int x, int y) {
 }
 
 void App::Input_OnSpecialUp(int key, int x, int y) {
+	if (pause_mode_) {
+		return;
+	}
 	if (in_game_mode_ && !pause_mode_) {
 		return;
 	}
@@ -465,6 +472,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	bool shiftDown = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
 	                 (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
+	if (pause_mode_ && ctrlDown && (key == 8 || key == 'h' || key == 'H')) {
+		return;
+	}
+
 	if (ctrlDown && (key == 8 || key == 'h' || key == 'H')) { // CTRL+H
 		ToggleOverlayWireframe();
 		return;
@@ -489,8 +500,12 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 				// Load level from spinner
 				if (!pause_level_input_.empty()) {
 					int lvl = std::atoi(pause_level_input_.c_str());
-					if (lvl >= 1 && lvl <= 14) {
-						LoadLevel(lvl);
+					const auto selection = igi::ResolvePauseLevelSelection(lvl, in_game_mode_);
+					if (selection.valid) {
+						if (selection.leave_gameplay) {
+							ToggleGamePlayMode();
+						}
+						LoadLevel(selection.level);
 						TogglePauseMenu();
 					} else {
 						Logger::Get().Log(LogLevel::ERR, "Level must be between 1 and 14.");
@@ -1271,6 +1286,10 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 
 void App::Input_OnKeyboardUp(unsigned char key, int x, int y) {
 	auto& config = Config::Get();
+
+	if (pause_mode_) {
+		return;
+	}
 
 	if (in_game_mode_ && !pause_mode_) {
 		gameplay_host_.GetInputRouter().OnKeyboardKey(key, false);

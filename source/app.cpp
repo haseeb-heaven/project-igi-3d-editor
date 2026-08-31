@@ -666,6 +666,9 @@ bool App::GetTerrainEditEnabled() const {
 
 void App::TogglePauseMenu() {
 	pause_mode_ = !pause_mode_;
+	if (in_game_mode_) {
+		gameplay_host_.SetPaused(pause_mode_);
+	}
 	// cursor_visible_ stays TRUE always — camera lock is handled dynamically in Input_OnMotion.
 	// Hiding the cursor permanently caused the "mouse stuck" bug after resuming.
 	window_state_.cursor_visible_ = true;

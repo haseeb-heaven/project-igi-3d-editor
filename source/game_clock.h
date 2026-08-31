@@ -38,7 +38,7 @@ public:
     uint64_t GetTickCount() const { return tick_count_; }
     double GetTimeSeconds() const { return tick_count_ * TICK_INTERVAL_SECONDS; }
     bool IsPaused() const { return is_paused_; }
-    void SetPaused(bool paused) { is_paused_ = paused; }
+    void SetPaused(bool paused);
 
 private:
     int64_t last_time_ms_ = 0;

@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "renderer_internal.h"
 #include "object_lightmap.h"
+#include "../runtime/pause_menu_layout.h"
 
 static FntFont g_editorFont;
 static GLuint  g_editorFontTex = 0;
@@ -1349,10 +1350,10 @@ void Renderer::Draw(const draw_params_s &params,
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
     if (task_tree_view.pause_mode_) {
-      const int menu_w = 460;
-      const int menu_h = 520;
+      const int menu_w = igi::kPauseMenuWidth;
+      const int menu_h = igi::kPauseMenuHeight;
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
-      const int menu_y = (params.view_define_->viewport_height_ - menu_h) / 2;
+      const int menu_y = igi::PauseMenuTop(params.view_define_->viewport_height_);
       const int viewport_h = params.view_define_->viewport_height_;
 
       // Glassmorphism-style background
@@ -1384,7 +1385,7 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glLineWidth(1.0f);
 
-      int screen_menu_top = (viewport_h - menu_h) / 2;
+      int screen_menu_top = igi::PauseMenuTop(viewport_h);
       draw_text_sys(menu_x + menu_w / 2 - 45, screen_menu_top + 22, "IGI EDITOR",
                 0.0f, 1.0f, 0.0f);
       draw_text_sys(menu_x + menu_w / 2 - 35, screen_menu_top + 46, "PAUSED", 0.8f,
@@ -1446,7 +1447,7 @@ void Renderer::Draw(const draw_params_s &params,
       const int NUM_BTNS = btn_labels.size();
 
       auto row_screen_y = [&](int idx) {
-        return screen_menu_top + 85 + idx * 35;
+        return igi::PauseMenuRowCenter(viewport_h, exp, idx);
       };
 
       // Shared spinner-box draw helper (reused for FONT_ROW and LEVEL_ROW)
@@ -1466,8 +1467,8 @@ void Renderer::Draw(const draw_params_s &params,
 
         bool hovered = (task_tree_view.mouse_x_ >= menu_x &&
                         task_tree_view.mouse_x_ <= menu_x + menu_w &&
-                        task_tree_view.mouse_y_ >= screen_btn_y - 15 &&
-                        task_tree_view.mouse_y_ <= screen_btn_y + 15);
+                        task_tree_view.mouse_y_ >= screen_btn_y - igi::PauseMenuRowHitRadius(exp) &&
+                        task_tree_view.mouse_y_ <= screen_btn_y + igi::PauseMenuRowHitRadius(exp));
 
         if (i == MODE_ROW) {
           int tw = (int)strlen(mode_btn_label) * 8;

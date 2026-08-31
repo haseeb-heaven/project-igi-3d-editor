@@ -422,6 +422,7 @@ private:
   void LoadAutoCompleteKeywords();
   bool InlineAutocomplete(); // complete/cycle the token left of the caret
   void RebuildLevelModelIds();
+  void HandlePauseMenuClick(int x, int y);
 
 public:
   // QSC/QVM workflow

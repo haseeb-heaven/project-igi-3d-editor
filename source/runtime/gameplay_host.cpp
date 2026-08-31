@@ -65,6 +65,9 @@ void GameplayHost::RestartGameplay() {
 
 void GameplayHost::SetPaused(bool paused) {
     is_paused_ = paused;
+    if (paused) {
+        input_router_.ResetInputState();
+    }
     scheduler_.GetClock().SetPaused(paused);
 }
 

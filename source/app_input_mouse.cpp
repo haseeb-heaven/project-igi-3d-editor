@@ -5,8 +5,116 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "renderer/object_lightmap.h"
+#include "runtime/pause_menu_layout.h"
+
+void App::HandlePauseMenuClick(int x, int y) {
+	const int menu_w = igi::kPauseMenuWidth;
+	const int menu_h = igi::kPauseMenuHeight;
+	const int menu_x = (window_state_.viewport_width_ - menu_w) / 2;
+	const int menu_top = igi::PauseMenuTop(window_state_.viewport_height_);
+	if (x < menu_x || x > menu_x + menu_w || y < menu_top || y > menu_top + menu_h) {
+		pause_active_input_ = -1;
+		return;
+	}
+
+	int button = 0;
+	const int resume_row = button++;
+	const int mode_row = button++;
+	const int font_row = button++;
+	const int level_row = button++;
+	const int search_row = button++;
+	const int lightmap_row = button++;
+	const int terrain_header_row = button++;
+	int terrain_tex_row = -1;
+	int terrain_hgt_row = -1;
+	int terrain_discard_row = -1;
+	if (pause_terrain_expanded_) {
+		terrain_tex_row = button++;
+		terrain_hgt_row = button++;
+		terrain_discard_row = button++;
+	}
+	const int reset_row = button++;
+	const int save_row = button++;
+	const int quit_row = button++;
+
+	auto row_hit = [&](int row) {
+		return igi::IsPauseMenuRowHit(window_state_.viewport_height_,
+		                              pause_terrain_expanded_, row, y);
+	};
+
+	int clicked_input = -1;
+	if (row_hit(resume_row)) {
+		TogglePauseMenu();
+	} else if (row_hit(mode_row)) {
+		ToggleGamePlayMode();
+		TogglePauseMenu();
+	} else if (row_hit(font_row)) {
+		const int size_box_width = 34;
+		const int button_width = 22;
+		const int gap = 6;
+		const int label_width = 96;
+		const int label_gap = 16;
+		const int group_width = label_width + label_gap + button_width + gap +
+		                        size_box_width + gap + button_width;
+		const int group_x = menu_x + (menu_w - group_width) / 2;
+		const int minus_x = group_x + label_width + label_gap;
+		const int box_x = minus_x + button_width + gap;
+		const int plus_x = box_x + size_box_width + gap;
+		int& font_size = Config::Get().systemFontSize;
+		if (x >= minus_x && x < minus_x + button_width) {
+			font_size = std::max(8, font_size - 1);
+			Config::Save();
+		} else if (x >= plus_x && x < plus_x + button_width) {
+			font_size = std::min(32, font_size + 1);
+			Config::Save();
+		} else if (x < minus_x) {
+			Config::Get().useEditorFont = !Config::Get().useEditorFont;
+			Config::Save();
+		}
+	} else if (row_hit(level_row)) {
+		const int number_width = 40;
+		const int button_width = 22;
+		const int gap = 6;
+		const int label_width = 96;
+		const int label_gap = 16;
+		const int group_width = label_width + label_gap + button_width + gap +
+		                        number_width + gap + button_width;
+		const int group_x = menu_x + (menu_w - group_width) / 2;
+		const int minus_x = group_x + label_width + label_gap;
+		const int plus_x = minus_x + button_width + gap + number_width + gap;
+		int current = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
+		if (x >= minus_x && x < minus_x + button_width) {
+			pause_level_input_ = std::to_string(std::max(1, current - 1));
+		} else if (x >= plus_x && x < plus_x + button_width) {
+			pause_level_input_ = std::to_string(std::min(14, current + 1));
+		}
+	} else if (row_hit(search_row)) {
+		clicked_input = 1;
+	} else if (row_hit(lightmap_row)) {
+		igi::ObjectLightmapManager::Get().CycleRenderMode();
+	} else if (row_hit(terrain_header_row)) {
+		pause_terrain_expanded_ = !pause_terrain_expanded_;
+	} else if (pause_terrain_expanded_ && row_hit(terrain_tex_row)) {
+		ToggleTerrainModOption(1);
+	} else if (pause_terrain_expanded_ && row_hit(terrain_hgt_row)) {
+		ToggleTerrainModOption(2);
+	} else if (pause_terrain_expanded_ && row_hit(terrain_discard_row)) {
+		ToggleTerrainModOption(4);
+	} else if (row_hit(reset_row)) {
+		ResetLevel();
+		TogglePauseMenu();
+	} else if (row_hit(save_row)) {
+		SaveCurrentLevel();
+	} else if (row_hit(quit_row)) {
+		exit(0);
+	}
+	pause_active_input_ = clicked_input;
+}
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
+	if (pause_mode_) {
+		return;
+	}
 	if (show_help_) {
 		// Scroll keybindings help panel
 		if (direction > 0) { if (help_scroll_offset_ > 0) help_scroll_offset_--; }
@@ -35,6 +143,14 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 	// Update mouse position first so EditorProcessClick uses correct coords
 	mouse_state_.prior_x_ = x;
 	mouse_state_.prior_y_ = y;
+
+	if (pause_mode_) {
+		if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+			HandlePauseMenuClick(x, y);
+		}
+		mouse_state_.left_button_down_ = false;
+		return;
+	}
 
 	if (in_game_mode_ && !pause_mode_) {
 		if (button == GLUT_LEFT_BUTTON) {
@@ -224,92 +340,6 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 				}
 			}
 
-			if (pause_mode_) {
-				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
-				const int menu_w = 460;
-				const int menu_h = 520;
-				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
-				const int screen_menu_top = (window_state_.viewport_height_ - menu_h) / 2;
-
-				if (x >= menu_x && x <= menu_x + menu_w &&
-				    y >= screen_menu_top && y <= screen_menu_top + menu_h) {
-					mouse_state_.left_button_down_ = false;
-					int clicked_input = -1;
-
-					int btn_idx = 0;
-					int RESUME_ROW = btn_idx++;
-					int MODE_ROW = btn_idx++;
-					int FONT_ROW = btn_idx++;
-					int LEVEL_ROW = btn_idx++;
-					int SEARCH_ROW = btn_idx++;
-					int LIGHTMAP_ROW = btn_idx++;
-					int TERRAIN_HEADER_ROW = btn_idx++;
-					int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1;
-					if (pause_terrain_expanded_) {
-						TERRAIN_TEX_ROW = btn_idx++;
-						TERRAIN_HGT_ROW = btn_idx++;
-						TERRAIN_DSC_ROW = btn_idx++;
-					}
-					int RESET_ROW = btn_idx++;
-					int SAVE_ROW = btn_idx++;
-					int QUIT_ROW = btn_idx++;
-
-					auto btn_hit2 = [&](int idx) -> bool {
-						int ry = screen_menu_top + 85 + idx * 35;
-						return (y >= ry - 15 && y <= ry + 15);
-					};
-
-					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
-					else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
-					else if (btn_hit2(FONT_ROW)) {
-						const int sz_box_w = 34, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
-						const int group_w = label_w + label_gap + btn_w + gap + sz_box_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_w + label_gap;
-						int box_x   = minus_x + btn_w + gap;
-						int plus_x  = box_x + sz_box_w + gap;
-						int& fs = Config::Get().systemFontSize;
-						if (x >= minus_x && x < minus_x + 22) {
-							fs = std::max(8, fs - 1); Config::Save();
-						} else if (x >= plus_x && x < plus_x + 22) {
-							fs = std::min(32, fs + 1); Config::Save();
-						} else if (x < minus_x) {
-							Config::Get().useEditorFont = !Config::Get().useEditorFont; Config::Save();
-						}
-					}
-					else if (btn_hit2(LEVEL_ROW)) {
-						// Level spinner: [-] [N] [+] — layout MUST match renderer
-						const int num_box_w = 40, btn_w = 22, gap = 6, label_w = 96, label_gap = 16;
-						const int group_w = label_w + label_gap + btn_w + gap + num_box_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_w + label_gap;
-						int plus_x  = minus_x + btn_w + gap + num_box_w + gap;
-						int cur = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
-						if (x >= minus_x && x < minus_x + btn_w) {
-							cur = (cur > 1) ? cur - 1 : 1;
-							pause_level_input_ = std::to_string(cur);
-						} else if (x >= plus_x && x < plus_x + btn_w) {
-							cur = (cur < 14) ? cur + 1 : 14;
-							pause_level_input_ = std::to_string(cur);
-						}
-					}
-					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
-					else if (btn_hit2(LIGHTMAP_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
-					else if (btn_hit2(TERRAIN_HEADER_ROW)) { pause_terrain_expanded_ = !pause_terrain_expanded_; }
-					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_TEX_ROW)) { ToggleTerrainModOption(1); }
-					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_HGT_ROW)) { ToggleTerrainModOption(2); }
-					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_DSC_ROW)) { ToggleTerrainModOption(4); }
-					else if (btn_hit2(RESET_ROW)) { ResetLevel(); TogglePauseMenu(); }
-					else if (btn_hit2(SAVE_ROW)) { SaveCurrentLevel(); }
-					else if (btn_hit2(QUIT_ROW)) { exit(0); }
-
-					pause_active_input_ = clicked_input;
-				} else {
-					pause_active_input_ = -1; // Clicked outside menu
-				}
-				return; // Block all other interactions while paused
-			}
-
 			// Priority: on-screen terrain brush palette (bottom-right). Consume click so
 			// it does not also sculpt terrain / pick an object this frame.
 			if (TerrainPaletteClick(x, y)) {
@@ -440,6 +470,12 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 void App::Input_OnMotion(int x, int y) {
 	int dx = x - mouse_state_.prior_x_;
 	int dy = y - mouse_state_.prior_y_;
+
+	if (pause_mode_) {
+		mouse_state_.prior_x_ = x;
+		mouse_state_.prior_y_ = y;
+		return;
+	}
 
 	if (in_game_mode_ && !pause_mode_) {
 		gameplay_host_.GetInputRouter().OnMouseMove(static_cast<float>(dx), static_cast<float>(dy));

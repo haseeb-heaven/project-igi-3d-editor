@@ -45,6 +45,20 @@ void GameClock::Update(int64_t now_milliseconds) {
     accumulator_ms_ += delta_ms;
 }
 
+void GameClock::SetPaused(bool paused) {
+    if (is_paused_ == paused) {
+        return;
+    }
+
+    is_paused_ = paused;
+    if (!is_paused_) {
+        // The host may not call Update while the menu is open.  Start a new
+        // timing interval on resume so wall-clock time spent in the menu is
+        // never converted into gameplay catch-up ticks.
+        has_last_time_ = false;
+    }
+}
+
 bool GameClock::IsTickDue() const {
     if (is_paused_ || in_excluded_scope_) {
         return false;
