@@ -163,3 +163,29 @@ TEST(ConfigLoggingTest, IgnoresUnrelatedQvmAndFailsClosedForInvalidConfig) {
     Logger::Get().Init("editor.log");
     std::filesystem::remove_all(root);
 }
+
+TEST(ConfigAssetTest, ShipsQscAndQvmForRuntimeConfiguration) {
+    namespace fs = std::filesystem;
+    const fs::path assets(IGI_EDITOR_QED_ASSETS_DIR);
+    ASSERT_TRUE(fs::exists(assets / "qedconfig.qsc"));
+    ASSERT_TRUE(fs::exists(assets / "qedconfig.qvm"));
+    ASSERT_TRUE(fs::exists(assets / "qedkeybindings.qsc"));
+    ASSERT_TRUE(fs::exists(assets / "qedkeybindings.qvm"));
+
+    const fs::path root = fs::temp_directory_path() / "igi-config-asset-test";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root, ec);
+    ASSERT_FALSE(ec);
+    fs::copy_file(assets / "qedconfig.qsc", root / "qedconfig.qsc");
+    fs::copy_file(assets / "qedkeybindings.qsc", root / "qedkeybindings.qsc");
+
+    ASSERT_TRUE(Config::InitFromDirectory(root.string()));
+    EXPECT_TRUE(fs::exists(root / "qedconfig.qvm"));
+    EXPECT_TRUE(fs::exists(root / "qedkeybindings.qvm"));
+
+    Config::Get().enableLogging = false;
+    Config::Get().debugLogging = false;
+    Logger::Get().Init("editor.log");
+    fs::remove_all(root, ec);
+}

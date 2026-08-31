@@ -148,7 +148,7 @@ if (WIN32)
     set(GL_VCPKG_TRIPLET "x86-windows")
   endif()
 
-  # The repository carries the x64 OpenGL runtime.  On x86, use an installed
+  # The repository carries the x64 OpenGL runtime. On x86, use an installed
   # vcpkg triplet when the equivalent bundled import libraries are absent.
   if (NOT EXISTS "${GL_LIB_DIR}/freeglut.lib" OR NOT EXISTS "${GL_LIB_DIR}/glew32.lib")
     if (DEFINED ENV{VCPKG_ROOT} AND
@@ -279,6 +279,11 @@ target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/parser
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/source/cli)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1)
 target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/GL/include)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
+target_include_directories(igi_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party/tinygltf)
+target_compile_definitions(igi_tests PRIVATE
+    IGI_EDITOR_QED_ASSETS_DIR="${PROJECT_SOURCE_DIR}/assets/editor/qed"
+)
 target_link_libraries(igi_tests PRIVATE gtest_main winmm)
 target_sources(igi_tests PRIVATE
     source/parsers/qsc_lexer.cpp
