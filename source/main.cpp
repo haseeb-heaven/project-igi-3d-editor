@@ -794,10 +794,7 @@ int main(int argc, char **argv) {
   glutAddSubMenu("Choose Level", g_menu_choose_level);
   glutAddMenuEntry("Close", MENU_CLOSE);
 
-  // Keep editor actions outside the retail in-game Escape menu.  This restores
-  // level selection in editor mode without letting the pause overlay switch
-  // missions while gameplay is frozen.
-  glutAttachMenu(GLUT_MIDDLE_BUTTON);
+  // No mouse context menu: editor level selection belongs to the Escape overlay.
 
   // init menu text
   UpdateOverlayWireframeMenuText();

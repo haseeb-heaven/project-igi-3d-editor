@@ -16,37 +16,61 @@ void App::HandlePauseMenuClick(int x, int y) {
 		return;
 	}
 
-	for (int row = 0; row < igi::PauseMenuActionCount(pause_menu_page_); ++row) {
+	for (int row = 0; row < igi::PauseMenuItemCount(pause_terrain_expanded_); ++row) {
 		if (!igi::IsPauseMenuRowHit(window_state_.viewport_height_, row, y)) continue;
-
-		const auto action = igi::PauseMenuActionForRow(pause_menu_page_, row);
-		const auto transition = igi::ApplyPauseMenuAction(pause_menu_page_, action);
-		if (action == igi::PauseMenuAction::ToggleGameMode) {
+		const int relative_x = x - menu_x;
+		const auto item = igi::PauseMenuItemAt(pause_terrain_expanded_, row);
+		if (item == igi::PauseMenuItem::Resume) {
+			TogglePauseMenu();
+		} else if (item == igi::PauseMenuItem::Mode) {
 			ToggleGamePlayMode();
 			TogglePauseMenu();
-			return;
-		}
-		if (action == igi::PauseMenuAction::ToggleEditorFont) {
-			Config::Get().useEditorFont = !Config::Get().useEditorFont;
+		} else if (item == igi::PauseMenuItem::Font) {
+			auto& config = Config::Get();
+			if (relative_x >= 250 && relative_x < 272) config.systemFontSize = std::max(8, config.systemFontSize - 1);
+			else if (relative_x >= 330 && relative_x < 352) config.systemFontSize = std::min(32, config.systemFontSize + 1);
+			else config.useEditorFont = !config.useEditorFont;
 			Config::Save();
-			return;
-		}
-		if (action == igi::PauseMenuAction::ShowLevelSelectionHint) {
-			status_message_ = "Use middle-click > Choose Level while in Editor mode";
-			return;
-		}
-		if (action == igi::PauseMenuAction::SaveEditorLevel) {
+		} else if (item == igi::PauseMenuItem::LevelSelector) {
+			int level = pause_level_input_.empty() ? level_.GetLevelNo() : std::atoi(pause_level_input_.c_str());
+			if (relative_x >= 250 && relative_x < 272) level = std::max(1, level - 1);
+			else if (relative_x >= 330 && relative_x < 352) level = std::min(14, level + 1);
+			pause_level_input_ = std::to_string(std::clamp(level, 1, 14));
+			pause_active_input_ = 2;
+		} else if (item == igi::PauseMenuItem::AutoSave) {
+			if (relative_x >= 250 && relative_x < 272) AdjustAutoSaveInterval(-10);
+			else if (relative_x >= 330 && relative_x < 352) AdjustAutoSaveInterval(10);
+			else ToggleAutoSave();
+		} else if (item == igi::PauseMenuItem::ModelSearch) {
+			pause_active_input_ = 1;
+		} else if (item == igi::PauseMenuItem::Music) {
+			Config::Get().musicEnabled = !Config::Get().musicEnabled;
+			Config::Save();
+		} else if (item == igi::PauseMenuItem::Lightmaps) {
+			Config::Get().enableLightmaps = !Config::Get().enableLightmaps;
+			Config::Save();
+		} else if (item == igi::PauseMenuItem::TerrainOptions) {
+			pause_terrain_expanded_ = !pause_terrain_expanded_;
+		} else if (item == igi::PauseMenuItem::TerrainTexture) {
+			ToggleTerrainModOption(1);
+		} else if (item == igi::PauseMenuItem::TerrainHeight) {
+			ToggleTerrainModOption(2);
+		} else if (item == igi::PauseMenuItem::TerrainDiscard) {
+			ToggleTerrainModOption(4);
+		} else if (item == igi::PauseMenuItem::TerrainFog) {
+			ToggleTerrainDrawOption(Renderer_Terrain::DRAW_TERRAIN_OPT_FOG);
+			Config::Get().enableFog = (GetTerrainDrawOptions() & Renderer_Terrain::DRAW_TERRAIN_OPT_FOG) != 0;
+			Config::Save();
+		} else if (item == igi::PauseMenuItem::FogIntensity) {
+			if (relative_x >= 250 && relative_x < 272) Config::Get().fogIntensity = std::max(0, Config::Get().fogIntensity - 100);
+			else if (relative_x >= 330 && relative_x < 352) Config::Get().fogIntensity = std::min(1000, Config::Get().fogIntensity + 100);
+			Config::Save();
+		} else if (item == igi::PauseMenuItem::ResetLevel) {
+			LoadLevel(level_.GetLevelNo());
+		} else if (item == igi::PauseMenuItem::SaveLevel) {
 			SaveCurrentLevel();
-			return;
-		}
-		pause_menu_page_ = transition.page;
-
-		switch (transition.outcome) {
-		case igi::PauseMenuOutcome::Close:
-			TogglePauseMenu();
-			break;
-		case igi::PauseMenuOutcome::KeepOpen:
-			break;
+		} else if (item == igi::PauseMenuItem::Quit) {
+			exit(0);
 		}
 		return;
 	}

@@ -1478,29 +1478,35 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glLineWidth(1.0f);
 
-      const auto page = task_tree_view.pause_menu_page_;
       const char* title = "IGI EDITOR PAUSED";
-      const char* detail = "";
 
       draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(title)) / 2,
                       menu_y + 24, title, 0.55f, 1.0f, 0.65f);
-      if (*detail) {
-        draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(detail)) / 2,
-                        menu_y + 55, detail, 0.65f, 0.68f, 0.72f);
-      }
-
-      char mode_label[48];
-      char font_label[48];
-      snprintf(mode_label, sizeof(mode_label), "Mode: %s",
-               task_tree_view.in_game_mode_ ? "Game Play" : "Editor");
-      snprintf(font_label, sizeof(font_label), "Editor Text Font: %s",
-               Config::Get().useEditorFont ? "On" : "Off");
-
-      const char* labels[] = {
-        "Resume", mode_label, font_label, "Change Level: Middle Click", "Save Level",
+      const auto& config = Config::Get();
+      auto label_for = [&](igi::PauseMenuItem item) {
+        switch (item) {
+        case igi::PauseMenuItem::Resume: return std::string("Resume");
+        case igi::PauseMenuItem::Mode: return std::string("Mode: ") + (task_tree_view.in_game_mode_ ? "Game Play" : "Editor");
+        case igi::PauseMenuItem::Font: return std::string("Font: ") + (config.useEditorFont ? "Editor" : "System") + "  [-] [" + std::to_string(config.systemFontSize) + "] [+]";
+        case igi::PauseMenuItem::LevelSelector: return std::string("Select Level  [-] [") + task_tree_view.pause_level_input_ + "] [+]";
+        case igi::PauseMenuItem::AutoSave: return std::string(task_tree_view.auto_save_enabled_ ? "Save Enable" : "Save Disable") + "  [-] [" + std::to_string(task_tree_view.auto_save_interval_seconds_) + "s] [+]";
+        case igi::PauseMenuItem::ModelSearch: return std::string("Model Search  [") + task_tree_view.pause_search_input_ + "]";
+        case igi::PauseMenuItem::Music: return std::string("Music: ") + (config.musicEnabled ? "On" : "Off");
+        case igi::PauseMenuItem::Lightmaps: return std::string("Lightmaps: ") + (config.enableLightmaps ? "On" : "Off");
+        case igi::PauseMenuItem::TerrainOptions: return std::string(task_tree_view.pause_terrain_expanded_ ? "Terrain Options: [-]" : "Terrain Options: [+]");
+        case igi::PauseMenuItem::TerrainTexture: return std::string("Terrain Texture");
+        case igi::PauseMenuItem::TerrainHeight: return std::string("Terrain Height");
+        case igi::PauseMenuItem::TerrainDiscard: return std::string("Terrain Discard");
+        case igi::PauseMenuItem::TerrainFog: return std::string("Terrain Fog: ") + (config.enableFog ? "On" : "Off");
+        case igi::PauseMenuItem::FogIntensity: return std::string("Fog Intensity  [-] [") + std::to_string(config.fogIntensity) + "%] [+]";
+        case igi::PauseMenuItem::ResetLevel: return std::string("Reset Level");
+        case igi::PauseMenuItem::SaveLevel: return std::string("Save Level");
+        case igi::PauseMenuItem::Quit: return std::string("Quit");
+        default: return std::string();
+        }
       };
 
-      for (int row = 0; row < igi::PauseMenuActionCount(page); ++row) {
+      for (int row = 0; row < igi::PauseMenuItemCount(task_tree_view.pause_terrain_expanded_); ++row) {
         const int text_y = igi::PauseMenuRowCenter(viewport_h, row);
         const int gl_y = viewport_h - text_y;
         const bool hovered = task_tree_view.mouse_x_ >= menu_x + 20 &&
@@ -1517,9 +1523,9 @@ void Renderer::Draw(const draw_params_s &params,
           glEnd();
           glDisable(GL_BLEND);
         }
-        const char* label = labels[row];
-        draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(label)) / 2, text_y,
-                        label, hovered ? 0.65f : 0.0f,
+        const std::string label = label_for(igi::PauseMenuItemAt(task_tree_view.pause_terrain_expanded_, row));
+        draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(label.c_str())) / 2, text_y,
+                        label.c_str(), hovered ? 0.65f : 0.0f,
                         hovered ? 1.0f : 0.90f,
                         hovered ? 0.70f : 0.20f);
       }

@@ -82,6 +82,10 @@ struct ConfigData {
 
     // [Renderer]
     bool enableLOD; // Portal/attachment distance culling for buildings
+    bool enableLightmaps;
+    bool enableFog;
+    int fogIntensity;
+    bool musicEnabled;
 
     // NEW: Advanced QED Settings
     int consoleAutoActivate;
@@ -90,6 +94,8 @@ struct ConfigData {
     bool displayTaskNote;
     bool allowDynamicSwitching;
     bool saveConfigOnExit;
+    bool auto_save_enabled;
+    int auto_save_interval_seconds;
     bool runEvent;
     bool cameraLock;
     bool enableBackup;

@@ -96,6 +96,9 @@ bool App::Init(int argc, char** argv) {
 	}
 
 	ConfigData& cfg = Config::Get();
+	auto_save_enabled_ = cfg.auto_save_enabled;
+	auto_save_interval_seconds_ = cfg.auto_save_interval_seconds;
+	auto_save_last_time_ms_ = Sys_Milliseconds();
 
 
 	// read options from command line
@@ -361,6 +364,14 @@ void App::OnIdle() {
 }
 
 void App::Frame(float delta_seconds) {
+	if (auto_save_enabled_ && !pause_mode_ && !in_game_mode_ && level_.GetLevelNo() > 0) {
+		const int64_t now = Sys_Milliseconds();
+		if (now - auto_save_last_time_ms_ >= static_cast<int64_t>(auto_save_interval_seconds_) * 1000) {
+			SaveCurrentLevel();
+			auto_save_last_time_ms_ = now;
+			status_message_ = "Auto-saved level";
+		}
+	}
 	if (pause_mode_) {
 		// Skip all updates when paused, just render
 		UpdateViewDefine();
@@ -377,6 +388,12 @@ void App::Frame(float delta_seconds) {
 			.status_msg_ = status_message_,
 			.pause_mode_ = true,
 			.pause_menu_page_ = pause_menu_page_,
+			.pause_level_input_ = pause_level_input_,
+			.pause_search_input_ = pause_search_input_,
+			.pause_active_input_ = pause_active_input_,
+			.pause_terrain_expanded_ = pause_terrain_expanded_,
+			.auto_save_enabled_ = auto_save_enabled_,
+			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
 			.show_debug_ = show_debug_,
 			.show_help_ = show_help_,
 			.edit_mode_ = edit_mode_,
@@ -545,6 +562,12 @@ void App::Frame(float delta_seconds) {
 		.status_msg_ = status_message_,
 		.pause_mode_ = pause_mode_,
 		.pause_menu_page_ = pause_menu_page_,
+		.pause_level_input_ = pause_level_input_,
+		.pause_search_input_ = pause_search_input_,
+		.pause_active_input_ = pause_active_input_,
+		.pause_terrain_expanded_ = pause_terrain_expanded_,
+		.auto_save_enabled_ = auto_save_enabled_,
+		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
 		.show_debug_ = show_debug_,
 		.show_help_ = show_help_,
 		.edit_mode_ = edit_mode_,
@@ -668,6 +691,8 @@ void App::TogglePauseMenu() {
 	window_state_.cursor_visible_ = true;
 	if (pause_mode_) {
 		pause_menu_page_ = igi::PauseMenuPage::Main;
+		pause_active_input_ = -1;
+		if (level_.GetLevelNo() > 0) pause_level_input_ = std::to_string(level_.GetLevelNo());
 		glutSetCursor(GLUT_CURSOR_NONE);
 	} else {
 		// Closing pause menu: reset mouse state so no stale drag occurs
@@ -677,6 +702,21 @@ void App::TogglePauseMenu() {
 		skip_input_on_motion_once_ = false;
 		glutSetCursor(GLUT_CURSOR_NONE);
 	}
+}
+
+void App::ToggleAutoSave() {
+	auto_save_enabled_ = !auto_save_enabled_;
+	auto_save_last_time_ms_ = Sys_Milliseconds();
+	Config::Get().auto_save_enabled = auto_save_enabled_;
+	Config::Save();
+	status_message_ = auto_save_enabled_ ? "Auto-save enabled" : "Auto-save disabled";
+}
+
+void App::AdjustAutoSaveInterval(int delta_seconds) {
+	auto_save_interval_seconds_ = std::clamp(auto_save_interval_seconds_ + delta_seconds, 10, 3600);
+	auto_save_last_time_ms_ = Sys_Milliseconds();
+	Config::Get().auto_save_interval_seconds = auto_save_interval_seconds_;
+	Config::Save();
 }
 
 bool App::GetPauseMode() const {

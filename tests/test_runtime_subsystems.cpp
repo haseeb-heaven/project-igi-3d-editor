@@ -67,28 +67,33 @@ TEST(PauseMenuInputTest, MenuIsModalInEditorAndGameplayModes) {
     EXPECT_FALSE(IsEditorInteractionActive(true, true));
 }
 
-TEST(EditorPauseMenuLayoutTest, KeepsACompactCenteredEditorFrame) {
-    EXPECT_EQ(kPauseMenuWidth, 460);
-    EXPECT_EQ(kPauseMenuHeight, 380);
-    EXPECT_EQ(PauseMenuTop(480), 50);
+TEST(EditorPauseMenuLayoutTest, RestoresAllEditorControls) {
+    EXPECT_EQ(PauseMenuItemCount(false), 12);
+    EXPECT_EQ(PauseMenuItemCount(true), 17);
+    EXPECT_EQ(PauseMenuItemAt(false, 0), PauseMenuItem::Resume);
+    EXPECT_EQ(PauseMenuItemAt(false, 3), PauseMenuItem::LevelSelector);
+    EXPECT_EQ(PauseMenuItemAt(false, 4), PauseMenuItem::AutoSave);
+    EXPECT_EQ(PauseMenuItemAt(false, 6), PauseMenuItem::Music);
+    EXPECT_EQ(PauseMenuItemAt(false, 7), PauseMenuItem::Lightmaps);
+    EXPECT_EQ(PauseMenuItemAt(false, 8), PauseMenuItem::TerrainOptions);
+    EXPECT_EQ(PauseMenuItemAt(true, 9), PauseMenuItem::TerrainTexture);
+    EXPECT_EQ(PauseMenuItemAt(true, 13), PauseMenuItem::FogIntensity);
+    EXPECT_EQ(PauseMenuItemAt(true, 16), PauseMenuItem::Quit);
 }
 
-TEST(EditorPauseMenuStateTest, ExposesOnlyEditorActions) {
-    EXPECT_EQ(PauseMenuActionCount(PauseMenuPage::Main), 5);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 0), PauseMenuAction::Resume);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 1), PauseMenuAction::ToggleGameMode);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 2), PauseMenuAction::ToggleEditorFont);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 3), PauseMenuAction::ShowLevelSelectionHint);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 4), PauseMenuAction::SaveEditorLevel);
-    EXPECT_EQ(PauseMenuActionForRow(PauseMenuPage::Main, 5), PauseMenuAction::None);
+TEST(EditorPauseMenuLevelTest, AcceptsEditorLevelSpinnerAndLeavesGameplaySafely) {
+    const auto editor = ResolvePauseLevelSelection(2, false);
+    EXPECT_TRUE(editor.valid);
+    EXPECT_FALSE(editor.leave_gameplay);
+    EXPECT_EQ(editor.level, 2);
 
-    const auto resume = ApplyPauseMenuAction(PauseMenuPage::Main, PauseMenuAction::Resume);
-    EXPECT_EQ(resume.outcome, PauseMenuOutcome::Close);
+    const auto gameplay = ResolvePauseLevelSelection(14, true);
+    EXPECT_TRUE(gameplay.valid);
+    EXPECT_TRUE(gameplay.leave_gameplay);
+    EXPECT_EQ(gameplay.level, 14);
 
-    const auto editor_action = ApplyPauseMenuAction(
-        PauseMenuPage::Main, PauseMenuAction::ToggleEditorFont);
-    EXPECT_EQ(editor_action.page, PauseMenuPage::Main);
-    EXPECT_EQ(editor_action.outcome, PauseMenuOutcome::KeepOpen);
+    EXPECT_FALSE(ResolvePauseLevelSelection(0, false).valid);
+    EXPECT_FALSE(ResolvePauseLevelSelection(15, true).valid);
 }
 
 // 2. QVM Bytecode Execution & Native Registry Tests

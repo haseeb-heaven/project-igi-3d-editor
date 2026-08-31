@@ -336,6 +336,12 @@ public:
 		std::string status_msg_;
 		bool pause_mode_;
 		igi::PauseMenuPage pause_menu_page_ = igi::PauseMenuPage::Main;
+		std::string pause_level_input_;
+		std::string pause_search_input_;
+		int pause_active_input_ = -1;
+		bool pause_terrain_expanded_ = false;
+		bool auto_save_enabled_ = false;
+		int auto_save_interval_seconds_ = 300;
 		bool show_debug_;
 		bool show_help_;
 		bool edit_mode_;

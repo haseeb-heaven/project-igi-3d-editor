@@ -482,11 +482,29 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 
 	if (pause_mode_) {
-		if (key == 27) {
-			const auto transition = igi::ApplyPauseMenuAction(
-				pause_menu_page_, igi::PauseMenuAction::Resume);
-			pause_menu_page_ = transition.page;
-			if (transition.outcome == igi::PauseMenuOutcome::Close) TogglePauseMenu();
+		if (key == 13) {
+			if (pause_active_input_ == 1 && !pause_search_input_.empty()) {
+				bool is_id = pause_search_input_.size() == 8 && pause_search_input_[3] == '_' && pause_search_input_[6] == '_';
+				for (size_t i = 0; is_id && i < pause_search_input_.size(); ++i)
+					if (i != 3 && i != 6 && !isdigit(static_cast<unsigned char>(pause_search_input_[i]))) is_id = false;
+				if (is_id) SearchModelById(pause_search_input_); else SearchModelByName(pause_search_input_);
+				TogglePauseMenu();
+			} else {
+				const auto selected = igi::ResolvePauseLevelSelection(std::atoi(pause_level_input_.c_str()), in_game_mode_);
+				if (selected.valid) {
+					if (selected.leave_gameplay) ToggleGamePlayMode();
+					LoadLevel(selected.level);
+					TogglePauseMenu();
+				} else status_message_ = "Level must be between 1 and 14.";
+			}
+			pause_active_input_ = -1;
+			return;
+		}
+		if (key == 27) { if (pause_active_input_ != -1) pause_active_input_ = -1; else TogglePauseMenu(); return; }
+		std::string* input = pause_active_input_ == 1 ? &pause_search_input_ : (pause_active_input_ == 2 ? &pause_level_input_ : nullptr);
+		if (input) {
+			if (key == 8 && !input->empty()) input->pop_back();
+			else if (key >= 32 && key < 127 && (pause_active_input_ == 1 || isdigit(key))) input->push_back(static_cast<char>(key));
 			return;
 		}
 		return;

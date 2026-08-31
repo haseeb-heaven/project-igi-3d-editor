@@ -148,6 +148,10 @@ private:
   bool terrain_edit_enabled_;
   bool pause_mode_;
   igi::PauseMenuPage pause_menu_page_ = igi::PauseMenuPage::Main;
+  std::string pause_level_input_;
+  std::string pause_search_input_;
+  int pause_active_input_ = -1; // 1=model search, 2=level entry
+  bool pause_terrain_expanded_ = false;
   int edit_brush_;
   double edit_brush_radius_ = 5000.0;
   double edit_brush_strength_ = 7.0;
@@ -316,6 +320,9 @@ private:
   bool undo_state_pushed_for_manip_ = false;
 
   int64_t prior_frame_time_;
+  bool auto_save_enabled_ = false;
+  int auto_save_interval_seconds_ = 300;
+  int64_t auto_save_last_time_ms_ = 0;
 
   window_state_s window_state_;
   mouse_state_s mouse_state_;
@@ -421,6 +428,8 @@ private:
   bool InlineAutocomplete(); // complete/cycle the token left of the caret
   void RebuildLevelModelIds();
   void HandlePauseMenuClick(int x, int y);
+  void ToggleAutoSave();
+  void AdjustAutoSaveInterval(int delta_seconds);
 
 public:
   // QSC/QVM workflow
