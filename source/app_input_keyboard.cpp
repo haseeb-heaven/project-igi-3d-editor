@@ -4,6 +4,7 @@
  *          Split from app_input.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "runtime/graph_camera_target.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
 	// The pause menu owns keyboard input while it is visible.  In particular,
@@ -440,10 +441,28 @@ void App::Input_OnSpecial(int key, int x, int y) {
 
 	if (key == GLUT_KEY_F11) {
 		if (selected_object_index_ >= 0) {
-			auto& obj = level_.GetLevelObjects().GetObjects()[selected_object_index_];
-			viewer_.pos_ = glm::vec3(obj.pos);
+			auto& objects = level_.GetLevelObjects().GetObjects();
+			if (selected_object_index_ >= (int)objects.size()) return;
+			const auto& obj = objects[selected_object_index_];
+			const GraphCameraTarget target = ResolveGraphCameraTarget(
+				renderer_.GetGraphOverlaySnapshot(),
+				renderer_.IsGraphOverlayVisible(),
+				renderer_.GraphSelected(),
+				renderer_.GraphOverlayOffset(),
+				obj.pos);
+			viewer_.pos_ = glm::vec3(target.position);
 			UpdateViewerVectors();
-			printf("Teleported to Object [%d]\n", selected_object_index_);
+			const char* target_name = target.kind == GraphCameraTargetKind::GraphNode
+				? "Graph Node" : target.kind == GraphCameraTargetKind::GraphOrigin
+				? "Graph Origin" : "Object";
+			printf("Teleported to %s [%d] at (%.2f, %.2f, %.2f)\n",
+				target_name, target.node_id >= 0 ? target.node_id : selected_object_index_,
+				target.position.x, target.position.y, target.position.z);
+			Logger::Get().Log(LogLevel::INFO,
+				std::string("[Camera] F11 target=") + target_name + " position=(" +
+				std::to_string(target.position.x) + "," +
+				std::to_string(target.position.y) + "," +
+				std::to_string(target.position.z) + ")");
 		}
 		return;
 	}
