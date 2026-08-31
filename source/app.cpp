@@ -3333,17 +3333,13 @@ std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
     std::unordered_set<int> result;
     auto& objs = GetActiveRenderLevelObjects().GetObjects();
     for (const auto& [idx, pb] : animPlaybacks_) {
-        // Paused (animation toggled off for this AI) -> show its normal static
-        // mesh, not a frozen skinned pose. Only objects actively playing get
-        // replaced with the live skinned draw.
-        if (!pb.clip || !pb.playing) continue;
         if (idx < 0 || idx >= (int)objs.size()) continue;
         const auto& obj = objs[idx];
-        if (obj.deleted) continue;
-        // Only skip the static draw if the skinned replacement can actually render â€”
-        // otherwise a model whose skin geometry fails to load goes permanently
-        // invisible (neither the static nor the skinned draw ever produces anything).
-        if (!renderer_.HasSkinGeometry(obj.modelId, obj.isBuilding)) continue;
+        // Only replace the static mesh if the skinned replacement can actually
+        // render — otherwise a model whose skin geometry fails to load goes
+        // permanently invisible (neither static nor skinned draw produces anything).
+        if (!ShouldUseSkinnedReplacement(pb, idx, objs.size(), obj.deleted,
+                                         renderer_.HasSkinGeometry(obj.modelId, obj.isBuilding))) continue;
         result.insert(idx);
     }
 

@@ -153,3 +153,16 @@ struct AnimPlayback {
         return !playing && currentTimeMs >= (float)clip->duration_ms();
     }
 };
+
+// The static mesh may only be replaced when playback is active and the
+// skeletal geometry was loaded. This keeps the render gate independently
+// testable and avoids making an object invisible on a skin-load failure.
+inline bool ShouldUseSkinnedReplacement(const AnimPlayback& playback,
+                                        int object_index,
+                                        size_t object_count,
+                                        bool object_deleted,
+                                        bool has_skin_geometry) {
+    return playback.clip != nullptr && playback.playing &&
+           object_index >= 0 && static_cast<size_t>(object_index) < object_count &&
+           !object_deleted && has_skin_geometry;
+}
