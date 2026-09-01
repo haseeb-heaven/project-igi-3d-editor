@@ -360,7 +360,6 @@ int RESUME_ROW = btn_idx++;
 				int FONT_ROW = btn_idx++;
 					int LEVEL_ROW = btn_idx++;
 					int AUTOSAVE_ROW = btn_idx++;
-					int SEARCH_ROW = btn_idx++;
 					int MUSIC_ROW = btn_idx++;
 					int LIGHTMAPS_ROW = btn_idx++;
 					int LIGHTMAPS_CALC_ROW = btn_idx++;
@@ -438,7 +437,6 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 						else if (x >= plus_x  && x < plus_x  + btn_w) AdjustAutoSaveInterval(10);
 						else if (x >= gx      && x < minus_x)         ToggleAutoSave();
 					}
-					else if (btn_hit2(SEARCH_ROW)) { clicked_input = 1; }
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
 					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
 					else if (btn_hit2(LIGHTMAPS_CALC_ROW)) {

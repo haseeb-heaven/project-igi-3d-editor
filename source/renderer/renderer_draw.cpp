@@ -7,6 +7,7 @@
 #include "graph_overlay.h"
 #include "object_lightmap.h"
 #include "tex_writer.h"
+#include "res_writer.h"
 #include "../runtime/map_computer_projection.h"
 #include "../runtime/pause_menu_layout.h"
 #include "../utils.h"
@@ -14,6 +15,8 @@
 #include <unordered_map>
 #include <limits>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 
 struct HudSprite {
   std::vector<GLuint> tex_ids;   // one texture per sprite frame (frame 0 for single-frame sprites)
@@ -152,6 +155,10 @@ static FntFont g_editorSmFont;
 static GLuint  g_editorSmFontTex = 0;
 static bool    g_editorSmFontTried = false;
 
+static FntFont g_retailPauseFont;
+static GLuint  g_retailPauseFontTex = 0;
+static bool    g_retailPauseFontTried = false;
+
 // Lazily load + upload the editor font atlas on first HUD draw.
 static void EnsureEditorFont() {
   if (g_editorFontTried) {
@@ -189,6 +196,78 @@ static void EnsureEditorSmFont() {
   pic.height_ = g_editorSmFont.texHeight;
   pic.pixels_ = g_editorSmFont.rgba.data();
   g_editorSmFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST, false);
+}
+
+// The retail pause menu uses font3.fnt from ingamemenu.res. Keep the editor
+// actions, but use the same atlas and glyph metrics as igi.exe.
+static void EnsureRetailPauseFont() {
+  if (g_retailPauseFontTried) return;
+  g_retailPauseFontTried = true;
+
+  const std::filesystem::path root(Utils::GetIGIRootPath());
+  const std::filesystem::path archive = root / "MENUSYSTEM" / "ingamemenu.res";
+  if (!std::filesystem::exists(archive)) return;
+
+  const auto bytes = RES_Extract(archive.string(), "LOCAL:menusystem/font3.fnt");
+  if (bytes.empty()) return;
+
+  const auto staged = std::filesystem::temp_directory_path() / "igi1ed-ingamemenu-font3.fnt";
+  std::ofstream out(staged, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+  out.close();
+  if (!out) return;
+
+  g_retailPauseFont = FNT_Parse(staged.string());
+  if (!g_retailPauseFont.valid) return;
+  pic_s pic;
+  pic.width_ = g_retailPauseFont.texWidth;
+  pic.height_ = g_retailPauseFont.texHeight;
+  pic.pixels_ = g_retailPauseFont.rgba.data();
+  g_retailPauseFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST,
+                                            GL_NEAREST, false);
+}
+
+static void DrawRetailPauseText(int x, int y_gl, const char* str,
+                                float r, float g, float b) {
+  if (!g_retailPauseFont.valid || !g_retailPauseFontTex) return;
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, g_retailPauseFontTex);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(r, g, b, 1.0f);
+  float pen_x = static_cast<float>(x);
+  const float space = g_retailPauseFont.lineHeight > 0
+      ? g_retailPauseFont.lineHeight / 2.0f : 4.0f;
+  glBegin(GL_QUADS);
+  for (const char* p = str; *p; ++p) {
+    const auto it = g_retailPauseFont.glyphs.find(static_cast<unsigned char>(*p));
+    if (it == g_retailPauseFont.glyphs.end()) { pen_x += space; continue; }
+    const FntGlyph& glyph = it->second;
+    const float x1 = pen_x + glyph.width;
+    const float y1 = y_gl - glyph.height;
+    glTexCoord2f(glyph.u0, glyph.v0); glVertex2f(pen_x, y_gl);
+    glTexCoord2f(glyph.u1, glyph.v0); glVertex2f(x1, y_gl);
+    glTexCoord2f(glyph.u1, glyph.v1); glVertex2f(x1, y1);
+    glTexCoord2f(glyph.u0, glyph.v1); glVertex2f(pen_x, y1);
+    pen_x += glyph.advance;
+  }
+  glEnd();
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDisable(GL_TEXTURE_2D);
+  glDisable(GL_BLEND);
+}
+
+static int RetailPauseTextWidth(const char* str) {
+  if (!g_retailPauseFont.valid) return static_cast<int>(strlen(str)) * 8;
+  const float space = g_retailPauseFont.lineHeight > 0
+      ? g_retailPauseFont.lineHeight / 2.0f : 4.0f;
+  float width = 0.0f;
+  for (const char* p = str; *p; ++p) {
+    const auto it = g_retailPauseFont.glyphs.find(static_cast<unsigned char>(*p));
+    width += it == g_retailPauseFont.glyphs.end() ? space : it->second.advance;
+  }
+  return static_cast<int>(width);
 }
 
 // Draw a string with the editor bitmap font in the HUD ortho space (y=0 bottom).
@@ -1570,6 +1649,15 @@ void Renderer::Draw(const draw_params_s &params,
       const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
       const int menu_y = igi::PauseMenuTop(params.view_define_->viewport_height_);
       const int viewport_h = params.view_define_->viewport_height_;
+      EnsureRetailPauseFont();
+      auto draw_pause_text = [&](int x, int y, const char* text,
+                                 float r, float g, float b) {
+        if (g_retailPauseFont.valid && g_retailPauseFontTex) {
+          DrawRetailPauseText(x, viewport_h - y, text, r, g, b);
+        } else {
+          draw_text_sys(x, y, text, r, g, b);
+        }
+      };
 
       // Glassmorphism-style background
       glEnable(GL_BLEND);
@@ -1603,11 +1691,11 @@ void Renderer::Draw(const draw_params_s &params,
       int screen_menu_top = igi::PauseMenuTop(viewport_h);
       // Title — centered, bright green
       const char* title = "IGI EDITOR";
-      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(title) * 3),
+      draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(title)) / 2,
                  screen_menu_top + 22, title, 0.0f, 1.0f, 0.0f);
       // Subtitle — centered, dim white
       const char* subtitle = "PAUSED";
-      draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(subtitle) * 3),
+      draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(subtitle)) / 2,
                  screen_menu_top + 46, subtitle, 0.8f, 0.8f, 0.8f);
 
       // Font row is rendered specially (index 1): a "Font: <type>" toggle on the
@@ -1651,8 +1739,6 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Select Level");
       const int AUTOSAVE_ROW = btn_labels.size();
       btn_labels.push_back("Auto Save");
-      const int SEARCH_ROW = btn_labels.size();
-      btn_labels.push_back("Model Search");
       const int MUSIC_ROW = btn_labels.size();
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
@@ -1693,8 +1779,8 @@ void Renderer::Draw(const draw_params_s &params,
         glVertex2i(x1, row_bot); glVertex2i(x1 + w, row_bot);
         glVertex2i(x1 + w, row_top); glVertex2i(x1, row_top);
         glEnd();
-        int tw = (int)strlen(txt) * 6;
-        draw_text_sys(x1 + (w - tw) / 2, lbl_y, txt, 0.0f, 0.9f, 0.0f);
+        int tw = RetailPauseTextWidth(txt);
+        draw_pause_text(x1 + (w - tw) / 2, lbl_y, txt, 0.0f, 0.9f, 0.0f);
       };
 
       for (int i = 0; i < NUM_BTNS; ++i) {
@@ -1707,16 +1793,16 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.mouse_y_ <= screen_btn_y + 15);
 
         if (i == MODE_ROW) {
-          int tw = (int)strlen(mode_btn_label) * 8;
+          int tw = RetailPauseTextWidth(mode_btn_label);
           int gx = menu_x + (menu_w - tw) / 2;
-          draw_text_sys(gx, screen_btn_y, mode_btn_label,
+          draw_pause_text(gx, screen_btn_y, mode_btn_label,
                         task_tree_view.in_game_mode_ ? 0.2f : (hovered ? 1.0f : 0.0f),
                         task_tree_view.in_game_mode_ ? 1.0f : (hovered ? 1.0f : 0.85f),
                         task_tree_view.in_game_mode_ ? 0.3f : 0.0f);
         } else if (i == CLIP_ROW) {
-          int tw = (int)strlen(clip_btn_label) * 8;
+          int tw = RetailPauseTextWidth(clip_btn_label);
           int gx = menu_x + (menu_w - tw) / 2;
-          draw_text_sys(gx, screen_btn_y, clip_btn_label,
+          draw_pause_text(gx, screen_btn_y, clip_btn_label,
                         task_tree_view.noclip_mode_ ? 0.85f : (hovered ? 1.0f : 0.0f),
                         task_tree_view.noclip_mode_ ? 0.45f : (hovered ? 1.0f : 0.85f),
                         task_tree_view.noclip_mode_ ? 0.0f : 0.0f);
@@ -1724,10 +1810,10 @@ void Renderer::Draw(const draw_params_s &params,
           // "Font: <type>  [-] <n> [+]" — label left, spinner group right; whole row centered
           const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
           const char* lbl = font_btn_label;
-          int label_px = (int)strlen(lbl) * 6;
+          int label_px = RetailPauseTextWidth(lbl);
           int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, lbl,
+          draw_pause_text(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
           int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
@@ -1742,10 +1828,10 @@ void Renderer::Draw(const draw_params_s &params,
           // Level spinner: "Select Level  [-] [N] [+]" — same width as Font row for visual alignment
           const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
           const char* lbl = "Select Level";
-          int label_px = (int)strlen(lbl) * 6;
+          int label_px = RetailPauseTextWidth(lbl);
           int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, lbl,
+          draw_pause_text(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
           int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
@@ -1760,10 +1846,10 @@ void Renderer::Draw(const draw_params_s &params,
           const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
           const char* lbl = task_tree_view.auto_save_enabled_
                                  ? "Save Enable" : "Save Disable";
-          int label_px = (int)strlen(lbl) * 6;
+          int label_px = RetailPauseTextWidth(lbl);
           int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, lbl,
+          draw_pause_text(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
           int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
@@ -1774,28 +1860,6 @@ void Renderer::Draw(const draw_params_s &params,
           sbox(minus_x, btn_w, "-",     rt, rb, screen_btn_y);
           sbox(box_x,   val_w, secbuf,  rt, rb, screen_btn_y);
           sbox(plus_x,  btn_w, "+",     rt, rb, screen_btn_y);
-
-        } else if (i == SEARCH_ROW) {
-          // Model Search text input box — narrower so it fits inside the 460px menu
-          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
-          const char* lbl = "Model Search";
-          int label_px = (int)strlen(lbl) * 6;
-          int box_w = 200;
-          int group_w = label_px + label_gap + box_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, lbl,
-                        hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int box_x = gx + label_px + label_gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
-          bool is_active = (task_tree_view.pause_active_input_ == 1);
-          glColor3f(0.0f, is_active ? 1.0f : 0.5f, 0.0f);
-          glBegin(GL_LINE_LOOP);
-          glVertex2i(box_x, rb); glVertex2i(box_x + box_w, rb);
-          glVertex2i(box_x + box_w, rt); glVertex2i(box_x, rt);
-          glEnd();
-          std::string buf = task_tree_view.pause_search_input_;
-          if (is_active && (clock() / 500) % 2 == 0) buf += "_";
-          draw_text_sys(box_x + 5, screen_btn_y, buf.c_str(), 1.0f, 1.0f, 1.0f);
 
         } else if (i == MUSIC_ROW) {
           // Music on/off checkbox: "[X] Music" / "[ ] Music", centered, hover-highlighted.
@@ -1810,8 +1874,8 @@ void Renderer::Draw(const draw_params_s &params,
           }
           char musicbuf[24];
           snprintf(musicbuf, sizeof(musicbuf), "[%c] Music", task_tree_view.music_on_ ? 'X' : ' ');
-          int tw = (int)strlen(musicbuf) * 6;
-          draw_text_sys(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
+           int tw = RetailPauseTextWidth(musicbuf);
+           draw_pause_text(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == LIGHTMAPS_ROW) {
@@ -1824,8 +1888,8 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-          int lmtw = (int)strlen(lightmap_btn_label) * 6;
-          draw_text_sys(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lightmap_btn_label,
+           int lmtw = RetailPauseTextWidth(lightmap_btn_label);
+           draw_pause_text(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lightmap_btn_label,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == LIGHTMAPS_CALC_ROW) {
@@ -1839,21 +1903,21 @@ void Renderer::Draw(const draw_params_s &params,
             glDisable(GL_BLEND);
           }
           const char* calc_lbl = "Calculate Lightmaps";
-          int btw = (int)strlen(calc_lbl) * 6;
-          draw_text_sys(menu_x + (menu_w - btw) / 2, screen_btn_y, calc_lbl,
+           int btw = RetailPauseTextWidth(calc_lbl);
+           draw_pause_text(menu_x + (menu_w - btw) / 2, screen_btn_y, calc_lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
-          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
+           draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
                         screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
         } else if (i == TERRAIN_FOGINT_ROW) {
           // Fog Intensity: "Fog Intensity  [-] [N%] [+]" — same spinner layout as Auto Save
           const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
           const char* lbl = "Fog Intensity";
-          int label_px = (int)strlen(lbl) * 6;
+           int label_px = RetailPauseTextWidth(lbl);
           int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
           int gx = menu_x + (menu_w - group_w) / 2;
-          draw_text_sys(gx, screen_btn_y, lbl,
+          draw_pause_text(gx, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
           int minus_x = gx + label_px + label_gap;
           int box_x   = minus_x + btn_w + gap;
@@ -1875,7 +1939,7 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-          draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
+           draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
                         screen_btn_y, btn_labels[i],
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
@@ -1891,10 +1955,10 @@ void Renderer::Draw(const draw_params_s &params,
             glVertex2i(menu_x + 20, gl_btn_y + 12);
             glEnd();
             glDisable(GL_BLEND);
-            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
+             draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
                       screen_btn_y, btn_labels[i], 1.0f, 1.0f, 1.0f);
           } else {
-            draw_text_sys(menu_x + menu_w / 2 - (int)(strlen(btn_labels[i]) * 3),
+             draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
                       screen_btn_y, btn_labels[i], 0.0f, 0.85f, 0.0f);
           }
         }
