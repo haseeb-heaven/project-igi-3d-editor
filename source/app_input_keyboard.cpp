@@ -444,12 +444,27 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			auto& objects = level_.GetLevelObjects().GetObjects();
 			if (selected_object_index_ >= (int)objects.size()) return;
 			const auto& obj = objects[selected_object_index_];
+			std::optional<glm::dvec3> relatedGraphOrigin;
+			if (obj.type == "AIGraph") {
+				relatedGraphOrigin = obj.pos;
+			} else if (obj.aiGraphTaskId >= 0 || !obj.graphId.empty()) {
+				const std::string graphTaskId = obj.aiGraphTaskId >= 0
+					? std::to_string(obj.aiGraphTaskId) : obj.graphId;
+				for (const auto& candidate : objects) {
+					if (!candidate.deleted && candidate.type == "AIGraph" &&
+						candidate.taskId == graphTaskId) {
+						relatedGraphOrigin = candidate.pos;
+						break;
+					}
+				}
+			}
 			const GraphCameraTarget target = ResolveGraphCameraTarget(
 				renderer_.GetGraphOverlaySnapshot(),
 				renderer_.IsGraphOverlayVisible(),
 				renderer_.GraphSelected(),
 				renderer_.GraphOverlayOffset(),
-				obj.pos);
+				obj.pos,
+				relatedGraphOrigin);
 			viewer_.pos_ = glm::vec3(target.position);
 			UpdateViewerVectors();
 			const char* target_name = target.kind == GraphCameraTargetKind::GraphNode

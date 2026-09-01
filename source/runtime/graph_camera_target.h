@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <optional>
+
 enum class GraphCameraTargetKind {
     Object,
     GraphOrigin,
@@ -24,7 +26,8 @@ inline GraphCameraTarget ResolveGraphCameraTarget(
     bool graph_visible,
     int selected_node_id,
     const glm::dvec3& graph_offset,
-    const glm::dvec3& object_position) {
+    const glm::dvec3& object_position,
+    const std::optional<glm::dvec3>& related_graph_origin = std::nullopt) {
     if (graph_visible && selected_node_id >= 0) {
         if (const GraphNode* node = GRAPH_FindNode(graph, selected_node_id)) {
             return {GraphCameraTargetKind::GraphNode,
@@ -35,6 +38,13 @@ inline GraphCameraTarget ResolveGraphCameraTarget(
 
     if (graph_visible && graph.valid) {
         return {GraphCameraTargetKind::GraphOrigin, graph_offset, -1};
+    }
+
+    // F11 is also useful before the overlay is opened.  A selected soldier
+    // still has a resolved AIGraph task, so use that task's world origin
+    // instead of silently teleporting to the soldier itself.
+    if (!graph_visible && related_graph_origin.has_value()) {
+        return {GraphCameraTargetKind::GraphOrigin, *related_graph_origin, -1};
     }
 
     return {GraphCameraTargetKind::Object, object_position, -1};

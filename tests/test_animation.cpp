@@ -109,3 +109,15 @@ TEST(GraphCameraTargetTest, FallsBackToObjectWhenGraphIsHidden) {
     EXPECT_EQ(target.kind, GraphCameraTargetKind::Object);
     EXPECT_EQ(target.position, glm::dvec3(4.0, 5.0, 6.0));
 }
+
+TEST(GraphCameraTargetTest, HiddenOverlayUsesRelatedAiGraphOrigin) {
+    GraphFile graph;
+    graph.valid = true;
+
+    const GraphCameraTarget target = ResolveGraphCameraTarget(
+        graph, false, -1, glm::dvec3(100.0), glm::dvec3(4.0, 5.0, 6.0),
+        glm::dvec3(400.0, 500.0, 600.0));
+
+    EXPECT_EQ(target.kind, GraphCameraTargetKind::GraphOrigin);
+    EXPECT_EQ(target.position, glm::dvec3(400.0, 500.0, 600.0));
+}

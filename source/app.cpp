@@ -923,9 +923,12 @@ void App::Frame(float delta_seconds) {
 	// All AI with an active, playing clip are skinned-replaced simultaneously
 	// (skinnedReplacementIndices must outlive renderer_.Draw() below, so it's a
 	// local in this Frame() call, not a temporary).
+	// Live AI poses are also part of the editor preview.  The old gameplay-only
+	// gate left the editor's animation clocks advancing while the static meshes
+	// continued to render, which made the log claim animations were playing even
+	// though no animated pose was ever submitted in editor mode.
 	std::unordered_set<int> skinnedReplacementIndices =
-		render_gameplay ? GetSkinnedReplacementObjectIndices()
-						 : std::unordered_set<int>{};
+		GetSkinnedReplacementObjectIndices();
 	draw_params_.skip_static_draw_indices_ = &skinnedReplacementIndices;
 	draw_params_.terrain_id_at_world_xy_ =
 		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
