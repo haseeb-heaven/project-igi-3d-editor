@@ -51,7 +51,7 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
                 // LoadAttachmentsRecursive doesn't need to call FindMeshData again
                 // for this model (avoids a second costly .res read under memory pressure).
                 try {
-                    ParsedGeometry geoForAtta = ParseMefFileFromMemory(meshBytes);
+                    ParsedGeometry geoForAtta = ParseMefFileFromMemory(meshBytes, modelId);
                     PrePopulateAttaFromParsed(modelId, isBuilding, geoForAtta.mefAttachments);
                 } catch (...) {}
 
@@ -359,7 +359,7 @@ const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string&
     {
         std::vector<uint8_t> mefBytes = FindMeshData(modelId);
         if (!mefBytes.empty()) {
-            try { geo = ParseMefFileFromMemory(mefBytes); } catch (...) {}
+            try { geo = ParseMefFileFromMemory(mefBytes, modelId); } catch (...) {}
         }
         if (geo.vertices.empty()) {
             std::string filepath = FindModelFile(modelId, isBuilding);
@@ -370,13 +370,16 @@ const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string&
             try { geo = ParseMefFile(filepath); } catch (...) {}
         }
     }
-    if (geo.vertices.empty() || geo.bones.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[Anim] " + modelId + " has no skeletal vertex/bone data for skinning");
+    const size_t renderableTriangles = CountRenderableSkinnedTriangles(geo);
+    if (renderableTriangles == 0) {
+        Logger::Get().Log(LogLevel::WARNING, "[Anim] " + modelId +
+            " has no complete skeletal triangles for skinning");
         return nullptr;
     }
 
     Logger::Get().Log(LogLevel::INFO, "[Anim] Loaded skin geometry for " + modelId + ": " +
-        std::to_string(geo.vertices.size()) + " vertices, " + std::to_string(geo.bones.size()) + " bones");
+        std::to_string(geo.vertices.size()) + " vertices, " + std::to_string(geo.bones.size()) +
+        " bones, " + std::to_string(renderableTriangles) + " renderable triangles");
     return &(skin_geometry_cache_[modelId] = std::move(geo));
 }
 

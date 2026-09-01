@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "animation.h"
+#include "renderer/mef_native.h"
 #include "runtime/graph_camera_target.h"
 #include "utils.h"
 
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <regex>
 #include <vector>
 
 #if defined(_WIN32)
@@ -83,6 +85,54 @@ TEST(AnimationRenderGateTest, RequiresActivePlaybackAndSkinGeometry) {
     EXPECT_FALSE(ShouldUseSkinnedReplacement(playback, 2, 5, true, true));
 }
 
+TEST(AnimationRenderGateTest, RejectsIncompleteSkinnedGeometry) {
+    ParsedGeometry geometry;
+    geometry.bones.resize(1);
+    geometry.vertices.resize(3);
+    geometry.triangles.push_back({0, 1, 99});
+
+    EXPECT_EQ(CountRenderableSkinnedTriangles(geometry), 0u);
+    EXPECT_FALSE(HasRenderableSkinnedGeometry(geometry));
+}
+
+TEST(AnimationRenderGateTest, AcceptsCompleteSkinnedGeometry) {
+    ParsedGeometry geometry;
+    geometry.bones.resize(1);
+    geometry.vertices.resize(3);
+    geometry.triangles.push_back({0, 1, 2});
+
+    EXPECT_EQ(CountRenderableSkinnedTriangles(geometry), 1u);
+    EXPECT_TRUE(HasRenderableSkinnedGeometry(geometry));
+}
+
+TEST(AnimationEvaluationTest, RotationTrackChangesWorldPose) {
+    AnimationRegistry registry;
+    AnimationClip clip = Clip(1000, true);
+    clip.bones = {
+        AnimBone{0, "root", -1, glm::vec3(0.0f)},
+        AnimBone{1, "arm", 0, glm::vec3(1.0f, 0.0f, 0.0f)},
+    };
+    AnimRotationKey key0;
+    key0.bone = 1;
+    key0.time_ms = 0;
+    key0.q0 = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    AnimRotationKey key1 = key0;
+    key1.time_ms = 1000;
+    key1.q0 = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    clip.rotationKeys = {key0, key1};
+
+    std::vector<glm::mat4> atStart;
+    std::vector<glm::mat4> atEnd;
+    registry.EvaluateWorld(&clip, 0.0f, atStart);
+    registry.EvaluateWorld(&clip, 1000.0f, atEnd);
+
+    ASSERT_EQ(atStart.size(), 2u);
+    ASSERT_EQ(atEnd.size(), 2u);
+    const glm::vec4 startPoint = atStart[1] * glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+    const glm::vec4 endPoint = atEnd[1] * glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+    EXPECT_GT(glm::length(startPoint - endPoint), 0.01f);
+}
+
 TEST(GraphCameraTargetTest, SelectedNodeUsesGraphOffset) {
     GraphFile graph;
     graph.valid = true;
@@ -135,6 +185,22 @@ TEST(GraphCameraTargetTest, HiddenOverlayUsesRelatedAiGraphOrigin) {
     EXPECT_EQ(target.position, glm::dvec3(400.0, 500.0, 600.0));
 }
 
+TEST(GraphCameraTargetTest, SelectedSoldierUsesNestedHumanAiGraphOrigin) {
+    std::vector<LevelObject> objects(3);
+    objects[0].type = "HumanSoldier";
+    objects[0].childrenIndices = {1};
+    objects[1].type = "HumanAI";
+    objects[1].aiGraphTaskId = 7;
+    objects[2].type = "AIGraph";
+    objects[2].taskId = "7";
+    objects[2].pos = glm::dvec3(1000.0, 2000.0, 3000.0);
+
+    const auto origin = FindRelatedGraphOrigin(objects, 0);
+
+    ASSERT_TRUE(origin.has_value());
+    EXPECT_EQ(*origin, glm::dvec3(1000.0, 2000.0, 3000.0));
+}
+
 #if defined(_WIN32)
 TEST(AnimationIntegrationTest, EditorSubmitsSkinnedAiReplacements) {
     if (std::getenv("IGI_RUN_LIVE_EDITOR_TESTS") == nullptr) {
@@ -150,8 +216,10 @@ TEST(AnimationIntegrationTest, EditorSubmitsSkinnedAiReplacements) {
     const fs::path gameRoot(gamePathEnv);
     const fs::path configPath = gameRoot / "editor" / "qed" / "qedconfig.qsc";
     const fs::path configQvmPath = gameRoot / "editor" / "qed" / "qedconfig.qvm";
-    const fs::path logPath = gameRoot / "igi1ed.log";
-    const fs::path exePath = fs::path(Utils::GetExeDirectory()) / "igi1ed.exe";
+    const fs::path builtExePath = fs::path(Utils::GetExeDirectory()) / "igi1ed.exe";
+    const fs::path deployedExePath = gameRoot / "igi1ed.exe";
+    const fs::path exePath = fs::exists(deployedExePath) ? deployedExePath : builtExePath;
+    const fs::path logPath = exePath.parent_path() / "igi1ed.log";
     ASSERT_TRUE(fs::exists(configPath));
     ASSERT_TRUE(fs::exists(configQvmPath));
     ASSERT_TRUE(fs::exists(exePath));
@@ -210,7 +278,18 @@ TEST(AnimationIntegrationTest, EditorSubmitsSkinnedAiReplacements) {
     const std::string log((std::istreambuf_iterator<char>(logIn)), {});
     ASSERT_GT(log.size(), logBefore);
     const std::string newLog = log.substr(logBefore);
-    EXPECT_NE(newLog.find("Animation init complete"), std::string::npos);
+    const auto initPos = newLog.find("Animation init complete: ");
+    ASSERT_NE(initPos, std::string::npos);
+    std::smatch initMatch;
+    const std::string initLog = newLog.substr(initPos);
+    ASSERT_TRUE(std::regex_search(
+        initLog, initMatch,
+        std::regex(R"(Animation init complete: (\d+) of (\d+) eligible AI NPCs)")));
+    const int initialized = std::stoi(initMatch[1].str());
+    const int eligible = std::stoi(initMatch[2].str());
+    EXPECT_GT(initialized, 0);
+    EXPECT_EQ(initialized, eligible);
     EXPECT_NE(newLog.find("Skinned/animated replacement active"), std::string::npos);
+    EXPECT_NE(newLog.find("Skinned draw submitted for"), std::string::npos);
 }
 #endif

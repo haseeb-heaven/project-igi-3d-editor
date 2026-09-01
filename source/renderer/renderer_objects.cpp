@@ -338,6 +338,7 @@ void Renderer_Objects::ClearCaches() {
     persistent_dat_ = DATFile{};
     persistent_dat_path_.clear();
     logged_draw_buildings_.clear();
+    skin_geometry_cache_.clear();
 
     // Lightmaps are keyed by taskId, which is only unique WITHIN a level — task
     // 1104 in level1 and task 1104 in level6 are unrelated. Without clearing
@@ -478,6 +479,7 @@ void Renderer_Objects::Shutdown() {
     texture_map_level_ = -1;
     persistent_dat_ = DATFile{};
     persistent_dat_path_.clear();
+    skin_geometry_cache_.clear();
 
     if (shader_program_) {
         glDeleteProgram(shader_program_);

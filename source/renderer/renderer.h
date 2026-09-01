@@ -678,7 +678,7 @@ public:
     // load goes permanently invisible (neither static nor skinned draw ever runs).
     bool                    HasSkinGeometry(const std::string& modelId, bool isBuilding) {
         const ParsedGeometry* geo = objects_.GetOrLoadSkinGeometry(modelId, isBuilding);
-        return geo && !geo->vertices.empty() && !geo->triangles.empty();
+        return geo && HasRenderableSkinnedGeometry(*geo);
     }
     // Exposes the parsed bone list (REIH+MANB names/parents/rest pivots) for callers
     // that need to locate a named bone (e.g. "right hand") for weapon attachment.
@@ -805,6 +805,7 @@ private:
 	Renderer_Objects		objects_;
 	Renderer_Splines		splines_;
 	Renderer_Rain			rain_;
+	std::unordered_set<std::string>	logged_skinned_draws_;
 
 	glm::mat4				mat_proj_;
 	glm::mat4				mat_view_;

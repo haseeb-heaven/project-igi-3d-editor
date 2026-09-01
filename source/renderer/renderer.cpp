@@ -82,6 +82,7 @@ bool Renderer::Init() {
 }
 
 void Renderer::Shutdown() {
+  logged_skinned_draws_.clear();
   terrain_.Shutdown();
   objects_.Shutdown();
   rain_.Shutdown();
@@ -94,6 +95,7 @@ void Renderer::Shutdown() {
 }
 
 void Renderer::BeginLoadLevel() {
+  logged_skinned_draws_.clear();
   flat_sky_layers_.UnloadAllTexs();
   terrain_.UnloadAllTexs();
   objects_.ClearCaches();
@@ -289,7 +291,13 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
                                 const glm::mat4& objWorldMat) {
     if (boneWorldTransforms.empty()) return;
     const ParsedGeometry* geo = objects_.GetOrLoadSkinGeometry(modelId, isBuilding);
-    if (!geo || geo->vertices.empty() || geo->triangles.empty()) return;
+    if (!geo || !HasRenderableSkinnedGeometry(*geo)) return;
+
+    const size_t renderableTriangles = CountRenderableSkinnedTriangles(*geo);
+    if (logged_skinned_draws_.insert(modelId).second) {
+        Logger::Get().Log(LogLevel::INFO, "[Anim] Skinned draw submitted for " + modelId +
+            " (" + std::to_string(renderableTriangles) + " triangles)");
+    }
 
     // Rest-pose bone world positions (raw units) — same convention the static
     // mesh cache used to bake geo->vertices[i].pos in the first place.
@@ -399,10 +407,11 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
         glBegin(GL_TRIANGLES);
         for (size_t t = start; t < start + count && t < geo->triangles.size(); ++t) {
             const auto& tri = geo->triangles[t];
-            for (int k = 0; k < 3; ++k) {
-                uint32_t vi = tri[k];
-                if (vi < deformedPos.size()) emitVertex(vi);
-            }
+            if (tri[0] >= deformedPos.size() || tri[1] >= deformedPos.size() ||
+                tri[2] >= deformedPos.size()) continue;
+            emitVertex(tri[0]);
+            emitVertex(tri[1]);
+            emitVertex(tri[2]);
         }
         glEnd();
     };

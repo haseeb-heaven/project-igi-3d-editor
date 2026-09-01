@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/graph_writer.h"
+#include "level/level_objects.h"
 
 #include <glm/glm.hpp>
 
@@ -17,6 +18,42 @@ struct GraphCameraTarget {
     glm::dvec3 position{0.0};
     int node_id = -1;
 };
+
+// Resolve the graph task referenced by a selected editor object. HumanSoldier
+// stores the relationship on its nested HumanAI task, while AIGraph and
+// HumanAI selections carry it directly. Keep this lookup independent of the
+// renderer so F11 and tests use the same authored-object relationship.
+inline std::string FindRelatedGraphTaskId(const std::vector<LevelObject>& objects,
+                                           int selected_object_index) {
+    if (selected_object_index < 0 ||
+        selected_object_index >= static_cast<int>(objects.size())) return {};
+    const LevelObject& selected = objects[selected_object_index];
+    if (selected.deleted) return {};
+    if (selected.type == "AIGraph") return selected.taskId;
+    if (selected.aiGraphTaskId >= 0) return std::to_string(selected.aiGraphTaskId);
+    if (!selected.graphId.empty()) return selected.graphId;
+
+    for (int child_index : selected.childrenIndices) {
+        if (child_index < 0 || child_index >= static_cast<int>(objects.size())) continue;
+        const LevelObject& child = objects[child_index];
+        if (!child.deleted && child.type == "HumanAI" && child.aiGraphTaskId >= 0)
+            return std::to_string(child.aiGraphTaskId);
+    }
+    return {};
+}
+
+inline std::optional<glm::dvec3> FindRelatedGraphOrigin(
+    const std::vector<LevelObject>& objects, int selected_object_index) {
+    const std::string graph_task_id =
+        FindRelatedGraphTaskId(objects, selected_object_index);
+    if (graph_task_id.empty()) return std::nullopt;
+    for (const LevelObject& candidate : objects) {
+        if (!candidate.deleted && candidate.type == "AIGraph" &&
+            candidate.taskId == graph_task_id)
+            return candidate.pos;
+    }
+    return std::nullopt;
+}
 
 // Graph node coordinates are local to the AIGraph task. F11 therefore uses
 // the selected node plus the overlay world offset; with no selected node it

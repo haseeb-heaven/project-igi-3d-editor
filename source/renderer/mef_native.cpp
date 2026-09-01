@@ -882,9 +882,13 @@ ParsedGeometry ParseMefFile(const std::string& filepath) {
     return ParseMefGeometry(bytes, chunks, filepath);
 }
 
-ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes) {
-    const std::vector<ChunkInfo> chunks = ParseIlffChunks(bytes, "<memory>");
-    return ParseMefGeometry(bytes, chunks, "<memory>");
+ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes,
+                                      const std::string& modelId) {
+    // Preserve the resource identity when parsing archive bytes. Type-1 MEFs
+    // use the model name to select the retail-compatible hardcoded rig.
+    const std::string sourceName = modelId.empty() ? "<memory>" : modelId + ".mef";
+    const std::vector<ChunkInfo> chunks = ParseIlffChunks(bytes, sourceName);
+    return ParseMefGeometry(bytes, chunks, sourceName);
 }
 
 std::vector<glm::vec3> ComputeBoneWorldPositionsPublic(const std::vector<BoneInfo>& bones) {

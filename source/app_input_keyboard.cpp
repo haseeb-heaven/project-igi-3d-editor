@@ -447,33 +447,34 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			renderer_.GraphSelected() >= 0;
 		if (!hasSelectedObject && !hasGraphTarget) return;
 
-		std::optional<glm::dvec3> relatedGraphOrigin;
+		const std::optional<glm::dvec3> relatedGraphOrigin =
+			FindRelatedGraphOrigin(objects, selected_object_index_);
+		const std::string relatedGraphTaskId =
+			FindRelatedGraphTaskId(objects, selected_object_index_);
 		glm::dvec3 objectPosition = renderer_.GraphOverlayOffset();
 		if (hasSelectedObject) {
 			const auto& obj = objects[selected_object_index_];
 			objectPosition = obj.pos;
-			if (obj.type == "AIGraph") {
-				relatedGraphOrigin = obj.pos;
-			} else if (obj.aiGraphTaskId >= 0 || !obj.graphId.empty()) {
-				const std::string graphTaskId = obj.aiGraphTaskId >= 0
-					? std::to_string(obj.aiGraphTaskId) : obj.graphId;
-				for (const auto& candidate : objects) {
-					if (!candidate.deleted && candidate.type == "AIGraph" &&
-						candidate.taskId == graphTaskId) {
-						relatedGraphOrigin = candidate.pos;
-						break;
-					}
-				}
-			}
 		}
+		// A node selection belongs to the graph that is currently selected in the
+		// task tree. Never apply a stale node from a previously selected graph.
+		const bool overlayMatchesSelection = relatedGraphTaskId.empty() ||
+			(renderer_.GraphOverlayTaskId() == relatedGraphTaskId);
 		const GraphCameraTarget target = ResolveGraphCameraTarget(
 			renderer_.GetGraphOverlaySnapshot(),
-			renderer_.IsGraphOverlayVisible(),
-			renderer_.GraphSelected(),
+			renderer_.IsGraphOverlayVisible() && overlayMatchesSelection,
+			renderer_.IsGraphOverlayVisible() && overlayMatchesSelection
+				? renderer_.GraphSelected() : -1,
 			renderer_.GraphOverlayOffset(),
 			objectPosition,
 			relatedGraphOrigin);
 		if (target.kind == GraphCameraTargetKind::Object && !hasSelectedObject) return;
+		// Orbit mode recomputes the camera position on the next input tick. F11 is
+		// an explicit teleport, so cancel orbit and stale movement deltas first.
+		orbit_active_ = false;
+		input_.mouse_delta_x_ = 0;
+		input_.mouse_delta_y_ = 0;
+		viewer_.velocity_ = glm::vec3(0.0f);
 		viewer_.pos_ = glm::vec3(target.position);
 		UpdateViewerVectors();
 		const char* target_name = target.kind == GraphCameraTargetKind::GraphNode

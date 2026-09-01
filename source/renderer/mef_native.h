@@ -137,12 +137,53 @@ struct ParsedGeometry {
     std::vector<std::string> pmtlTextures; // Textures explicitly requested in the MEF
 };
 
+// Return the number of complete, drawable triangles in a parsed skinned mesh.
+// A skinned replacement must prove that every emitted vertex and bone reference
+// is valid before the caller suppresses the original mesh.
+inline size_t CountRenderableSkinnedTriangles(const ParsedGeometry& geometry) {
+    if (geometry.vertices.empty() || geometry.bones.empty() || geometry.triangles.empty())
+        return 0;
+
+    auto validRange = [&](size_t start, size_t count) {
+        return count > 0 && start <= geometry.triangles.size() &&
+               count <= geometry.triangles.size() - start;
+    };
+    size_t count = 0;
+    auto countRange = [&](size_t start, size_t rangeCount) {
+        if (!validRange(start, rangeCount)) return;
+        for (size_t t = start; t < start + rangeCount; ++t) {
+            const auto& triangle = geometry.triangles[t];
+            bool valid = true;
+            for (uint32_t vertexIndex : triangle) {
+                if (vertexIndex >= geometry.vertices.size() ||
+                    geometry.vertices[vertexIndex].boneIndex >= geometry.bones.size()) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid) ++count;
+        }
+    };
+    if (geometry.renderBlocks.empty()) {
+        countRange(0, geometry.triangles.size());
+    } else {
+        for (const auto& block : geometry.renderBlocks)
+            countRange(block.triangleStart, block.triangleCount);
+    }
+    return count;
+}
+
+inline bool HasRenderableSkinnedGeometry(const ParsedGeometry& geometry) {
+    return CountRenderableSkinnedTriangles(geometry) > 0;
+}
+
 // Parse a binary MEF file and return all geometry + bone data.
 // Throws std::runtime_error on any fatal parse error.
 ParsedGeometry ParseMefFile(const std::string& filepath);
 
 // Parse a MEF that is already in memory (no disk I/O).
-ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes);
+ParsedGeometry ParseMefFileFromMemory(const std::vector<uint8_t>& bytes,
+                                      const std::string& modelId = {});
 
 // Cumulative parent-chain sum of each bone's (parent-relative) rest pivot,
 // giving each bone's absolute rest-pose position (raw, unscaled units).
