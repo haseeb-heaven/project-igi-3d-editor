@@ -440,11 +440,18 @@ void App::Input_OnSpecial(int key, int x, int y) {
 	}
 
 	if (key == GLUT_KEY_F11) {
-		if (selected_object_index_ >= 0) {
-			auto& objects = level_.GetLevelObjects().GetObjects();
-			if (selected_object_index_ >= (int)objects.size()) return;
+		auto& objects = level_.GetLevelObjects().GetObjects();
+		const bool hasSelectedObject = selected_object_index_ >= 0 &&
+			selected_object_index_ < (int)objects.size();
+		const bool hasGraphTarget = renderer_.IsGraphOverlayVisible() ||
+			renderer_.GraphSelected() >= 0;
+		if (!hasSelectedObject && !hasGraphTarget) return;
+
+		std::optional<glm::dvec3> relatedGraphOrigin;
+		glm::dvec3 objectPosition = renderer_.GraphOverlayOffset();
+		if (hasSelectedObject) {
 			const auto& obj = objects[selected_object_index_];
-			std::optional<glm::dvec3> relatedGraphOrigin;
+			objectPosition = obj.pos;
 			if (obj.type == "AIGraph") {
 				relatedGraphOrigin = obj.pos;
 			} else if (obj.aiGraphTaskId >= 0 || !obj.graphId.empty()) {
@@ -458,27 +465,28 @@ void App::Input_OnSpecial(int key, int x, int y) {
 					}
 				}
 			}
-			const GraphCameraTarget target = ResolveGraphCameraTarget(
-				renderer_.GetGraphOverlaySnapshot(),
-				renderer_.IsGraphOverlayVisible(),
-				renderer_.GraphSelected(),
-				renderer_.GraphOverlayOffset(),
-				obj.pos,
-				relatedGraphOrigin);
-			viewer_.pos_ = glm::vec3(target.position);
-			UpdateViewerVectors();
-			const char* target_name = target.kind == GraphCameraTargetKind::GraphNode
-				? "Graph Node" : target.kind == GraphCameraTargetKind::GraphOrigin
-				? "Graph Origin" : "Object";
-			printf("Teleported to %s [%d] at (%.2f, %.2f, %.2f)\n",
-				target_name, target.node_id >= 0 ? target.node_id : selected_object_index_,
-				target.position.x, target.position.y, target.position.z);
-			Logger::Get().Log(LogLevel::INFO,
-				std::string("[Camera] F11 target=") + target_name + " position=(" +
-				std::to_string(target.position.x) + "," +
-				std::to_string(target.position.y) + "," +
-				std::to_string(target.position.z) + ")");
 		}
+		const GraphCameraTarget target = ResolveGraphCameraTarget(
+			renderer_.GetGraphOverlaySnapshot(),
+			renderer_.IsGraphOverlayVisible(),
+			renderer_.GraphSelected(),
+			renderer_.GraphOverlayOffset(),
+			objectPosition,
+			relatedGraphOrigin);
+		if (target.kind == GraphCameraTargetKind::Object && !hasSelectedObject) return;
+		viewer_.pos_ = glm::vec3(target.position);
+		UpdateViewerVectors();
+		const char* target_name = target.kind == GraphCameraTargetKind::GraphNode
+			? "Graph Node" : target.kind == GraphCameraTargetKind::GraphOrigin
+			? "Graph Origin" : "Object";
+		printf("Teleported to %s [%d] at (%.2f, %.2f, %.2f)\n",
+			target_name, target.node_id >= 0 ? target.node_id : selected_object_index_,
+			target.position.x, target.position.y, target.position.z);
+		Logger::Get().Log(LogLevel::INFO,
+			std::string("[Camera] F11 target=") + target_name + " position=(" +
+			std::to_string(target.position.x) + "," +
+			std::to_string(target.position.y) + "," +
+			std::to_string(target.position.z) + ")");
 		return;
 	}
 
