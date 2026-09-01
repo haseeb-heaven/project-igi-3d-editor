@@ -2,6 +2,19 @@
 
 #include "animation.h"
 #include "runtime/graph_camera_target.h"
+#include "utils.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iterator>
+#include <vector>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -121,3 +134,83 @@ TEST(GraphCameraTargetTest, HiddenOverlayUsesRelatedAiGraphOrigin) {
     EXPECT_EQ(target.kind, GraphCameraTargetKind::GraphOrigin);
     EXPECT_EQ(target.position, glm::dvec3(400.0, 500.0, 600.0));
 }
+
+#if defined(_WIN32)
+TEST(AnimationIntegrationTest, EditorSubmitsSkinnedAiReplacements) {
+    if (std::getenv("IGI_RUN_LIVE_EDITOR_TESTS") == nullptr) {
+        GTEST_SKIP() << "Set IGI_RUN_LIVE_EDITOR_TESTS=1 for the opt-in editor integration run";
+    }
+
+    namespace fs = std::filesystem;
+    const char* gamePathEnv = std::getenv("IGI_GAME_PATH");
+    if (gamePathEnv == nullptr || *gamePathEnv == '\0') {
+        GTEST_SKIP() << "IGI_GAME_PATH must point to the co-located IGI install";
+    }
+
+    const fs::path gameRoot(gamePathEnv);
+    const fs::path configPath = gameRoot / "editor" / "qed" / "qedconfig.qsc";
+    const fs::path configQvmPath = gameRoot / "editor" / "qed" / "qedconfig.qvm";
+    const fs::path logPath = gameRoot / "igi1ed.log";
+    const fs::path exePath = fs::path(Utils::GetExeDirectory()) / "igi1ed.exe";
+    ASSERT_TRUE(fs::exists(configPath));
+    ASSERT_TRUE(fs::exists(configQvmPath));
+    ASSERT_TRUE(fs::exists(exePath));
+
+    const std::string configSource = [&]() {
+        std::ifstream in(configPath, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)), {});
+    }();
+    std::ifstream qvmIn(configQvmPath, std::ios::binary);
+    const std::vector<char> configQvm(
+        (std::istreambuf_iterator<char>(qvmIn)), std::istreambuf_iterator<char>());
+    const auto restoreConfig = [&]() {
+        std::ofstream out(configPath, std::ios::binary | std::ios::trunc);
+        out.write(configSource.data(), static_cast<std::streamsize>(configSource.size()));
+        out.close();
+        std::ofstream qvmOut(configQvmPath, std::ios::binary | std::ios::trunc);
+        qvmOut.write(configQvm.data(), static_cast<std::streamsize>(configQvm.size()));
+    };
+
+    const size_t loggingSetting = configSource.find("QEDLogs(FALSE);");
+    ASSERT_NE(loggingSetting, std::string::npos);
+    std::string enabledConfig = configSource;
+    enabledConfig.replace(loggingSetting, std::string("QEDLogs(FALSE);").size(),
+                          "QEDLogs(TRUE);");
+    {
+        std::ofstream out(configPath, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << enabledConfig;
+    }
+    struct RestoreOnExit {
+        std::function<void()> restore;
+        ~RestoreOnExit() { restore(); }
+    } restore{restoreConfig};
+
+    const auto logBefore = fs::exists(logPath) ? fs::file_size(logPath) : 0;
+    std::string command = "\"" + exePath.string() + "\" -level 12";
+    std::vector<char> commandBuffer(command.begin(), command.end());
+    commandBuffer.push_back('\0');
+    STARTUPINFOA startupInfo{};
+    startupInfo.cb = sizeof(startupInfo);
+    PROCESS_INFORMATION processInfo{};
+    ASSERT_TRUE(CreateProcessA(nullptr, commandBuffer.data(), nullptr, nullptr, FALSE,
+                               CREATE_NEW_CONSOLE, nullptr, gameRoot.string().c_str(),
+                               &startupInfo, &processInfo));
+    const DWORD waitResult = WaitForSingleObject(processInfo.hProcess, 10000);
+    if (waitResult == WAIT_TIMEOUT) {
+        ASSERT_TRUE(TerminateProcess(processInfo.hProcess, 0));
+        ASSERT_EQ(WaitForSingleObject(processInfo.hProcess, 5000), WAIT_OBJECT_0);
+    } else {
+        ASSERT_EQ(waitResult, WAIT_OBJECT_0);
+    }
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+
+    std::ifstream logIn(logPath, std::ios::binary);
+    const std::string log((std::istreambuf_iterator<char>(logIn)), {});
+    ASSERT_GT(log.size(), logBefore);
+    const std::string newLog = log.substr(logBefore);
+    EXPECT_NE(newLog.find("Animation init complete"), std::string::npos);
+    EXPECT_NE(newLog.find("Skinned/animated replacement active"), std::string::npos);
+}
+#endif
