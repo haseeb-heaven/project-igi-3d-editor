@@ -248,6 +248,22 @@ bool App::Init(int argc, char** argv) {
 }
 
 void App::Shutdown() {
+	// main and the global App destructor can both reach shutdown. Teardown must
+	// run once so renderer and gameplay resources are not invalidated twice.
+	if (shutdown_started_) return;
+	shutdown_started_ = true;
+
+	if (editor_hwnd_) {
+		KillTimer(editor_hwnd_, 1);
+		UnregisterHotKey(editor_hwnd_, HOTKEY_ID_TOGGLE_GAME);
+		if (g_origEditorWndProc) {
+			SetWindowLongPtr(editor_hwnd_, GWLP_WNDPROC,
+			                 reinterpret_cast<LONG_PTR>(g_origEditorWndProc));
+		}
+	}
+	g_appForHotkey = nullptr;
+	g_origEditorWndProc = nullptr;
+
 	gameplay_host_.SetGameplayInputModifier({});
 	player_animation_driver_.ClearAnimationClips();
 	if (in_game_mode_) {

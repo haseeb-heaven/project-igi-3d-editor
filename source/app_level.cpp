@@ -8,6 +8,7 @@
 #include "utils_igi1conv.h"
 #include "renderer/object_lightmap.h"
 #include "runtime/audio_system.h"
+#include "runtime/level_weather.h"
 #include "runtime/pause_menu_state.h"
 #include <mmsystem.h>
 #include <future>
@@ -428,44 +429,29 @@ void App::LoadLevel(int level_no) {
 		// RainEffect (Task_DeclareParameters("RainEffect","Is Rain","bool8",
 		// "Traceline start","Real32","Traceline end","Real32","Is Active","VarString",
 		// "Rain Alpha","Real32")) is per-level: present on levels with rain/snow
-		// (e.g. level3 for rain, level4/7/11 for snow), absent on levels without weather.
+		// (e.g. levels 3/9/10 for rain and 7/12 for snow); inactive RainEffect
+		// tasks on levels 4/8/11 and levels without the task produce no weather.
 		// "Is Rain" TRUE = Rain streaks, FALSE = Drifting Snowflakes.
 		{
-			bool weatherActive = false;
-			bool isSnow = false;
-			float weatherStartM = 0.0f, weatherEndM = 0.0f, weatherAlpha = 0.0f;
-			bool foundWeatherEffect = false;
-			for (const auto& re : objects) {
-				if (re.type != "RainEffect" || re.argTokens.size() < 8) continue;
-				foundWeatherEffect = true;
-				try {
-					std::string isRainTok = re.argTokens[3];
-					if (!isRainTok.empty() && isRainTok.front() == '"')
-						isRainTok = isRainTok.substr(1, isRainTok.size() - 2);
-					bool isRain = (isRainTok == "TRUE" || isRainTok == "true" || isRainTok == "1");
-					isSnow = !isRain;
-					std::string isActiveTok = re.argTokens[6];
-					if (isActiveTok.size() >= 2 && isActiveTok.front() == '"' && isActiveTok.back() == '"')
-						isActiveTok = isActiveTok.substr(1, isActiveTok.size() - 2);
-					bool isActive = !isActiveTok.empty() && isActiveTok != "0";
-					weatherStartM = std::stof(re.argTokens[4]);
-					weatherEndM = std::stof(re.argTokens[5]);
-					weatherAlpha = std::stof(re.argTokens[7]);
-					weatherActive = isActive;
-					Logger::Get().Log(LogLevel::INFO, "[App] WeatherEffect resolved: active=" +
-						std::to_string(weatherActive) + (isSnow ? " (SNOW)" : " (RAIN)") +
-						" isRain=" + isRainTok +
-						" isActive=" + isActiveTok +
-						" start=" + std::to_string(weatherStartM) +
-						"m end=" + std::to_string(weatherEndM) + "m alpha=" + std::to_string(weatherAlpha));
-				} catch (const std::exception& e) {
-					Logger::Get().Log(LogLevel::WARNING, std::string("[App] RainEffect unparsable (") + e.what() + ")");
-				}
-				break;
+			std::vector<igi::WeatherEffectObject> weatherObjects;
+			for (const auto& object : objects) {
+				if (object.type == "RainEffect")
+					weatherObjects.push_back({object.type, object.argTokens});
 			}
-			if (!foundWeatherEffect)
-				Logger::Get().Log(LogLevel::INFO, "[App] No RainEffect in level — weather disabled");
-			renderer_.SetRainEffect(weatherActive, isSnow, weatherStartM, weatherEndM, weatherAlpha);
+			const igi::LevelWeatherSettings weather =
+				igi::ResolveLevelWeather(weatherObjects);
+			if (!weather.active) {
+				Logger::Get().Log(LogLevel::INFO,
+					"[App] No active RainEffect in level — weather disabled");
+			} else {
+				Logger::Get().Log(LogLevel::INFO, "[App] WeatherEffect resolved: active=1" +
+					std::string(weather.is_snow ? " (SNOW)" : " (RAIN)") +
+					" start=" + std::to_string(weather.start_meters) +
+					"m end=" + std::to_string(weather.end_meters) +
+					"m alpha=" + std::to_string(weather.alpha));
+			}
+			renderer_.SetRainEffect(weather.active, weather.is_snow,
+				weather.start_meters, weather.end_meters, weather.alpha);
 		}
 
 		// Log all loaded objects for verification script

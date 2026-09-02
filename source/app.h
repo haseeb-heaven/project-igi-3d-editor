@@ -456,6 +456,7 @@ private:
   bool    auto_save_enabled_ = false;
   int     auto_save_interval_seconds_ = 300;
   int64_t auto_save_last_time_ms_ = 0;
+  bool    shutdown_started_ = false;
 
   int64_t prior_frame_time_;
 

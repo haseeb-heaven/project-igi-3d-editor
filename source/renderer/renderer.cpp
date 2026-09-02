@@ -25,7 +25,8 @@ Renderer::~Renderer() { Shutdown(); }
 
 
 bool Renderer::Init() {
-  ubo_mats_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_mats_s), nullptr,
+	shutdown_started_ = false;
+	ubo_mats_ = GL_CreateBuffer(GL_UNIFORM_BUFFER, sizeof(ubo_mats_s), nullptr,
                               GL_DYNAMIC_DRAW);
   // Initialize UBO with safe defaults so terrain fog shader never sees g_fog_far=0
   // (divide-by-zero → NaN → black overlay before SetupFog is called on first level load).
@@ -82,7 +83,9 @@ bool Renderer::Init() {
 }
 
 void Renderer::Shutdown() {
-  logged_skinned_draws_.clear();
+	if (shutdown_started_) return;
+	shutdown_started_ = true;
+	logged_skinned_draws_.clear();
   skinned_pose_samples_.clear();
   logged_skinned_pose_updates_.clear();
   terrain_.Shutdown();

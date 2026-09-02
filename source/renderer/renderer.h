@@ -814,6 +814,7 @@ private:
 	Renderer_Objects		objects_;
 	Renderer_Splines		splines_;
 	Renderer_Rain			rain_;
+	bool                    shutdown_started_ = false;
 	std::unordered_set<std::string>	logged_skinned_draws_;
 	std::unordered_map<std::string, float>	skinned_pose_samples_;
 	std::unordered_set<std::string>	logged_skinned_pose_updates_;
