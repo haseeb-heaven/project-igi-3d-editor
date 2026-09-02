@@ -280,7 +280,7 @@ void App::DispatchEventBindings() {
 							if (visibleList[i] == idx) { current_row = i; break; }
 						}
 						if (current_row >= 0) {
-							int row_h = 16;
+							int row_h = CurrentUiRowHeight();
 							int start_y = 30;
 							int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
 							if (max_rows > 0) {
@@ -645,7 +645,6 @@ void App::DispatchEventBindings() {
 
 #ifdef _WIN32
 #include <windows.h>
-#include <tlhelp32.h>
 #endif
 
 void App::ResetLevel() {
@@ -658,26 +657,23 @@ void App::ResetLevel() {
 
 	Logger::Get().Log(LogLevel::INFO, "[App] Resetting Level " + std::to_string(levelNo));
 
-	// Force kill any running game instance to release file locks on objects.qvm
+	// Only stop the game process launched and tracked by this editor instance.
+	// Scanning by executable name used to terminate unrelated retail sessions.
 #ifdef _WIN32
 	{
-		HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-		if (hSnap != INVALID_HANDLE_VALUE) {
-			PROCESSENTRY32 pe;
-			pe.dwSize = sizeof(pe);
-			if (Process32First(hSnap, &pe)) {
-				do {
-					if (_wcsicmp(pe.szExeFile, L"igi.exe") == 0) {
-						HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-						if (hProc) {
-							TerminateProcess(hProc, 0);
-							CloseHandle(hProc);
-							Logger::Get().Log(LogLevel::INFO, "[App] Terminated running game instance 'igi.exe' to unlock files.");
-						}
-					}
-				} while (Process32Next(hSnap, &pe));
+		if (game_process_.running && game_process_.hProcess) {
+			TerminateProcess(game_process_.hProcess, 0);
+			WaitForSingleObject(game_process_.hProcess, 2000);
+			game_exited_.store(true, std::memory_order_release);
+			if (game_process_.hMonitorThread) {
+				WaitForSingleObject(game_process_.hMonitorThread, 1000);
+				CloseHandle(game_process_.hMonitorThread);
 			}
-			CloseHandle(hSnap);
+			CloseHandle(game_process_.hProcess);
+			if (game_process_.hThread) CloseHandle(game_process_.hThread);
+			game_process_ = {};
+			game_exited_.store(false, std::memory_order_release);
+			Logger::Get().Log(LogLevel::INFO, "[App] Terminated the editor-owned game process to unlock files.");
 		}
 	}
 #endif
@@ -686,28 +682,40 @@ void App::ResetLevel() {
 	// captures the pristine state of the full level folder (objects, ai, graphs,
 	// models, textures, terrain). A full folder replacement (remove + copy)
 	// ensures deleted graph nodes, removed AI scripts, etc. are all reverted.
+	bool restored = false;
 	{
 		std::string gameLevelDir = Utils::GetIGIRootPath() + "\\missions\\location0\\level" + std::to_string(levelNo);
 		std::string backupLevelDir = Utils::GetExeDirectory() + "\\editor\\backup\\level" + std::to_string(levelNo);
+		std::string stagingLevelDir = gameLevelDir + ".reset_tmp";
+		std::string oldLevelDir = gameLevelDir + ".reset_old";
 
 		Logger::Get().Log(LogLevel::INFO, "[App] Restoring level from backup: " + backupLevelDir + " to " + gameLevelDir);
 
 		if (std::filesystem::exists(backupLevelDir)) {
 			try {
-				// Full replacement: remove the entire game level folder, then
-				// copy the pristine backup over it. This guarantees graphs/,
-				// ai/, models/, textures/ — every subfolder — is reset, not
-				// just overwritten in-place (which leaves stale files behind).
+				// Stage the complete backup first. If staging or replacement fails,
+				// leave the user's level untouched and do not reload a false reset.
 				std::error_code ec;
-				std::filesystem::remove_all(gameLevelDir, ec);
-				if (ec) {
-					Logger::Get().Log(LogLevel::WARNING, "[App] remove_all failed (" + ec.message() + "), trying copy overwrite");
-					std::filesystem::copy(backupLevelDir, gameLevelDir,
-						std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
-				} else {
-					std::filesystem::copy(backupLevelDir, gameLevelDir,
-						std::filesystem::copy_options::recursive);
+				std::filesystem::remove_all(stagingLevelDir, ec);
+				ec.clear();
+				std::filesystem::copy(backupLevelDir, stagingLevelDir,
+					std::filesystem::copy_options::recursive);
+				std::filesystem::remove_all(oldLevelDir, ec);
+				ec.clear();
+				bool movedOld = false;
+				if (std::filesystem::exists(gameLevelDir)) {
+					std::filesystem::rename(gameLevelDir, oldLevelDir);
+					movedOld = true;
 				}
+				try {
+					std::filesystem::rename(stagingLevelDir, gameLevelDir);
+				} catch (...) {
+					if (movedOld && !std::filesystem::exists(gameLevelDir))
+						std::filesystem::rename(oldLevelDir, gameLevelDir);
+					throw;
+				}
+				if (movedOld) std::filesystem::remove_all(oldLevelDir, ec);
+				restored = true;
 				Logger::Get().Log(LogLevel::INFO, "[App] Level reset successfully from backup.");
 			} catch (const std::exception& e) {
 				Logger::Get().Log(LogLevel::ERR, "[App] Failed to restore from backup: " + std::string(e.what()));
@@ -715,6 +723,10 @@ void App::ResetLevel() {
 		} else {
 			Logger::Get().Log(LogLevel::ERR, "[App] Cannot reset level: No backup found at " + backupLevelDir);
 		}
+	}
+	if (!restored) {
+		status_message_ = "Reset failed: pristine level backup is unavailable";
+		return;
 	}
 
 	// Remove local objects.qsc so it recompiles fresh from QVM

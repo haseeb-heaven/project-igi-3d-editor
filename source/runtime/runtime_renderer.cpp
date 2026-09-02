@@ -13,6 +13,7 @@ void RuntimeRenderer::Capture(
     const RuntimeRenderCamera& camera) {
     RuntimeRenderSnapshot next_snapshot;
     next_snapshot.camera = camera;
+    next_snapshot.simulation_tick = world.GetAi().GetSimulationTick();
 
     const PlayerController& player = world.GetPlayer();
     next_snapshot.player_position = player.GetPosition();

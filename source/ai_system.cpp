@@ -1,6 +1,5 @@
 // ai_system.cpp - Runtime AI guard simulation, dual-cone vision, and combat behavior implementation
 #include "ai_system.h"
-#include "logger.h"
 #include "player_separation.h"
 #include <algorithm>
 #include <cmath>
@@ -242,22 +241,9 @@ float HeightAlongLegTo(const AiGuardEntity& g, const glm::vec3& waypoint, float 
 
 // OpenIGI AiSoldier.GoTo: head for a graph node following the route table.
 bool GoTo(AiGuardEntity& g, int node) {
-    if (!g.graph || g.graph->route_table.empty()) {
-        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
-            " no graph/route_table (graph=" + (g.graph ? "set" : "null") +
-            " rt=" + std::to_string(g.graph ? (int)g.graph->route_table.size() : -1) + ")");
-        return false;
-    }
-    if (GRAPH_FindNode(*g.graph, node) == nullptr) {
-        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
-            " dst node " + std::to_string(node) + " not in graph");
-        return false;
-    }
-    if (g.current_node < 0) {
-        Logger::Get().Log(LogLevel::WARNING, "[AI-GOTO] g" + std::to_string(g.id) +
-            " current_node invalid");
-        return false;
-    }
+    if (!g.graph || g.graph->route_table.empty()) return false;
+    if (GRAPH_FindNode(*g.graph, node) == nullptr) return false;
+    if (g.current_node < 0) return false;
 
     if (g.current_node == node) {
         g.route.clear();
@@ -322,35 +308,6 @@ bool StepTowardsNode(AiGuardEntity& g, int node, double delta_seconds) {
 
     Advance(g, delta_seconds);
     return g.route.empty();
-}
-
-// Inferred fallback for editor-authored guards that have waypoints but no
-// usable PatrolPath/QVM command stream. Parsed vanilla patrol commands take
-// precedence; this keeps a playable level alive when only graph data exists.
-void AdvanceFallbackPatrol(AiGuardEntity& guard, double delta_seconds) {
-    if (guard.waypoints.size() < 2) {
-        return;
-    }
-
-    const size_t waypoint_count = guard.waypoints.size();
-    const size_t target_index = guard.current_waypoint % waypoint_count;
-    const glm::vec3 target_position = guard.waypoints[target_index];
-    const glm::vec2 horizontal_offset(
-        target_position.x - guard.position.x,
-        target_position.y - guard.position.y);
-    const float horizontal_distance = glm::length(horizontal_offset);
-    if (horizontal_distance <= kWaypointArriveRadius) {
-        guard.current_waypoint = static_cast<uint32_t>((target_index + 1) % waypoint_count);
-        return;
-    }
-
-    const glm::vec2 direction = horizontal_offset / horizontal_distance;
-    const float travel_distance = kPatrolSpeed * static_cast<float>(delta_seconds);
-    const float clamped_travel_distance = std::min(travel_distance, horizontal_distance);
-    guard.position.x += direction.x * clamped_travel_distance;
-    guard.position.y += direction.y * clamped_travel_distance;
-    guard.position.z = HeightAlongLegTo(guard, target_position, guard.position.x, guard.position.y);
-    guard.yaw = glm::degrees(std::atan2(direction.x, direction.y));
 }
 
 // OpenIGI AiSoldier.FaceNode: turn to look at a graph node, to within 3 degrees.
@@ -533,8 +490,6 @@ void AiSystem::Update(
             guard.tick = tick_;
             if (!guard.patrol_commands.empty()) {
                 RunPatrolCommand(guard, tick_, delta_seconds);
-            } else {
-                AdvanceFallbackPatrol(guard, delta_seconds);
             }
         }
 
@@ -583,25 +538,6 @@ void AiSystem::Update(
     }
 
     // 4. Advance the 30 Hz simulation tick.
-    if (alarm_active_ || true) {
-        static uint64_t last_log_tick = 0;
-        if (tick_ - last_log_tick >= 150 && !guards_.empty()) {
-            last_log_tick = tick_;
-            for (const auto& g : guards_) {
-                Logger::Get().Log(LogLevel::INFO,
-                    "[AI-STATE] t=" + std::to_string(tick_) + " g" +
-                    std::to_string(g.id) + " st=" + std::to_string((int)g.state) +
-                    " cmd=" + std::to_string(g.command_index) + "/" +
-                    std::to_string(g.patrol_commands.size()) +
-                    " stop=" + std::to_string(g.patrol_stopped ? 1 : 0) +
-                    " started=" + std::to_string(g.patrol_started ? 1 : 0) +
-                    " cur=" + std::to_string(g.current_node) +
-                    " route=" + std::to_string(g.route.size()) +
-                    " pos=" + std::to_string((int)g.position.x) + "," +
-                    std::to_string((int)g.position.y));
-            }
-        }
-    }
     tick_ += static_cast<uint64_t>(std::max(1, (int)std::lround(delta_seconds * 30.0)));
 }
 

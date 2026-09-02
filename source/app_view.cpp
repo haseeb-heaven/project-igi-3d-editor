@@ -387,7 +387,7 @@ void App::EditorProcessClick() {
 				if (visibleList[i] == selected_object_index_) { current_row = i; break; }
 			}
 			if (current_row >= 0) {
-				const int row_h   = 16;
+				const int row_h   = CurrentUiRowHeight();
 				const int start_y = 30;
 				int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
 				if (max_rows > 0) {

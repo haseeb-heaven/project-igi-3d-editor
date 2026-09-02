@@ -56,6 +56,7 @@ struct RuntimeGuardRenderState {
 // mutable containers directly to a renderer.
 struct RuntimeRenderSnapshot {
     RuntimeRenderCamera camera;
+    uint64_t simulation_tick = 0;
     glm::vec3 player_position = glm::vec3(0.0f);
     glm::vec3 player_eye_position = glm::vec3(0.0f);
     float player_yaw = 0.0f;

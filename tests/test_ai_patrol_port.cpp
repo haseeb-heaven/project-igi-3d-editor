@@ -238,6 +238,10 @@ TEST(AiPatrolPortTest, NoPatrolStandsStill) {
     guard.graph = MakeLineGraph(4);
     guard.graph_offset = glm::vec3(0.0f);
     guard.current_node = 0;
+    guard.waypoints = {
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 100000.0f, 0.0f),
+    };
     ai.RegisterGuard(guard);
 
     for (int i = 0; i < 60; ++i) {

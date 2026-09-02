@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,6 +29,7 @@
 #include "../source/runtime/door_state.h"
 #include "../source/runtime/runtime_session.h"
 #include "../source/runtime/editor_snapshot.h"
+#include "../source/runtime/editor_history.h"
 #include "../source/runtime/gameplay_host.h"
 #include "../source/runtime/gameplay_spawn.h"
 #include "../source/runtime/projectile_system.h"
@@ -35,11 +37,16 @@
 #include "../source/runtime/human_player_config.h"
 #include "../source/runtime/render_target.h"
 #include "../source/runtime/pause_menu_layout.h"
+#include "../source/runtime/pause_menu_state.h"
+#include "../source/runtime/pause_menu_font.h"
+#include "../source/runtime/auto_save_policy.h"
+#include "../source/utils.h"
 #include "../source/runtime/runtime_renderer.h"
 #include "../source/runtime/magic_object_registry.h"
 #include "../source/runtime/simulation_scheduler.h"
 #include "../source/runtime/map_computer_camera.h"
 #include "../source/runtime/map_computer_projection.h"
+#include "../source/renderer/renderer.h"
 
 using namespace igi;
 
@@ -281,16 +288,167 @@ TEST(RuntimeRenderTargetTest, PauseMenuBlocksEditorInteractionsInEveryMode) {
 }
 
 TEST(PauseMenuLayoutTest, ExpandedTerrainOptionsKeepQuitRowOnScreen) {
-    constexpr int viewportHeight = 576;
-    constexpr int quitRow = 18;
+    const PauseMenuLayout layout = BuildPauseMenuLayout(640, 480, true);
+    EXPECT_GE(layout.menu_top, 0);
+    EXPECT_GE(layout.menu_left, 0);
+    EXPECT_LE(layout.menu_top + layout.menu_height, 480);
+    EXPECT_LE(layout.menu_left + layout.menu_width, 640);
+    EXPECT_EQ(layout.row_count, 18);
+    const int quitY = PauseMenuRowCenter(layout, layout.row_count - 1);
+    EXPECT_TRUE(IsPauseMenuRowHit(layout, layout.row_count - 1, quitY));
+}
 
-    EXPECT_EQ(PauseMenuRowHeight(false), 38);
-    EXPECT_EQ(PauseMenuRowHeight(true), 29);
+TEST(PauseMenuLayoutTest, RendererAndInputShareSpinnerGeometry) {
+    const PauseMenuLayout layout = BuildPauseMenuLayout(640, 480, false);
+    const PauseMenuSpinner spinner = BuildPauseMenuSpinner(
+        layout, PauseMenuRowCenter(layout, 3), 128, 44);
+    EXPECT_EQ(spinner.minus_left, spinner.group_left + 128 + 14);
+    EXPECT_EQ(spinner.plus_left, spinner.value_left + 44 + 6);
+    EXPECT_TRUE(IsPauseMenuSpinnerHit(spinner, spinner.minus_left + 1));
+    EXPECT_TRUE(IsPauseMenuSpinnerHit(spinner, spinner.plus_left + 1));
+    EXPECT_FALSE(IsPauseMenuSpinnerHit(spinner, spinner.group_left - 1));
+}
 
-    const int quitY = PauseMenuRowCenter(viewportHeight, true, quitRow);
-    EXPECT_GE(quitY, 0);
-    EXPECT_LT(quitY, viewportHeight);
-    EXPECT_TRUE(IsPauseMenuRowHit(viewportHeight, true, quitRow, quitY));
+TEST(PauseMenuLayoutTest, FontHeightExpandsPauseRows) {
+    const PauseMenuLayout layout = BuildPauseMenuLayout(1080, 1080, false, 40);
+    EXPECT_GE(layout.row_height, 44);
+    EXPECT_GE(layout.row_hit_radius, 8);
+    EXPECT_LE(PauseMenuRowCenter(layout, layout.row_count - 1),
+              layout.menu_top + layout.menu_height);
+}
+
+TEST(PauseMenuInputTest, MouseWheelAdjustsOnlyTheHoveredSpinnerAndClamps) {
+    EXPECT_EQ(AdjustPauseMenuSpinner(8, -1, 8, 32, 1), 8);
+    EXPECT_EQ(AdjustPauseMenuSpinner(12, 1, 8, 32, 1), 13);
+    EXPECT_EQ(AdjustPauseMenuSpinner(32, 1, 8, 32, 1), 32);
+    EXPECT_EQ(AdjustPauseMenuSpinner(50, -1, 10, 60, 10), 40);
+}
+
+TEST(PauseMenuInputTest, EnterOnlyCommitsAnExplicitlyFocusedLevelSelector) {
+    EXPECT_FALSE(PauseMenuLevelInputFocused(true, -1));
+    EXPECT_FALSE(PauseMenuLevelInputFocused(true, 0));
+    EXPECT_TRUE(PauseMenuLevelInputFocused(true, kPauseMenuLevelRow));
+    EXPECT_FALSE(PauseMenuLevelInputFocused(false, kPauseMenuLevelRow));
+}
+
+TEST(PauseMenuFontTest, FailedSourceAttemptCanRetryAfterSourceChanges) {
+    PauseMenuFontLoadState state;
+    EXPECT_TRUE(state.ShouldAttempt(0));
+    state.RecordAttempt(0, false);
+    EXPECT_FALSE(state.ShouldAttempt(0));
+    EXPECT_TRUE(state.ShouldAttempt(1));
+    state.RecordAttempt(1, true);
+    EXPECT_FALSE(state.ShouldAttempt(1));
+}
+
+TEST(PauseMenuFontTest, RetailFont3UsesInstalledGameMetrics) {
+    const std::filesystem::path archive =
+        std::filesystem::path(Utils::GetIGIRootPath()) / "MENUSYSTEM" / "ingamemenu.res";
+    if (!std::filesystem::is_regular_file(archive)) {
+        GTEST_SKIP() << "Retail menu archive is not installed: " << archive.string();
+    }
+    const FntFont& font = GetRetailPauseFont();
+    ASSERT_TRUE(font.valid);
+    // FNTH +20 is the retail default glyph height. +8 is a different
+    // font-specific value (font3 stores 32 there) and must not drive layout.
+    EXPECT_EQ(font.lineHeight, 21);
+    EXPECT_EQ(font.defaultAdvance, 6);
+    EXPECT_GT(font.texWidth, 0);
+    EXPECT_GT(font.texHeight, 0);
+    EXPECT_GT(RetailPauseTextWidth("GAME PAUSED"), 0);
+}
+
+TEST(PauseMenuFontTest, RetailGlyphUsesStoredBearingAndAdvance) {
+    const std::filesystem::path archive =
+        std::filesystem::path(Utils::GetIGIRootPath()) / "MENUSYSTEM" / "ingamemenu.res";
+    if (!std::filesystem::is_regular_file(archive)) {
+        GTEST_SKIP() << "Retail menu archive is not installed: " << archive.string();
+    }
+    const FntFont& font = GetRetailPauseFont();
+    ASSERT_TRUE(font.valid);
+    const auto it = font.glyphs.find(static_cast<int>('A'));
+    ASSERT_NE(it, font.glyphs.end());
+    EXPECT_EQ(it->second.offsetX, 0);
+    EXPECT_EQ(it->second.offsetY, 2);
+    EXPECT_EQ(it->second.advance, 11);
+}
+
+TEST(PauseMenuFontTest, FontMetricsGrowWithConfiguredGameFontSize) {
+    const PauseMenuFontMetrics small = GetPauseMenuFontMetrics(false, 12);
+    const PauseMenuFontMetrics large = GetPauseMenuFontMetrics(false, 18);
+    EXPECT_GT(large.lineHeight, small.lineHeight);
+    EXPECT_GE(small.boxHeight, small.lineHeight + 4);
+    EXPECT_GE(large.boxHeight, large.lineHeight + 4);
+    EXPECT_GE(small.rowHeight, small.lineHeight + 2);
+    EXPECT_GE(large.rowHeight, large.lineHeight + 2);
+}
+
+TEST(PauseMenuFontTest, PropertyLayoutUsesTheActiveFontMetrics) {
+    const TaskSchemaNS::TaskSchema schema = {
+        {"Note", "String256", 3, 1},
+    };
+    const PropPanel::Layout layout = PropPanel::BuildLayout(
+        schema, false, {}, -1, {}, false, 34, 38);
+    ASSERT_FALSE(layout.widgets.empty());
+    EXPECT_EQ(layout.row_h, 34);
+    EXPECT_EQ(layout.box_h, 38);
+    EXPECT_EQ(layout.widgets.front().y2 - layout.widgets.front().y1, 38);
+}
+
+TEST(AutoSavePolicyTest, DisabledMenuStateCannotRunTimer) {
+    EXPECT_FALSE(ShouldRunAutoSave(true, false, false, 1));
+    EXPECT_TRUE(ShouldRunAutoSave(true, true, false, 1));
+    EXPECT_FALSE(ShouldRunAutoSave(false, true, false, 1));
+    EXPECT_FALSE(ShouldRunAutoSave(true, true, true, 1));
+}
+
+TEST(AutoSavePolicyTest, DisabledMenuStateCannotSaveBeforeGameLaunch) {
+    EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(true, false));
+    EXPECT_TRUE(ShouldSaveBeforeExternalGameLaunch(true, true));
+    EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(false, true));
+}
+
+TEST(PauseMenuMusicTest, FailedStartDoesNotPersistEnabledState) {
+    EXPECT_EQ(ResolvePauseMusicToggle(false, false),
+              (PauseMusicToggleResult{false, false}));
+    EXPECT_EQ(ResolvePauseMusicToggle(false, true),
+              (PauseMusicToggleResult{true, true}));
+    EXPECT_EQ(ResolvePauseMusicToggle(true, false),
+              (PauseMusicToggleResult{false, false}));
+}
+
+TEST(EditorHistoryTest, PushUndoInvalidatesRedoAndKeepsLatestEntries) {
+    std::vector<int> undo{1, 2};
+    std::vector<int> redo{9};
+    PushEditorUndo(undo, redo, 3, 3);
+    EXPECT_EQ(undo, (std::vector<int>{1, 2, 3}));
+    EXPECT_TRUE(redo.empty());
+
+    PushEditorUndo(undo, redo, 4, 3);
+    EXPECT_EQ(undo, (std::vector<int>{2, 3, 4}));
+}
+
+TEST(EditorHistoryTest, UndoAndRedoMoveCurrentStateBetweenStacks) {
+    std::vector<int> undo{10};
+    std::vector<int> redo;
+    int restored = 0;
+    ASSERT_TRUE(MoveEditorUndoToRedo(undo, redo, 20, restored));
+    EXPECT_EQ(restored, 10);
+    EXPECT_TRUE(undo.empty());
+    EXPECT_EQ(redo, (std::vector<int>{20}));
+
+    ASSERT_TRUE(MoveEditorRedoToUndo(undo, redo, restored, restored));
+    EXPECT_EQ(restored, 20);
+    EXPECT_EQ(undo, (std::vector<int>{10}));
+    EXPECT_TRUE(redo.empty());
+}
+
+TEST(EditorHistoryTest, ClearDropsHistoryAtDocumentBoundary) {
+    std::vector<int> undo{1, 2};
+    std::vector<int> redo{3};
+    ClearEditorHistory(undo, redo);
+    EXPECT_TRUE(undo.empty());
+    EXPECT_TRUE(redo.empty());
 }
 TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
     WeaponViewSway weapon_view_sway;
@@ -406,6 +564,20 @@ TEST(RuntimeRenderTest, CapturesMovingGuardStateWithoutAliasingAiWorld) {
     EXPECT_FLOAT_EQ(captured_snapshot.guards[0].yaw, 45.0f);
     EXPECT_EQ(renderer.GetSnapshot().guards[0].position,
               glm::vec3(100.0f, 200.0f, 0.0f));
+}
+
+TEST(RuntimeRenderTest, CapturesSimulationTickForPresentationClocks) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    RuntimeRenderer renderer;
+    renderer.Capture(world, RuntimeRenderCamera());
+    const uint64_t initial_tick = renderer.GetSnapshot().simulation_tick;
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    renderer.Capture(world, RuntimeRenderCamera());
+
+    EXPECT_GT(renderer.GetSnapshot().simulation_tick, initial_tick);
 }
 
 TEST(RuntimeRenderTest, CapturesFixedStepMuzzleFlashAfterPlayerFire) {
@@ -1527,6 +1699,22 @@ TEST(RuntimeCollisionTest, WallSweepStopsAtSolidGeometryAndSlides) {
     EXPECT_LT(result.slide_velocity.x, 4096.0f);
     EXPECT_GT(result.slide_velocity.y, 7000.0f);
     EXPECT_LT(result.wall_normal.x, -0.9f);
+}
+
+TEST(RuntimeCollisionTest, WallSweepCanEscapeAnInitialSolidOverlap) {
+    PlayerCollision collision;
+    collision.SetSolidQuery([](const glm::vec3& sample_position) {
+        return sample_position.x >= 0.0f;
+    });
+
+    const PlayerWallSweepResult result = collision.SweepWalls(
+        glm::vec3(1024.0f, 0.0f, 0.0f),
+        glm::vec3(-1024.0f, 0.0f, 0.0f),
+        512.0f,
+        PlayerController::STANDING_EYE_HEIGHT);
+
+    EXPECT_FALSE(result.hit_wall);
+    EXPECT_LT(result.slide_velocity.x, -2000.0f);
 }
 
 TEST(RuntimeCollisionTest, CeilingQueryPreventsStandingInLowClearance) {
@@ -2839,6 +3027,33 @@ TEST(RuntimeWorldTest, RetailAiQvmDrivesGuardActionsOnFixedTicks) {
     EXPECT_EQ(world.GetAi().GetGuards()[0].active_patrol_path_id, 700);
     ASSERT_EQ(world.GetAi().GetGuards()[0].patrol_commands.size(), 1U);
     EXPECT_EQ(world.GetAi().GetGuards()[0].patrol_commands[0].operand, 3);
+}
+
+TEST(RuntimeWorldTest, RetailAiQvmRestartsPatrolAfterQuitOnNextIdle) {
+    RuntimeWorld world;
+    world.Initialize(FlatTerrain);
+
+    AiGuardEntity guard;
+    guard.id = 27;
+    guard.position = glm::vec3(0.0f, 100.0f * PlayerController::WORLD_METER, 0.0f);
+    guard.state = AiGuardState::Patrol;
+    guard.patrol_routes[700] = {
+        AiPatrolCommand{AiPatrolCommandKind::Crouch, -1},
+        AiPatrolCommand{AiPatrolCommandKind::Quit, 0},
+    };
+    world.GetAi().RegisterGuard(guard);
+
+    ASSERT_TRUE(world.AttachGuardScript(guard.id, BuildRetailAiPatrolScript()));
+
+    world.UpdateSimulationTick(0, PlayerInputCmd());
+    world.UpdateSimulationTick(1, PlayerInputCmd());
+    world.UpdateSimulationTick(2, PlayerInputCmd());
+    world.UpdateSimulationTick(3, PlayerInputCmd());
+
+    const auto& restarted = world.GetAi().GetGuards()[0];
+    EXPECT_FALSE(restarted.patrol_stopped);
+    EXPECT_FALSE(restarted.patrol_started);
+    EXPECT_EQ(restarted.command_index, -1);
 }
 
 TEST(RuntimeWorldTest, RetailAiQvmPlaySoundPublishesAuthoredAudioEvent) {

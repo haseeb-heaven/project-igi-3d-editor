@@ -16,12 +16,15 @@
 struct FntGlyph {
     float u0, v0, u1, v1;   // atlas UV rect (normalized)
     int   width, height;    // glyph pixel size
+    int   offsetX, offsetY; // placement bearing relative to the line origin
     int   advance;          // x advance
 };
 
 struct FntFont {
     bool valid = false;
     int  lineHeight = 0;
+    int  defaultAdvance = 0;
+    int  defaultWidth = 0;
     int  texWidth = 0, texHeight = 0;
     std::vector<uint8_t> rgba;                       // atlas converted to RGBA, size texW*texH*4
     std::unordered_map<int, FntGlyph> glyphs;        // charcode -> glyph

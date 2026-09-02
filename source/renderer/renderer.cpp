@@ -83,6 +83,8 @@ bool Renderer::Init() {
 
 void Renderer::Shutdown() {
   logged_skinned_draws_.clear();
+  skinned_pose_samples_.clear();
+  logged_skinned_pose_updates_.clear();
   terrain_.Shutdown();
   objects_.Shutdown();
   rain_.Shutdown();
@@ -96,6 +98,8 @@ void Renderer::Shutdown() {
 
 void Renderer::BeginLoadLevel() {
   logged_skinned_draws_.clear();
+  skinned_pose_samples_.clear();
+  logged_skinned_pose_updates_.clear();
   flat_sky_layers_.UnloadAllTexs();
   terrain_.UnloadAllTexs();
   objects_.ClearCaches();
@@ -299,8 +303,29 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
             " (" + std::to_string(renderableTriangles) + " triangles)");
     }
 
+    // A draw-submission log alone cannot distinguish a frozen first frame from
+    // a running animation.  Keep one cheap pose sample per model and record the
+    // first frame-to-frame change; this is also consumed by the opt-in live
+    // integration test.  The full matrices remain local to this draw.
+    if (!boneWorldTransforms.empty()) {
+        const glm::mat4& sampleTransform = boneWorldTransforms[
+            boneWorldTransforms.size() > 1 ? 1U : 0U];
+        const float poseSample = sampleTransform[0][0] +
+            sampleTransform[1][1] + sampleTransform[2][2] +
+            sampleTransform[3][2];
+        const auto sampleIt = skinned_pose_samples_.find(modelId);
+        if (sampleIt == skinned_pose_samples_.end()) {
+            skinned_pose_samples_.emplace(modelId, poseSample);
+        } else if (std::abs(sampleIt->second - poseSample) > 0.00001f &&
+                   logged_skinned_pose_updates_.insert(modelId).second) {
+            Logger::Get().Log(LogLevel::INFO,
+                "[Anim] Skinned pose advanced for " + modelId);
+        }
+    }
+
     // Rest-pose bone world positions (raw units) — same convention the static
-    // mesh cache used to bake geo->vertices[i].pos in the first place.
+    // mesh cache used to bake geo->vertices[i].pos in the first place. The
+    // caller aligns BEF transforms to this bind pose before entering here.
     static std::map<std::string, std::vector<glm::vec3>> s_restPosCache;
     auto rpIt = s_restPosCache.find(modelId);
     if (rpIt == s_restPosCache.end()) {
@@ -309,12 +334,9 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
     const std::vector<glm::vec3>& boneRestPos = rpIt->second;
     if (boneRestPos.empty()) return;
 
-    // boneWorldTransforms (from the BEF clip) already carry the skeleton's
-    // absolute animated position — see TranslationKeyFrameData in the .BEF,
-    // which stores the root bone's full world height, not a local offset from
-    // zero. So at rest, boneWorldTransforms[b] == boneRestPos[b]*kMefNativeScale
-    // and deformedPos reduces to exactly rv.pos (no extra root shift needed;
-    // adding one here previously double-counted the root height).
+    // boneWorldTransforms (from the BEF clip) have been aligned to the MEF bind
+    // root by App before this call. At rest, the root and all child pivots are
+    // therefore in the same scaled space as the baked vertex positions.
     std::vector<glm::vec3> deformedPos(geo->vertices.size());
     std::vector<glm::vec3> deformedNormal(geo->vertices.size());
     for (size_t i = 0; i < geo->vertices.size(); ++i) {

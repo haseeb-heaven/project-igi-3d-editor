@@ -10,6 +10,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <glm/gtc/matrix_inverse.hpp>
 
 namespace fs = std::filesystem;
 
@@ -136,6 +137,31 @@ void AnimPlayback::Update(float dtMs) {
             }
         }
     }
+}
+
+bool AnimationClipHasTemporalMotion(const AnimationClip& clip) {
+    constexpr float kEpsilon = 0.0001f;
+
+    for (size_t i = 1; i < clip.translationKeys.size(); ++i) {
+        const auto& previous = clip.translationKeys[i - 1];
+        const auto& current = clip.translationKeys[i];
+        if (previous.track == current.track &&
+            (previous.time_ms != current.time_ms ||
+             glm::length(current.pos - previous.pos) > kEpsilon)) {
+            return true;
+        }
+    }
+
+    for (size_t i = 1; i < clip.rotationKeys.size(); ++i) {
+        const auto& previous = clip.rotationKeys[i - 1];
+        const auto& current = clip.rotationKeys[i];
+        if (previous.bone != current.bone) continue;
+        if (previous.time_ms != current.time_ms ||
+            glm::length(current.q0 - previous.q0) > kEpsilon) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ── AnimationRegistry ────────────────────────────────────────────────────────
@@ -271,6 +297,15 @@ const AnimationClip* AnimationRegistry::GetDefaultClip(int boneHierarchy) const 
         if (!best || clip.animId < best->animId) best = &clip;
     }
     return best;
+}
+
+const AnimationClip* AnimationRegistry::GetFirstTemporalClip(int boneHierarchy) const {
+    auto it = registry_.find(boneHierarchy);
+    if (it == registry_.end()) return nullptr;
+    for (const auto& [name, clip] : it->second.clips) {
+        if (AnimationClipHasTemporalMotion(clip)) return &clip;
+    }
+    return nullptr;
 }
 
 bool AnimationRegistry::HasAnimations(int boneHierarchy) const {
@@ -514,5 +549,26 @@ void AnimationRegistry::EvaluateWorld(const AnimationClip* clip, float timeMs,
         } else {
             worldTransforms[id] = worldTransforms[p] * local[i];
         }
+    }
+}
+
+void AlignAnimationWorldToMefBind(
+    const std::vector<glm::mat4>& animation_bind_world,
+    const std::vector<glm::vec3>& mef_bind_world,
+    std::vector<glm::mat4>& animation_world) {
+    if (animation_bind_world.empty() || mef_bind_world.empty() ||
+        animation_world.empty()) {
+        return;
+    }
+
+    // The static geometry is already in model space with the MEF bind pivots
+    // baked into each vertex. A root correction is enough because the BEF
+    // hierarchy is parent-relative and shares the same child pivots.
+    const glm::mat4 mef_root = glm::translate(
+        glm::mat4(1.0f), mef_bind_world.front());
+    const glm::mat4 correction = mef_root *
+        glm::inverse(animation_bind_world.front());
+    for (glm::mat4& transform : animation_world) {
+        transform = correction * transform;
     }
 }

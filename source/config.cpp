@@ -31,8 +31,17 @@ static bool CompileQscFile(const std::filesystem::path& qscPath) {
         return false;
     }
 
-    const std::string qscSrc((std::istreambuf_iterator<char>(qscIn)),
-                             std::istreambuf_iterator<char>());
+    std::string qscSrc((std::istreambuf_iterator<char>(qscIn)),
+                       std::istreambuf_iterator<char>());
+    // Editors commonly save UTF-8 QSC files with a BOM. It is metadata, not
+    // part of the first token, so strip it before lexing rather than failing
+    // closed and silently ignoring an otherwise valid logging setting.
+    if (qscSrc.size() >= 3 &&
+        static_cast<unsigned char>(qscSrc[0]) == 0xEF &&
+        static_cast<unsigned char>(qscSrc[1]) == 0xBB &&
+        static_cast<unsigned char>(qscSrc[2]) == 0xBF) {
+        qscSrc.erase(0, 3);
+    }
     const qsc::LexResult lexResult = qsc::Lex(qscSrc);
     if (!lexResult.ok) {
         std::cerr << "[Config] Cannot lex " << qscPath << ": " << lexResult.error << "\n";
@@ -465,19 +474,9 @@ void Config::Save() {
     // named bindings, which silently dropped TaskMagicObjToggle, AutoComplete*,
     // SaveSubTask*, TaskMove*, find variants, etc. — leaving most hotkeys unbound on the
     // next launch. The editor now only reads that file (see Config::Init).
-    for (const auto& path : { qscPath }) {
-        std::string qvmPath = std::filesystem::path(path).parent_path().string() + "\\" + std::filesystem::path(path).stem().string() + ".qvm";
-        std::ifstream qscIn(path);
-        std::string qscSrc((std::istreambuf_iterator<char>(qscIn)), std::istreambuf_iterator<char>());
-        qscIn.close();
-        auto lexResult = qsc::Lex(qscSrc);
-        if (lexResult.ok) {
-            auto parseResult = qsc::Parse(lexResult.tokens);
-            if (parseResult.ok) {
-                std::string compileErr;
-                qvm::CompileToFile(*parseResult.program, qvmPath, &compileErr);
-            }
-        }
+    if (!CompileQscFile(qscPath)) {
+        std::cerr << "[Config] Saved QSC but could not regenerate sibling QVM: "
+                  << qscPath << "\n";
     }
 }
 

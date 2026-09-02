@@ -31,6 +31,7 @@
 #include "renderer/olm_texture.h"
 #include "utils_igi1conv.h"
 #include "level/task_schema.h"
+#include "runtime/pause_menu_font.h"
 using namespace TaskSchemaNS;
 #include <filesystem>
 #include <fstream>
@@ -110,8 +111,18 @@ inline std::vector<int> AiTextLineStarts(const std::string& txt, int max_chars) 
 	return s;
 }
 
-inline int AiScriptMaxChars() {
-	return std::max(1, (PropPanel::kWidth - 2 * PropPanel::kPad - 6) / 7);
+inline int AiScriptMaxChars(int char_width = 0) {
+	if (char_width <= 0) {
+		char_width = GetPauseMenuFontMetrics(
+			Config::Get().useEditorFont, Config::Get().systemFontSize).charWidth;
+	}
+	return std::max(1, (PropPanel::kWidth - 2 * PropPanel::kPad - 6) /
+		std::max(1, char_width));
+}
+
+inline int CurrentUiRowHeight() {
+	return GetPauseMenuFontMetrics(
+		Config::Get().useEditorFont, Config::Get().systemFontSize).rowHeight;
 }
 
 // Map a (x,y) screen coord inside the AI script text box (origin at the
@@ -119,12 +130,16 @@ inline int AiScriptMaxChars() {
 // closest valid position. Used by mouse drag-selection.
 inline int AiScriptPixelToCaret(const std::string& txt, int x, int y,
                                  int vscroll, int box_h,
-                                 int max_chars, int row_h) {
+                                 int max_chars, int row_h, int char_width = 0) {
 	if (txt.empty()) return 0;
 	const auto starts = AiTextLineStarts(txt, max_chars);
 	int row = std::max(0, y / std::max(1, row_h));
 	int abs_line = std::max(0, std::min((int)starts.size() - 1, vscroll + row));
-	int col = std::max(0, x / 7);
+	if (char_width <= 0) {
+		char_width = GetPauseMenuFontMetrics(
+			Config::Get().useEditorFont, Config::Get().systemFontSize).charWidth;
+	}
+	int col = std::max(0, x / std::max(1, char_width));
 	int ls   = starts[abs_line];
 	int next = (abs_line + 1 < (int)starts.size()) ? starts[abs_line + 1] : (int)txt.size();
 	int len  = next - ls;

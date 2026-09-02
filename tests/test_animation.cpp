@@ -11,6 +11,7 @@
 #include <functional>
 #include <iterator>
 #include <regex>
+#include <set>
 #include <vector>
 
 #if defined(_WIN32)
@@ -72,6 +73,19 @@ TEST(AnimationPlaybackTest, NonLoopingClipStopsAtItsEnd) {
     EXPECT_FALSE(playback.playing);
 }
 
+TEST(AnimationEvaluationTest, DistinguishesSingleFrameActionFromMovingClip) {
+    AnimationClip pose = Clip(801);
+    pose.rotationKeys.push_back(AnimRotationKey{0, 0, glm::quat(1.f, 0.f, 0.f, 0.f)});
+    EXPECT_FALSE(AnimationClipHasTemporalMotion(pose));
+
+    AnimationClip moving = Clip(14081);
+    moving.rotationKeys = {
+        AnimRotationKey{0, 0, glm::quat(1.f, 0.f, 0.f, 0.f)},
+        AnimRotationKey{0, 4320, glm::quat(0.98f, 0.1f, 0.f, 0.f)},
+    };
+    EXPECT_TRUE(AnimationClipHasTemporalMotion(moving));
+}
+
 TEST(AnimationRenderGateTest, RequiresActivePlaybackAndSkinGeometry) {
     const AnimationClip clip = Clip(1000);
     AnimPlayback playback;
@@ -131,6 +145,32 @@ TEST(AnimationEvaluationTest, RotationTrackChangesWorldPose) {
     const glm::vec4 startPoint = atStart[1] * glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
     const glm::vec4 endPoint = atEnd[1] * glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
     EXPECT_GT(glm::length(startPoint - endPoint), 0.01f);
+}
+
+TEST(AnimationEvaluationTest, AlignsBefWorldPoseToMefBindRoot) {
+    AnimationClip clip = Clip(1000);
+    clip.bones = {
+        AnimBone{0, "root", -1, glm::vec3(5.0f)},
+        AnimBone{1, "child", 0, glm::vec3(2.0f, 0.0f, 0.0f)},
+    };
+    clip.translationKeys = {
+        AnimTranslationKey{0, 0, glm::vec3(5.0f)},
+        AnimTranslationKey{0, 1000, glm::vec3(9.0f)},
+    };
+
+    AnimationRegistry registry;
+    std::vector<glm::mat4> bindWorld;
+    registry.EvaluateWorld(&clip, 0.0f, bindWorld);
+    std::vector<glm::mat4> animatedWorld;
+    registry.EvaluateWorld(&clip, 500.0f, animatedWorld);
+
+    const std::vector<glm::vec3> mefBindWorld = {
+        glm::vec3(10.0f), glm::vec3(12.0f, 0.0f, 0.0f)};
+    AlignAnimationWorldToMefBind(bindWorld, mefBindWorld, animatedWorld);
+
+    EXPECT_NEAR(animatedWorld[0][3].x, 12.0f, 0.001f);
+    EXPECT_NEAR(animatedWorld[0][3].y, 12.0f, 0.001f);
+    EXPECT_NEAR(animatedWorld[0][3].z, 12.0f, 0.001f);
 }
 
 TEST(GraphCameraTargetTest, SelectedNodeUsesGraphOffset) {
@@ -199,6 +239,72 @@ TEST(GraphCameraTargetTest, SelectedSoldierUsesNestedHumanAiGraphOrigin) {
 
     ASSERT_TRUE(origin.has_value());
     EXPECT_EQ(*origin, glm::dvec3(1000.0, 2000.0, 3000.0));
+}
+
+TEST(GraphCameraTargetTest, UnrelatedSelectionRejectsStaleOverlay) {
+    EXPECT_FALSE(GraphOverlayMatchesSelection(true, "", "7"));
+    EXPECT_FALSE(GraphOverlayMatchesSelection(true, "12", "7"));
+    EXPECT_TRUE(GraphOverlayMatchesSelection(true, "12", "12"));
+    EXPECT_TRUE(GraphOverlayMatchesSelection(false, "", "7"));
+}
+
+TEST(GraphCameraTargetTest, F11UsesOnlyTheSelectedGraphsNode) {
+    GraphFile graph;
+    graph.valid = true;
+    graph.nodes.push_back(Node(7, 10.0, 20.0, 30.0));
+
+    const GraphCameraTarget stale = ResolveF11CameraTarget(
+        graph, true, true, 7, "12", "7",
+        glm::dvec3(100.0), glm::dvec3(1.0));
+    EXPECT_EQ(stale.kind, GraphCameraTargetKind::Object);
+    EXPECT_EQ(stale.position, glm::dvec3(1.0));
+
+    const GraphCameraTarget selected = ResolveF11CameraTarget(
+        graph, true, true, 7, "7", "7",
+        glm::dvec3(100.0), glm::dvec3(1.0));
+    EXPECT_EQ(selected.kind, GraphCameraTargetKind::GraphNode);
+    EXPECT_EQ(selected.position, glm::dvec3(110.0, 120.0, 130.0));
+}
+
+TEST(GraphCameraTargetTest, F11UsesRelatedGraphOriginBeforeOverlayOpen) {
+    GraphFile graph;
+    graph.valid = true;
+
+    const GraphCameraTarget target = ResolveF11CameraTarget(
+        graph, true, false, -1, "12", "",
+        glm::dvec3(100.0), glm::dvec3(1.0),
+        glm::dvec3(400.0, 500.0, 600.0));
+    EXPECT_EQ(target.kind, GraphCameraTargetKind::GraphOrigin);
+    EXPECT_EQ(target.position, glm::dvec3(400.0, 500.0, 600.0));
+}
+
+TEST(GraphCameraTargetTest, F11GraphPosePlacesCameraBackAndFacesTarget) {
+    const GraphCameraPose pose = MakeF11GraphCameraPose(
+        glm::dvec3(100.0, 200.0, 300.0),
+        glm::dvec3(0.0, 1.0, 0.0),
+        4096.0);
+
+    EXPECT_EQ(pose.position, glm::dvec3(100.0, -3896.0, 300.0));
+    EXPECT_NEAR(pose.yaw_degrees, 0.0f, 0.001f);
+    EXPECT_NEAR(pose.pitch_degrees, 0.0f, 0.001f);
+}
+
+TEST(GraphCameraTargetTest, SelectedNestedChildWalksBackToSoldierGraph) {
+    std::vector<LevelObject> objects(4);
+    objects[0].type = "HumanSoldier";
+    objects[0].childrenIndices = {1, 2};
+    objects[1].type = "Gun";
+    objects[1].childrenIndices = {3};
+    objects[3].type = "HumanAI";
+    objects[3].aiGraphTaskId = 12;
+    objects[2].type = "AIGraph";
+    objects[2].taskId = "12";
+    objects[2].pos = glm::dvec3(12.0, 24.0, 36.0);
+
+    EXPECT_EQ(FindRelatedGraphTaskId(objects, 1), "12");
+    const auto origin = FindRelatedGraphOrigin(objects, 1);
+    ASSERT_TRUE(origin.has_value());
+    EXPECT_EQ(*origin, glm::dvec3(12.0, 24.0, 36.0));
 }
 
 #if defined(_WIN32)
@@ -291,5 +397,24 @@ TEST(AnimationIntegrationTest, EditorSubmitsSkinnedAiReplacements) {
     EXPECT_EQ(initialized, eligible);
     EXPECT_NE(newLog.find("Skinned/animated replacement active"), std::string::npos);
     EXPECT_NE(newLog.find("Skinned draw submitted for"), std::string::npos);
+    EXPECT_NE(newLog.find("Skinned pose advanced for"), std::string::npos);
+
+    // A single log line can pass while only one model animates. Every model
+    // that replaced its static mesh must also produce a later pose change.
+    const std::regex draw_re(R"(Skinned draw submitted for ([^ ]+) \()");
+    const std::regex pose_re(R"(Skinned pose advanced for ([^\r\n]+))");
+    std::set<std::string> submitted_models;
+    std::set<std::string> advanced_models;
+    for (std::sregex_iterator it(newLog.begin(), newLog.end(), draw_re), end;
+         it != end; ++it) {
+        submitted_models.insert((*it)[1].str());
+    }
+    for (std::sregex_iterator it(newLog.begin(), newLog.end(), pose_re), end;
+         it != end; ++it) {
+        advanced_models.insert((*it)[1].str());
+    }
+    ASSERT_FALSE(submitted_models.empty());
+    EXPECT_EQ(advanced_models, submitted_models)
+        << "submitted AI model set did not all advance a rendered pose";
 }
 #endif

@@ -5,6 +5,7 @@
  *****************************************************************************/
 #include "app_internal.h"
 #include "runtime/graph_camera_target.h"
+#include "runtime/pause_menu_state.h"
 
 void App::Input_OnSpecial(int key, int x, int y) {
 	// The pause menu owns keyboard input while it is visible.  In particular,
@@ -64,7 +65,7 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			else if (key == GLUT_KEY_DOWN) ac_task_selected_idx_ = std::min(count - 1, ac_task_selected_idx_ + 1);
 			else if (key == GLUT_KEY_PAGE_UP)   ac_task_selected_idx_ = std::max(0, ac_task_selected_idx_ - 10);
 			else if (key == GLUT_KEY_PAGE_DOWN) ac_task_selected_idx_ = std::min(count - 1, ac_task_selected_idx_ + 10);
-			const int row_h = 16, panel_h = window_state_.viewport_height_ - 100;
+			const int row_h = CurrentUiRowHeight(), panel_h = window_state_.viewport_height_ - 100;
 			const int max_vis = std::max(1, panel_h / row_h);
 			if (ac_task_selected_idx_ < ac_task_scroll_offset_)
 				ac_task_scroll_offset_ = ac_task_selected_idx_;
@@ -93,7 +94,7 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			else if (key == GLUT_KEY_DOWN) model_picker_selected_ = std::min(count - 1, model_picker_selected_ + 1);
 			else if (key == GLUT_KEY_PAGE_UP)   model_picker_selected_ = std::max(0, model_picker_selected_ - 10);
 			else if (key == GLUT_KEY_PAGE_DOWN) model_picker_selected_ = std::min(count - 1, model_picker_selected_ + 10);
-			const int row_h = 16, panel_h = window_state_.viewport_height_ - 100;
+			const int row_h = CurrentUiRowHeight(), panel_h = window_state_.viewport_height_ - 100;
 			const int max_vis = std::max(1, panel_h / row_h);
 			if (model_picker_selected_ < model_picker_scroll_)
 				model_picker_scroll_ = model_picker_selected_;
@@ -253,7 +254,7 @@ void App::Input_OnSpecial(int key, int x, int y) {
 				task_picker_selected_idx_ = count - 1;
 			}
 
-			int row_h = 16;
+			int row_h = CurrentUiRowHeight();
 			int picker_h = window_state_.viewport_height_ - 100;
 			int max_visible = std::max(1, picker_h / row_h);
 			if (task_picker_selected_idx_ < task_picker_scroll_offset_) {
@@ -366,7 +367,7 @@ void App::Input_OnSpecial(int key, int x, int y) {
 				}
 
 				// Auto scroll to keep selected item visible
-				int row_h = 16;
+				int row_h = CurrentUiRowHeight();
 				int start_y = 30;
 				int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
 				if (max_rows > 0) {
@@ -456,15 +457,13 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			const auto& obj = objects[selected_object_index_];
 			objectPosition = obj.pos;
 		}
-		// A node selection belongs to the graph that is currently selected in the
-		// task tree. Never apply a stale node from a previously selected graph.
-		const bool overlayMatchesSelection = relatedGraphTaskId.empty() ||
-			(renderer_.GraphOverlayTaskId() == relatedGraphTaskId);
-		const GraphCameraTarget target = ResolveGraphCameraTarget(
+		const GraphCameraTarget target = ResolveF11CameraTarget(
 			renderer_.GetGraphOverlaySnapshot(),
-			renderer_.IsGraphOverlayVisible() && overlayMatchesSelection,
-			renderer_.IsGraphOverlayVisible() && overlayMatchesSelection
-				? renderer_.GraphSelected() : -1,
+			hasSelectedObject,
+			renderer_.IsGraphOverlayVisible(),
+			renderer_.GraphSelected(),
+			relatedGraphTaskId,
+			renderer_.GraphOverlayTaskId(),
 			renderer_.GraphOverlayOffset(),
 			objectPosition,
 			relatedGraphOrigin);
@@ -475,7 +474,17 @@ void App::Input_OnSpecial(int key, int x, int y) {
 		input_.mouse_delta_x_ = 0;
 		input_.mouse_delta_y_ = 0;
 		viewer_.velocity_ = glm::vec3(0.0f);
-		viewer_.pos_ = glm::vec3(target.position);
+		if (target.kind == GraphCameraTargetKind::GraphNode ||
+			target.kind == GraphCameraTargetKind::GraphOrigin) {
+			const GraphCameraPose pose = MakeF11GraphCameraPose(
+				target.position, glm::dvec3(viewer_.forward_),
+				6.0 * static_cast<double>(WORLD_UNITS_PER_METER));
+			viewer_.pos_ = glm::vec3(pose.position);
+			viewer_.yaw_ = pose.yaw_degrees;
+			viewer_.pitch_ = pose.pitch_degrees;
+		} else {
+			viewer_.pos_ = glm::vec3(target.position);
+		}
 		UpdateViewerVectors();
 		const char* target_name = target.kind == GraphCameraTargetKind::GraphNode
 			? "Graph Node" : target.kind == GraphCameraTargetKind::GraphOrigin
@@ -487,7 +496,10 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			std::string("[Camera] F11 target=") + target_name + " position=(" +
 			std::to_string(target.position.x) + "," +
 			std::to_string(target.position.y) + "," +
-			std::to_string(target.position.z) + ")");
+			std::to_string(target.position.z) + ") camera=(" +
+			std::to_string(viewer_.pos_.x) + "," +
+			std::to_string(viewer_.pos_.y) + "," +
+			std::to_string(viewer_.pos_.z) + ")");
 		return;
 	}
 
@@ -605,22 +617,13 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	}
 	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) {
 		if (key == 13) { // Enter
-			if (pause_active_input_ == 1) {
-				if (!pause_search_input_.empty()) {
-					bool isId = true;
-					if (pause_search_input_.length() != 8 || pause_search_input_[3] != '_' || pause_search_input_[6] != '_') isId = false;
-					for (int i = 0; i < (int)pause_search_input_.length(); i++) {
-						if (i != 3 && i != 6 && !isdigit(pause_search_input_[i])) isId = false;
-					}
-					if (isId) SearchModelById(pause_search_input_);
-					else       SearchModelByName(pause_search_input_);
-					TogglePauseMenu();
-				}
-				pause_active_input_ = -1;
-			} else if (!pause_level_input_.empty()) {
+			// Enter is consumed by the pause overlay. It only commits the level
+			// selector after that row has explicitly been focused; opening the
+			// menu must never reload the current level as a side effect.
+			if (igi::PauseMenuLevelInputFocused(pause_mode_, pause_active_input_) &&
+				!pause_level_input_.empty()) {
 				int lvl = std::atoi(pause_level_input_.c_str());
 				if (lvl >= 1 && lvl <= 14) {
-					if (in_game_mode_) ToggleGamePlayMode();
 					LoadLevel(lvl);
 					TogglePauseMenu();
 				} else {
@@ -634,9 +637,15 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			TogglePauseMenu();
 			return;
 		}
-		if (pause_active_input_ == 1) {
-			if (key == 8 && !pause_search_input_.empty()) { pause_search_input_.pop_back(); return; }
-			if (key >= 32 && key < 127) { pause_search_input_ += (char)key; return; }
+		if (igi::PauseMenuLevelInputFocused(pause_mode_, pause_active_input_)) {
+			if (key == 8 && !pause_level_input_.empty()) {
+				pause_level_input_.pop_back();
+				return;
+			}
+			if (key >= '0' && key <= '9' && pause_level_input_.size() < 2) {
+				pause_level_input_ += static_cast<char>(key);
+				return;
+			}
 		}
 		return;
 	}
@@ -1012,7 +1021,7 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 					}
 				}
 				if (current_row >= 0) {
-					int row_h = 16;
+					int row_h = CurrentUiRowHeight();
 					int start_y = 30;
 					int max_rows = (window_state_.viewport_height_ - 50 - start_y) / row_h;
 					if (max_rows > 0) {

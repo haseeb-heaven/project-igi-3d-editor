@@ -203,6 +203,37 @@ TEST(ConfigQvmTest, UsesGameQscAndRebuildsItsQvm) {
     fs::remove_all(gameRoot, ec);
 }
 
+TEST(ConfigQvmTest, AcceptsUtf8BomInAuthoritativeGameQsc) {
+    namespace fs = std::filesystem;
+    const fs::path gameRoot = fs::temp_directory_path() /
+        ("igi1ed-bom-config-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path qedDir = gameRoot / "editor" / "qed";
+    const fs::path qscPath = qedDir / "qedconfig.qsc";
+    const fs::path qvmPath = qedDir / "qedconfig.qvm";
+    std::error_code ec;
+    fs::create_directories(qedDir, ec);
+    ASSERT_FALSE(ec);
+
+    {
+        std::ofstream qsc(qscPath, std::ios::binary);
+        ASSERT_TRUE(qsc.is_open());
+        qsc << "\xEF\xBB\xBFQEDLogs(TRUE);\nQEDDebug(FALSE);\n";
+    }
+
+    {
+        ScopedEnvironmentVariable gamePath("IGI_GAME_PATH", gameRoot.string());
+        Config::Init();
+        EXPECT_TRUE(Config::Get().enableLogging);
+        EXPECT_FALSE(Config::Get().debugLogging);
+    }
+
+    ASSERT_TRUE(fs::is_regular_file(qvmPath));
+    EXPECT_TRUE(QVM_Parse(qvmPath.string()).valid);
+    fs::remove_all(gameRoot, ec);
+    Config::Init();
+}
+
 TEST(ConfigQvmTest, InvalidQscFailsClosedInsteadOfUsingStaleQvm) {
     namespace fs = std::filesystem;
     const fs::path gameRoot = fs::temp_directory_path() /
@@ -269,6 +300,41 @@ TEST(ConfigQvmTest, NonConfigQvmCannotOverrideLoggingSettings) {
         EXPECT_FALSE(Config::Get().debugLogging);
     }
 
+    fs::remove_all(gameRoot, ec);
+    Config::Init();
+}
+
+TEST(ConfigQvmTest, SaveRegeneratesSiblingQvmFromUpdatedQsc) {
+    namespace fs = std::filesystem;
+    const fs::path gameRoot = fs::temp_directory_path() /
+        ("igi1ed-save-config-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path qedDir = gameRoot / "editor" / "qed";
+    std::error_code ec;
+    fs::create_directories(qedDir, ec);
+    ASSERT_FALSE(ec);
+    {
+        std::ofstream qsc(qedDir / "qedconfig.qsc");
+        ASSERT_TRUE(qsc.is_open());
+        qsc << "QEDLogs(FALSE);\nQEDDebug(FALSE);\nQEDSystemFontSize(14);\n";
+    }
+
+    {
+        ScopedEnvironmentVariable gamePath("IGI_GAME_PATH", gameRoot.string());
+        Config::Init();
+        Config::Get().enableLogging = false;
+        Config::Get().debugLogging = false;
+        Config::Get().systemFontSize = 18;
+        Config::Save();
+
+        const fs::path qvmPath = qedDir / "qedconfig.qvm";
+        ASSERT_TRUE(fs::is_regular_file(qvmPath));
+        const QVMFile qvm = QVM_Parse(qvmPath.string());
+        ASSERT_TRUE(qvm.valid) << qvm.error;
+        const std::string decompiled = QVM_DecompileToString(qvm);
+        EXPECT_NE(decompiled.find("QEDLogs(FALSE)"), std::string::npos);
+        EXPECT_NE(decompiled.find("QEDSystemFontSize(18)"), std::string::npos);
+    }
     fs::remove_all(gameRoot, ec);
     Config::Init();
 }

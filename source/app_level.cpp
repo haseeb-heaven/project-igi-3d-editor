@@ -4,14 +4,16 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "runtime/editor_history.h"
 #include "utils_igi1conv.h"
 #include "renderer/object_lightmap.h"
 #include "runtime/audio_system.h"
+#include "runtime/pause_menu_state.h"
 #include <mmsystem.h>
 #include <future>
 #include <set>
 
-void App::PlayLevelMusic(int level_no) {
+bool App::PlayLevelMusic(int level_no) {
     igi::AudioSystem::SetActiveLevel(level_no);
     StopLevelMusic();
 
@@ -28,7 +30,7 @@ void App::PlayLevelMusic(int level_no) {
     if (!std::filesystem::exists(srcWav)) {
         Logger::Get().Log(LogLevel::ERR, "[Music] Configured music file not found: " + srcWav +
             " (searched " + soundsDir + ")");
-        return;
+        return false;
     }
 
     std::string outWav = Utils::GetExeDirectory() + "\\cache\\music\\level" + std::to_string(level_no) +
@@ -38,7 +40,7 @@ void App::PlayLevelMusic(int level_no) {
         std::string err;
         if (!igi1conv::WavConvert(srcWav, outWav, err)) {
             Logger::Get().Log(LogLevel::WARNING, "[Music] Convert failed: " + err);
-            return;
+            return false;
         }
     }
 
@@ -52,7 +54,7 @@ void App::PlayLevelMusic(int level_no) {
         char buf[256] = {};
         mciGetErrorStringA(rc, buf, sizeof(buf));
         Logger::Get().Log(LogLevel::WARNING, "[Music] mci open failed (" + std::to_string(rc) + "): " + buf);
-        return;
+        return false;
     }
 
     // MCI's "repeat" flag is unreliable for plain waveaudio devices, so loop
@@ -64,11 +66,12 @@ void App::PlayLevelMusic(int level_no) {
         mciGetErrorStringA(rc, buf, sizeof(buf));
         Logger::Get().Log(LogLevel::WARNING, "[Music] mci play failed (" + std::to_string(rc) + "): " + buf);
         mciSendStringA("close bgmusic", nullptr, 0, nullptr);
-        return;
+        return false;
     }
 
     music_playing_ = true;
     Logger::Get().Log(LogLevel::INFO, "[Music] Playing level " + std::to_string(level_no) + " music (looping): " + outWav);
+    return true;
 }
 
 void App::CheckMusicLoop() {
@@ -97,10 +100,13 @@ void App::ToggleMusic() {
         Logger::Get().Log(LogLevel::INFO, "[Music] Toggled OFF via Escape menu");
     } else {
         int lvl = (last_loaded_level_ >= 0) ? last_loaded_level_ : 1;
-        PlayLevelMusic(lvl);
-        Config::Get().musicEnabled = true;
+        const bool started = PlayLevelMusic(lvl);
+        const auto result = igi::ResolvePauseMusicToggle(false, started);
+        Config::Get().musicEnabled = result.enabled;
         Config::Save();
-        Logger::Get().Log(LogLevel::INFO, "[Music] Toggled ON via Escape menu (level " + std::to_string(lvl) + ")");
+        Logger::Get().Log(started ? LogLevel::INFO : LogLevel::WARNING,
+            std::string("[Music] Toggled ON via Escape menu (level ") +
+            std::to_string(lvl) + (started ? ")" : ") but playback failed"));
     }
 }
 
@@ -177,6 +183,11 @@ void App::LoadLevel(int level_no) {
 		
 		selected_object_index_ = -1;
 		hover_object_index_ = -1;
+		// Undo entries describe object identities and indices from one level.
+		// Keeping them across a level switch lets Ctrl+Z mutate the newly loaded
+		// level with an old snapshot.
+		igi::ClearEditorHistory(undo_stack_, redo_stack_);
+		igi::ClearEditorHistory(ai_text_undo_, ai_text_redo_);
 		status_message_.clear();
 
 		// Previous level's extracted disk assets are cleared above (line ~136)
@@ -538,6 +549,18 @@ void App::LoadLevel(int level_no) {
 					if (!r.clip) {
 						r.clip = animRegistry_.GetDefaultClip(o.boneHierarchy);
 						r.usedDefault = (r.clip != nullptr);
+					}
+					// AI scripts sometimes reference a valid single-frame action pose
+					// (for example anim_080). That asset is correct for an event, but
+					// looping it makes the editor preview look frozen. Prefer the first
+					// temporal clip in the same hierarchy for continuous preview; keep
+					// the authored clip only when no moving clip exists.
+					if (r.clip != nullptr && !AnimationClipHasTemporalMotion(*r.clip)) {
+						if (const AnimationClip* candidate =
+							animRegistry_.GetFirstTemporalClip(o.boneHierarchy)) {
+							r.clip = candidate;
+							r.usedDefault = true;
+						}
 					}
 					return r;
 				}));

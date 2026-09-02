@@ -398,7 +398,8 @@ void AiScriptHost::RegisterNatives() {
         [this](QvmExecutionContext&, const QvmNativeCallArguments& arguments) {
             if (AiGuardEntity* guard = GetCurrentGuard()) {
                 const int requested_path_id = arguments.GetInt(0);
-                if (guard->script_patrol_path_id != requested_path_id) {
+                if (guard->script_patrol_path_id != requested_path_id
+                    || guard->patrol_stopped) {
                     const auto route_iterator = guard->patrol_routes.find(
                         requested_path_id);
                     if (route_iterator != guard->patrol_routes.end()) {

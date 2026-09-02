@@ -265,6 +265,8 @@ private:
 	AnimationRegistry animRegistry_;
 	igi::PlayerAnimationDriver player_animation_driver_;
 	std::unordered_map<int, AnimPlayback> animPlaybacks_; // object index -> playback state
+	std::unordered_map<int, AnimPlayback> gameplayAnimPlaybacks_; // fixed-step runtime state
+	uint64_t lastGameplayAnimationTick_ = 0;
 	std::unordered_map<int, std::vector<int>> animIdsCache_; // object index -> discovered AIAction_PlayAnimation ids
 	std::unordered_map<uint32_t, uint64_t> runtime_animation_request_serials_;
 	bool show_anim_debug_ = false; // F10: animation status panel (independent of F2/TaskTree)
@@ -276,7 +278,7 @@ private:
 
 	// Level background music (game_music.wav, converted from ILSF -> PCM, looped via MCI)
 	bool music_playing_ = false;
-	void PlayLevelMusic(int level_no);
+	bool PlayLevelMusic(int level_no);
 	void StopLevelMusic();
 	void CheckMusicLoop(); // call every frame: manually restarts playback since MCI "repeat" is unreliable for waveaudio
 	void ToggleMusic();    // Escape-menu Music checkbox: stop if playing, else (re)start current level's music
@@ -284,6 +286,7 @@ private:
 	void UpdateAnimations(float dtSec);
 	void SetupRuntimePlayerAnimation();
 	void ApplyRuntimeAiAnimationRequests();
+	void AdvanceGameplayAnimationClocks();
 	std::string BuildAnimStatusString();
 	int FindHumanAiTaskId(int objIndex) const;
 	const std::vector<int>& GetOrComputeAnimationIds(int objIndex);
@@ -316,7 +319,7 @@ private:
 	// geometry — i.e. every AI currently animating in parallel, not just the
 	// selected one. Their rigid (static) mesh is skipped in favor of the live
 	// skinned draw. Logs whenever the active set changes (object added/removed).
-	std::unordered_set<int> GetSkinnedReplacementObjectIndices();
+	std::unordered_set<int> GetSkinnedReplacementObjectIndices(bool gameplay_render);
 	std::unordered_set<int> animSkinnedIndicesPrev_; // for change-only logging
 
   // C2: Typed task property editor

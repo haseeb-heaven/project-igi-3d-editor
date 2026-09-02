@@ -28,6 +28,7 @@
 #include "../logger.h"
 #include <fstream>
 #include <cstring>
+#include <limits>
 
 static const uint32_t FOURCC_ILFF = 0x46464C49; // "ILFF"
 static const uint32_t FOURCC_FONT = 0x544E4F46; // "FONT"
@@ -121,7 +122,12 @@ FntFont FNT_Parse(const std::string& filepath) {
         if (fourcc == FOURCC_FNTH) {
             if (length >= 24) {
                 numGlyphs        = ReadU32LE(data + 4);
-                font.lineHeight  = (int)ReadU32LE(data + 8); // cell_height (line height px)
+                // The retail loader uses FNTH +20 as the line/default height.
+                // +8 is a font-specific field (32 for font3.fnt), not the
+                // height used to place the next line.
+                font.defaultAdvance = (int)ReadU32LE(data + 12);
+                font.defaultWidth   = (int)ReadU32LE(data + 16);
+                font.lineHeight     = (int)ReadU32LE(data + 20);
             }
         } else if (fourcc == FOURCC_ANMF) {
             anmf = data; anmfLen = length;
@@ -138,6 +144,14 @@ FntFont FNT_Parse(const std::string& filepath) {
         }
 
         if (skip == 0) break;
+        // skip includes this 16-byte header and padded payload. Reject a
+        // malformed/non-advancing value instead of allowing an infinite walk
+        // or an out-of-bounds next header read.
+        if (skip < 16 || static_cast<size_t>(skip) > fileSize - offset) {
+            Logger::Get().Log(LogLevel::WARNING, "[FNT] Invalid chunk skip at offset " +
+                std::to_string(offset));
+            break;
+        }
         offset += skip;
     }
 
@@ -145,7 +159,10 @@ FntFont FNT_Parse(const std::string& filepath) {
         Logger::Get().Log(LogLevel::ERR, "[FNT] Missing required chunks in: " + filepath);
         return font;
     }
-    if (anmfLen < (size_t)numGlyphs * 40 || tranLen < (size_t)numGlyphs * 2) {
+    if (numGlyphs > std::numeric_limits<size_t>::max() / 40 ||
+        numGlyphs > std::numeric_limits<size_t>::max() / 2 ||
+        anmfLen < static_cast<size_t>(numGlyphs) * 40 ||
+        tranLen < static_cast<size_t>(numGlyphs) * 2) {
         Logger::Get().Log(LogLevel::ERR, "[FNT] Glyph table truncated in: " + filepath);
         return font;
     }
@@ -155,6 +172,13 @@ FntFont FNT_Parse(const std::string& filepath) {
 
     // --- Decode the atlas into RGBA (RGB=white mask, A=opacity). ---
     const size_t numPixels = (size_t)texWidth * texHeight;
+    const size_t bytesPerPixel = (texFormat == 3 || texFormat == 67) ? 4 : 2;
+    if (numPixels > std::numeric_limits<size_t>::max() / 4 ||
+        numPixels > std::numeric_limits<size_t>::max() / bytesPerPixel ||
+        bodyLen < numPixels * bytesPerPixel) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Atlas size overflows or BODY is truncated: " + filepath);
+        return font;
+    }
     try {
         font.rgba.resize(numPixels * 4);
     } catch (const std::bad_alloc&) {
@@ -164,10 +188,6 @@ FntFont FNT_Parse(const std::string& filepath) {
 
     if (texFormat == 3 || texFormat == 67) {
         // ARGB8888 stored as BGRA: byte0=B, byte1=G, byte2=R, byte3=A.
-        if (bodyLen < numPixels * 4) {
-            Logger::Get().Log(LogLevel::ERR, "[FNT] BODY too small for ARGB8888 atlas: " + filepath);
-            return font;
-        }
         for (size_t i = 0; i < numPixels; ++i) {
             uint8_t b = body[i * 4 + 0];
             uint8_t g = body[i * 4 + 1];
@@ -181,10 +201,6 @@ FntFont FNT_Parse(const std::string& filepath) {
     } else {
         // RGB565 (format 2): 2 bytes/pixel. Use luminance as opacity so the atlas
         // is a tintable glyph mask. Background pixels are dark -> transparent.
-        if (bodyLen < numPixels * 2) {
-            Logger::Get().Log(LogLevel::ERR, "[FNT] BODY too small for RGB565 atlas: " + filepath);
-            return font;
-        }
         for (size_t i = 0; i < numPixels; ++i) {
             uint16_t v = ReadU16LE(body + i * 2);
             int r = (v >> 11) & 0x1f;
@@ -201,9 +217,9 @@ FntFont FNT_Parse(const std::string& filepath) {
     }
 
     // --- Build glyph map. ---
-    // TRAN is indexed by CODEPOINT (256 entries) and stores the glyph index into
-    // ANMF: glyphs[code] = ANMF[TRAN[code]].  Glyph index 0 is the reserved
-    // notdef slot (control chars map to it), so a TRAN value of 0 means "no glyph".
+    // TRAN is a 256-entry character-to-glyph table. Values are one-based;
+    // zero means that the character has no bitmap and must use the font's
+    // default advance. This is the convention used by the retail loader.
     const int tranCount = (int)(tranLen / 2);
     for (int code = 0; code < tranCount; ++code) {
         uint16_t tv = ReadU16LE(tran + (size_t)code * 2);
@@ -229,10 +245,12 @@ FntFont FNT_Parse(const std::string& filepath) {
         glyph.v1 = v_top + (float)height / (float)texHeight;
         glyph.width   = width;
         glyph.height  = height;
+        glyph.offsetX = (int)ReadU16LE(g + 34);
+        glyph.offsetY = (int)ReadU16LE(g + 36);
         uint16_t advance_x = ReadU16LE(g + 26);   // per-glyph horizontal advance stored in file
         glyph.advance = advance_x > 0 ? (int)advance_x
                                       : (width > 0 ? (int)width + 1
-                                                   : (font.lineHeight > 0 ? font.lineHeight / 2 : 4));
+                                                   : (font.defaultAdvance > 0 ? font.defaultAdvance : 4));
 
         font.glyphs[code] = glyph;
     }

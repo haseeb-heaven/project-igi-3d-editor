@@ -7,16 +7,14 @@
 #include "graph_overlay.h"
 #include "object_lightmap.h"
 #include "tex_writer.h"
-#include "res_writer.h"
 #include "../runtime/map_computer_projection.h"
 #include "../runtime/pause_menu_layout.h"
+#include "../runtime/pause_menu_font.h"
 #include "../utils.h"
 #include <vector>
 #include <unordered_map>
 #include <limits>
 #include <cctype>
-#include <filesystem>
-#include <fstream>
 
 struct HudSprite {
   std::vector<GLuint> tex_ids;   // one texture per sprite frame (frame 0 for single-frame sprites)
@@ -155,9 +153,9 @@ static FntFont g_editorSmFont;
 static GLuint  g_editorSmFontTex = 0;
 static bool    g_editorSmFontTried = false;
 
-static FntFont g_retailPauseFont;
 static GLuint  g_retailPauseFontTex = 0;
-static bool    g_retailPauseFontTried = false;
+static const FntFont* g_retailPauseUploadedFont = nullptr;
+static uint64_t g_retailPauseUploadedStamp = 0;
 
 // Lazily load + upload the editor font atlas on first HUD draw.
 static void EnsureEditorFont() {
@@ -166,7 +164,7 @@ static void EnsureEditorFont() {
   }
   g_editorFontTried = true;
 
-  g_editorFont = FNT_Parse("editor\\qed\\editor.fnt");
+  g_editorFont = FNT_Parse(Utils::GetExeDirectory() + "\\editor\\qed\\editor.fnt");
   if (!g_editorFont.valid) {
     return;
   }
@@ -198,76 +196,57 @@ static void EnsureEditorSmFont() {
   g_editorSmFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST, false);
 }
 
-// The retail pause menu uses font3.fnt from ingamemenu.res. Keep the editor
-// actions, but use the same atlas and glyph metrics as igi.exe.
-static void EnsureRetailPauseFont() {
-  if (g_retailPauseFontTried) return;
-  g_retailPauseFontTried = true;
-
-  const std::filesystem::path root(Utils::GetIGIRootPath());
-  const std::filesystem::path archive = root / "MENUSYSTEM" / "ingamemenu.res";
-  if (!std::filesystem::exists(archive)) return;
-
-  const auto bytes = RES_Extract(archive.string(), "LOCAL:menusystem/font3.fnt");
-  if (bytes.empty()) return;
-
-  const auto staged = std::filesystem::temp_directory_path() / "igi1ed-ingamemenu-font3.fnt";
-  std::ofstream out(staged, std::ios::binary | std::ios::trunc);
-  out.write(reinterpret_cast<const char*>(bytes.data()),
-            static_cast<std::streamsize>(bytes.size()));
-  out.close();
-  if (!out) return;
-
-  g_retailPauseFont = FNT_Parse(staged.string());
-  if (!g_retailPauseFont.valid) return;
+static void EnsureRetailPauseFontTexture() {
+  FntFont& font = GetRetailPauseFont();
+  const uint64_t stamp = RetailPauseFontSourceStamp();
+  if (!font.valid) return;
+  if (g_retailPauseUploadedFont == &font && g_retailPauseUploadedStamp == stamp) return;
   pic_s pic;
-  pic.width_ = g_retailPauseFont.texWidth;
-  pic.height_ = g_retailPauseFont.texHeight;
-  pic.pixels_ = g_retailPauseFont.rgba.data();
+  pic.width_ = font.texWidth;
+  pic.height_ = font.texHeight;
+  pic.pixels_ = font.rgba.data();
   g_retailPauseFontTex = GL_RegisterTexture(&pic, GL_CLAMP_TO_EDGE, GL_NEAREST,
-                                            GL_NEAREST, false);
+                                             GL_NEAREST, false);
+  if (g_retailPauseFontTex) {
+    g_retailPauseUploadedFont = &font;
+    g_retailPauseUploadedStamp = stamp;
+  }
 }
 
 static void DrawRetailPauseText(int x, int y_gl, const char* str,
-                                float r, float g, float b) {
-  if (!g_retailPauseFont.valid || !g_retailPauseFontTex) return;
+                                float r, float g, float b, float scale) {
+  const FntFont& font = GetRetailPauseFont();
+  if (!font.valid || !g_retailPauseFontTex) return;
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_retailPauseFontTex);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glColor4f(r, g, b, 1.0f);
+  // The public HUD y coordinate is a bitmap-font baseline, matching the GLUT
+  // path. FNT glyphs use a line origin, so lift that origin before applying
+  // the glyph's stored bearing; otherwise retail glyphs fall below their box.
+  y_gl += 11;
   float pen_x = static_cast<float>(x);
-  const float space = g_retailPauseFont.lineHeight > 0
-      ? g_retailPauseFont.lineHeight / 2.0f : 4.0f;
+  const float space = (font.defaultAdvance > 0 ? font.defaultAdvance : 4.0f) * scale;
   glBegin(GL_QUADS);
   for (const char* p = str; *p; ++p) {
-    const auto it = g_retailPauseFont.glyphs.find(static_cast<unsigned char>(*p));
-    if (it == g_retailPauseFont.glyphs.end()) { pen_x += space; continue; }
+    const auto it = font.glyphs.find(static_cast<unsigned char>(*p));
+    if (it == font.glyphs.end()) { pen_x += space; continue; }
     const FntGlyph& glyph = it->second;
-    const float x1 = pen_x + glyph.width;
-    const float y1 = y_gl - glyph.height;
-    glTexCoord2f(glyph.u0, glyph.v0); glVertex2f(pen_x, y_gl);
-    glTexCoord2f(glyph.u1, glyph.v0); glVertex2f(x1, y_gl);
+    const float x0 = pen_x + glyph.offsetX * scale;
+    const float x1 = x0 + glyph.width * scale;
+    const float y0 = y_gl - glyph.offsetY * scale;
+    const float y1 = y0 - glyph.height * scale;
+    glTexCoord2f(glyph.u0, glyph.v0); glVertex2f(x0, y0);
+    glTexCoord2f(glyph.u1, glyph.v0); glVertex2f(x1, y0);
     glTexCoord2f(glyph.u1, glyph.v1); glVertex2f(x1, y1);
-    glTexCoord2f(glyph.u0, glyph.v1); glVertex2f(pen_x, y1);
-    pen_x += glyph.advance;
+    glTexCoord2f(glyph.u0, glyph.v1); glVertex2f(x0, y1);
+    pen_x += glyph.advance * scale;
   }
   glEnd();
   glBindTexture(GL_TEXTURE_2D, 0);
   glDisable(GL_TEXTURE_2D);
   glDisable(GL_BLEND);
-}
-
-static int RetailPauseTextWidth(const char* str) {
-  if (!g_retailPauseFont.valid) return static_cast<int>(strlen(str)) * 8;
-  const float space = g_retailPauseFont.lineHeight > 0
-      ? g_retailPauseFont.lineHeight / 2.0f : 4.0f;
-  float width = 0.0f;
-  for (const char* p = str; *p; ++p) {
-    const auto it = g_retailPauseFont.glyphs.find(static_cast<unsigned char>(*p));
-    width += it == g_retailPauseFont.glyphs.end() ? space : it->second.advance;
-  }
-  return static_cast<int>(width);
 }
 
 // Draw a string with the editor bitmap font in the HUD ortho space (y=0 bottom).
@@ -278,9 +257,11 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
     return;
   }
 
-  const float texW = (float)g_editorFont.texWidth;
-  (void)texW;
-  const float spaceAdvance = (g_editorFont.lineHeight > 0 ? g_editorFont.lineHeight / 2 : 4) * scale;
+  // Keep the editor FNT path on the same baseline convention as GLUT and the
+  // retail FNT path. This is especially important when the configured size is
+  // larger than the original 12-point row.
+  y_gl += 11;
+  const float spaceAdvance = (g_editorFont.defaultAdvance > 0 ? g_editorFont.defaultAdvance : 4) * scale;
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_editorFontTex);
@@ -309,10 +290,10 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
     }
 
     const FntGlyph& gl = it->second;
-    float x0 = pen_x;
-    float x1 = pen_x + gl.width * scale;
-    float yTop = pen_y;                    // y up: top of glyph
-    float yBot = pen_y - gl.height * scale;
+    float x0 = pen_x + gl.offsetX * scale;
+    float x1 = x0 + gl.width * scale;
+    float yTop = pen_y - gl.offsetY * scale; // y up: line origin is above the glyph
+    float yBot = yTop - gl.height * scale;
 
     // Atlas V grows downward; gl V grows upward -> top of glyph uses v0.
     glTexCoord2f(gl.u0, gl.v0); glVertex2f(x0, yTop);
@@ -335,7 +316,7 @@ static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, f
     return;
   }
 
-  const int spaceAdvance = g_editorSmFont.lineHeight > 0 ? g_editorSmFont.lineHeight / 2 : 4;
+  const int spaceAdvance = g_editorSmFont.defaultAdvance > 0 ? g_editorSmFont.defaultAdvance : 4;
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_editorSmFontTex);
@@ -362,10 +343,10 @@ static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, f
     }
 
     const FntGlyph& gl = it->second;
-    float x0 = (float)pen_x;
-    float x1 = (float)(pen_x + gl.width);
-    float yTop = (float)pen_y;
-    float yBot = (float)(pen_y - gl.height);
+    float x0 = (float)pen_x + gl.offsetX;
+    float x1 = x0 + gl.width;
+    float yTop = (float)pen_y - gl.offsetY;
+    float yBot = yTop - gl.height;
 
     glTexCoord2f(gl.u0, gl.v0); glVertex2f(x0, yTop);
     glTexCoord2f(gl.u1, gl.v0); glVertex2f(x1, yTop);
@@ -509,6 +490,8 @@ void Renderer::Draw(const draw_params_s &params,
     if (useEditorFont) {
       EnsureEditorFont();
       EnsureEditorSmFont();
+    } else {
+      EnsureRetailPauseFontTexture();
     }
 
     // UI font scale derived from the configured size so the task tree, picker,
@@ -516,13 +499,15 @@ void Renderer::Draw(const draw_params_s &params,
     // chosen in the pause menu. 12 is the baseline; 10/18 scale the editor
     // bitmap glyphs and pick the matching GLUT bitmap for the fallback path.
     const int uiFontSize = Config::Get().systemFontSize;
+    const PauseMenuFontMetrics uiFontMetrics =
+        GetPauseMenuFontMetrics(useEditorFont, uiFontSize);
     // Continuous scale: 12 is the baseline; size changes in 1-pt steps. The editor
     // bitmap font scales smoothly; the GLUT fallback picks the nearest bitmap.
-    const float uiFontScale = (float)uiFontSize / 12.0f;
+    const float uiFontScale = uiFontMetrics.scale;
     void *uiGlutFont = (uiFontSize <= 11) ? GLUT_BITMAP_HELVETICA_10
                      : (uiFontSize >= 15) ? GLUT_BITMAP_HELVETICA_18
                                           : GLUT_BITMAP_HELVETICA_12;
-    const int uiLineH = std::max(10, (int)(15 * uiFontScale));
+    const int uiLineH = uiFontMetrics.lineHeight;
 
     // Pixel width of the first `count` chars of `str` in the active HUD font.
     // Mirrors DrawFontText's per-glyph advance exactly so callers (e.g. the text
@@ -530,14 +515,26 @@ void Renderer::Draw(const draw_params_s &params,
     auto measure_text_width = [&](const char *str, int count) -> int {
       if (count <= 0) return 0;
       if (useEditorFont && g_editorFont.valid && g_editorFontTex) {
-        const int spaceAdvance =
-            g_editorFont.lineHeight > 0 ? g_editorFont.lineHeight / 2 : 4;
-        int w = 0;
+        const int spaceAdvance = g_editorFont.defaultAdvance > 0
+            ? g_editorFont.defaultAdvance : 4;
+        float w = 0.0f;
         for (int i = 0; i < count && str[i]; ++i) {
           auto it = g_editorFont.glyphs.find((int)(unsigned char)str[i]);
-          w += (it != g_editorFont.glyphs.end()) ? it->second.advance : spaceAdvance;
+          w += static_cast<float>(it != g_editorFont.glyphs.end()
+              ? it->second.advance : spaceAdvance) * uiFontScale;
         }
-        return (int)(w * uiFontScale);
+        return static_cast<int>(w);
+      }
+      if (!useEditorFont && GetRetailPauseFont().valid && g_retailPauseFontTex) {
+        const FntFont& font = GetRetailPauseFont();
+        const int spaceAdvance = font.defaultAdvance > 0 ? font.defaultAdvance : 4;
+        float w = 0.0f;
+        for (int i = 0; i < count && str[i]; ++i) {
+          auto it = font.glyphs.find((int)(unsigned char)str[i]);
+          w += static_cast<float>(it != font.glyphs.end()
+              ? it->second.advance : spaceAdvance) * uiFontScale;
+        }
+        return static_cast<int>(w);
       }
       int w = 0;
       for (int i = 0; i < count && str[i]; ++i)
@@ -559,6 +556,20 @@ void Renderer::Draw(const draw_params_s &params,
           DrawFontText(x + 1, y_gl - 1, line.c_str(), 0.0f, 0.0f, 0.0f, uiFontScale);
           DrawFontText(x, y_gl, line.c_str(), r, g, b, uiFontScale);
           line_y += uiLineH; // Vertical spacing
+        }
+        return;
+      }
+
+      if (!useEditorFont && GetRetailPauseFont().valid && g_retailPauseFontTex) {
+        std::stringstream ss(str);
+        std::string line;
+        int line_y = y;
+        while (std::getline(ss, line)) {
+          const int y_gl = params.view_define_->viewport_height_ - line_y;
+          DrawRetailPauseText(x + 1, y_gl - 1, line.c_str(), 0.0f, 0.0f, 0.0f,
+                              uiFontScale);
+          DrawRetailPauseText(x, y_gl, line.c_str(), r, g, b, uiFontScale);
+          line_y += uiLineH;
         }
         return;
       }
@@ -700,7 +711,7 @@ void Renderer::Draw(const draw_params_s &params,
       const auto &objects = task_tree_view.level_objects_->GetObjects();
       int tree_x = 20;
       int tree_y = 30; // Starting Y for tree
-      int row_h = 16;
+      int row_h = uiFontMetrics.rowHeight;
       int start_y = 30;
       int current_row = 0;
       int scroll_offset = task_tree_view.tree_scroll_offset;
@@ -1644,16 +1655,40 @@ void Renderer::Draw(const draw_params_s &params,
     // SPR sprite cursors are drawn by App::DrawCustomCursor() — no GLUT overlays here
 
     if (task_tree_view.pause_mode_) {
-      const int menu_w = igi::kPauseMenuWidth;
-      const int menu_h = igi::kPauseMenuHeight;
-      const int menu_x = (params.view_define_->viewport_width_ - menu_w) / 2;
-      const int menu_y = igi::PauseMenuTop(params.view_define_->viewport_height_);
       const int viewport_h = params.view_define_->viewport_height_;
-      EnsureRetailPauseFont();
+      const bool exp = task_tree_view.pause_terrain_expanded_;
+      const PauseMenuFontMetrics pause_font_metrics =
+          GetPauseMenuFontMetrics(Config::Get().useEditorFont,
+                                  Config::Get().systemFontSize);
+      const igi::PauseMenuLayout pause_layout = igi::BuildPauseMenuLayout(
+          params.view_define_->viewport_width_, viewport_h, exp,
+          pause_font_metrics.lineHeight);
+      const int menu_w = pause_layout.menu_width;
+      const int menu_h = pause_layout.menu_height;
+      const int menu_x = pause_layout.menu_left;
+      const int menu_y = pause_layout.menu_top;
+      const float pause_font_scale = pause_layout.text_scale *
+          (static_cast<float>(Config::Get().systemFontSize) / 12.0f);
+      const int pause_box_height = (std::max)(24, static_cast<int>(std::ceil(
+          static_cast<float>(pause_font_metrics.lineHeight) *
+          pause_layout.text_scale)) + 4);
+      if (Config::Get().useEditorFont) EnsureEditorFont();
+      else EnsureRetailPauseFontTexture();
+
+      auto pause_text_width = [&](const char* text) {
+        return PauseMenuTextWidth(text, Config::Get().useEditorFont,
+                                  Config::Get().systemFontSize,
+                                  pause_layout.text_scale);
+      };
+
       auto draw_pause_text = [&](int x, int y, const char* text,
                                  float r, float g, float b) {
-        if (g_retailPauseFont.valid && g_retailPauseFontTex) {
-          DrawRetailPauseText(x, viewport_h - y, text, r, g, b);
+        if (Config::Get().useEditorFont && g_editorFont.valid && g_editorFontTex) {
+          DrawFontText(x, viewport_h - y, text, r, g, b, pause_font_scale);
+        } else if (!Config::Get().useEditorFont &&
+                   g_retailPauseFontTex && GetRetailPauseFont().valid) {
+          DrawRetailPauseText(x, viewport_h - y, text, r, g, b,
+                              pause_font_scale);
         } else {
           draw_text_sys(x, y, text, r, g, b);
         }
@@ -1688,14 +1723,14 @@ void Renderer::Draw(const draw_params_s &params,
       glEnd();
       glLineWidth(1.0f);
 
-      int screen_menu_top = igi::PauseMenuTop(viewport_h);
+      int screen_menu_top = pause_layout.menu_top;
       // Title — centered, bright green
       const char* title = "IGI EDITOR";
-      draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(title)) / 2,
+      draw_pause_text(menu_x + (menu_w - pause_text_width(title)) / 2,
                  screen_menu_top + 22, title, 0.0f, 1.0f, 0.0f);
       // Subtitle — centered, dim white
       const char* subtitle = "PAUSED";
-      draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(subtitle)) / 2,
+      draw_pause_text(menu_x + (menu_w - pause_text_width(subtitle)) / 2,
                  screen_menu_top + 46, subtitle, 0.8f, 0.8f, 0.8f);
 
       // Font row is rendered specially (index 1): a "Font: <type>" toggle on the
@@ -1747,7 +1782,6 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Calculate Lightmaps");
       const int TERRAIN_HEADER_ROW = btn_labels.size();
 
-      bool exp = task_tree_view.pause_terrain_expanded_;
       btn_labels.push_back(exp ? "Terrain Options: [-]" : "Terrain Options: [+]");
 
       int TERRAIN_TEX_ROW = -1, TERRAIN_HGT_ROW = -1, TERRAIN_DSC_ROW = -1, TERRAIN_FOG_ROW = -1, TERRAIN_FOGINT_ROW = -1;
@@ -1768,8 +1802,12 @@ void Renderer::Draw(const draw_params_s &params,
 
       const int NUM_BTNS = btn_labels.size();
 
-      auto row_screen_y = [&](int idx) {
-        return igi::PauseMenuRowCenter(viewport_h, exp, idx);
+      auto row_screen_y = [&](int idx) { return igi::PauseMenuRowCenter(pause_layout, idx); };
+
+      auto spinner_box_bounds = [&](int gl_row_y) {
+        const int above = pause_box_height / 2;
+        const int below = pause_box_height - above;
+        return std::pair<int, int>{gl_row_y - above, gl_row_y + below};
       };
 
       // Shared spinner-box draw helper (reused for FONT_ROW and LEVEL_ROW)
@@ -1779,7 +1817,7 @@ void Renderer::Draw(const draw_params_s &params,
         glVertex2i(x1, row_bot); glVertex2i(x1 + w, row_bot);
         glVertex2i(x1 + w, row_top); glVertex2i(x1, row_top);
         glEnd();
-        int tw = RetailPauseTextWidth(txt);
+        int tw = pause_text_width(txt);
         draw_pause_text(x1 + (w - tw) / 2, lbl_y, txt, 0.0f, 0.9f, 0.0f);
       };
 
@@ -1789,18 +1827,18 @@ void Renderer::Draw(const draw_params_s &params,
 
         bool hovered = (task_tree_view.mouse_x_ >= menu_x &&
                         task_tree_view.mouse_x_ <= menu_x + menu_w &&
-                        task_tree_view.mouse_y_ >= screen_btn_y - 15 &&
-                        task_tree_view.mouse_y_ <= screen_btn_y + 15);
+                        task_tree_view.mouse_y_ >= screen_btn_y - pause_layout.row_hit_radius &&
+                        task_tree_view.mouse_y_ <= screen_btn_y + pause_layout.row_hit_radius);
 
         if (i == MODE_ROW) {
-          int tw = RetailPauseTextWidth(mode_btn_label);
+          int tw = pause_text_width(mode_btn_label);
           int gx = menu_x + (menu_w - tw) / 2;
           draw_pause_text(gx, screen_btn_y, mode_btn_label,
                         task_tree_view.in_game_mode_ ? 0.2f : (hovered ? 1.0f : 0.0f),
                         task_tree_view.in_game_mode_ ? 1.0f : (hovered ? 1.0f : 0.85f),
                         task_tree_view.in_game_mode_ ? 0.3f : 0.0f);
         } else if (i == CLIP_ROW) {
-          int tw = RetailPauseTextWidth(clip_btn_label);
+          int tw = pause_text_width(clip_btn_label);
           int gx = menu_x + (menu_w - tw) / 2;
           draw_pause_text(gx, screen_btn_y, clip_btn_label,
                         task_tree_view.noclip_mode_ ? 0.85f : (hovered ? 1.0f : 0.0f),
@@ -1808,17 +1846,17 @@ void Renderer::Draw(const draw_params_s &params,
                         task_tree_view.noclip_mode_ ? 0.0f : 0.0f);
         } else if (i == FONT_ROW) {
           // "Font: <type>  [-] <n> [+]" — label left, spinner group right; whole row centered
-          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const int btn_w = 22, val_w = 44;
           const char* lbl = font_btn_label;
-          int label_px = RetailPauseTextWidth(lbl);
-          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          draw_pause_text(gx, screen_btn_y, lbl,
+          int label_px = pause_text_width(lbl);
+          const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+              pause_layout, screen_btn_y, label_px, val_w);
+          draw_pause_text(spinner.group_left, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_px + label_gap;
-          int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + val_w + gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          int minus_x = spinner.minus_left;
+          int box_x   = spinner.value_left;
+          int plus_x  = spinner.plus_left;
+          const auto [rt, rb] = spinner_box_bounds(gl_btn_y);
           char szbuf[8]; snprintf(szbuf, sizeof(szbuf), "%d", Config::Get().systemFontSize);
           sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
           sbox(box_x,   val_w, szbuf,  rt, rb, screen_btn_y);
@@ -1826,35 +1864,35 @@ void Renderer::Draw(const draw_params_s &params,
 
         } else if (i == LEVEL_ROW) {
           // Level spinner: "Select Level  [-] [N] [+]" — same width as Font row for visual alignment
-          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const int btn_w = 22, val_w = 44;
           const char* lbl = "Select Level";
-          int label_px = RetailPauseTextWidth(lbl);
-          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          draw_pause_text(gx, screen_btn_y, lbl,
+          int label_px = pause_text_width(lbl);
+          const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+              pause_layout, screen_btn_y, label_px, val_w);
+          draw_pause_text(spinner.group_left, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_px + label_gap;
-          int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + val_w + gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          int minus_x = spinner.minus_left;
+          int box_x   = spinner.value_left;
+          int plus_x  = spinner.plus_left;
+          const auto [rt, rb] = spinner_box_bounds(gl_btn_y);
           sbox(minus_x, btn_w, "-",   rt, rb, screen_btn_y);
           sbox(box_x,   val_w, task_tree_view.pause_level_input_.c_str(), rt, rb, screen_btn_y);
           sbox(plus_x,  btn_w, "+",   rt, rb, screen_btn_y);
 
         } else if (i == AUTOSAVE_ROW) {
           // Auto Save: "Save Enable/Disable  [-] [Ns] [+]" — same width as Font/Level for alignment
-          const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
+          const int btn_w = 22, val_w = 44;
           const char* lbl = task_tree_view.auto_save_enabled_
                                  ? "Save Enable" : "Save Disable";
-          int label_px = RetailPauseTextWidth(lbl);
-          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          draw_pause_text(gx, screen_btn_y, lbl,
+          int label_px = pause_text_width(lbl);
+          const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+              pause_layout, screen_btn_y, label_px, val_w);
+          draw_pause_text(spinner.group_left, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_px + label_gap;
-          int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + val_w + gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          int minus_x = spinner.minus_left;
+          int box_x   = spinner.value_left;
+          int plus_x  = spinner.plus_left;
+          const auto [rt, rb] = spinner_box_bounds(gl_btn_y);
           char secbuf[16];
           snprintf(secbuf, sizeof(secbuf), "%ds", task_tree_view.auto_save_interval_seconds_);
           sbox(minus_x, btn_w, "-",     rt, rb, screen_btn_y);
@@ -1874,8 +1912,8 @@ void Renderer::Draw(const draw_params_s &params,
           }
           char musicbuf[24];
           snprintf(musicbuf, sizeof(musicbuf), "[%c] Music", task_tree_view.music_on_ ? 'X' : ' ');
-           int tw = RetailPauseTextWidth(musicbuf);
-           draw_pause_text(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
+          int tw = pause_text_width(musicbuf);
+          draw_pause_text(menu_x + (menu_w - tw) / 2, screen_btn_y, musicbuf,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == LIGHTMAPS_ROW) {
@@ -1888,8 +1926,8 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-           int lmtw = RetailPauseTextWidth(lightmap_btn_label);
-           draw_pause_text(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lightmap_btn_label,
+          int lmtw = pause_text_width(lightmap_btn_label);
+          draw_pause_text(menu_x + (menu_w - lmtw) / 2, screen_btn_y, lightmap_btn_label,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == LIGHTMAPS_CALC_ROW) {
@@ -1903,26 +1941,26 @@ void Renderer::Draw(const draw_params_s &params,
             glDisable(GL_BLEND);
           }
           const char* calc_lbl = "Calculate Lightmaps";
-           int btw = RetailPauseTextWidth(calc_lbl);
-           draw_pause_text(menu_x + (menu_w - btw) / 2, screen_btn_y, calc_lbl,
+          int btw = pause_text_width(calc_lbl);
+          draw_pause_text(menu_x + (menu_w - btw) / 2, screen_btn_y, calc_lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
         } else if (i == TERRAIN_HEADER_ROW) {
-           draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
+          draw_pause_text(menu_x + (menu_w - pause_text_width(btn_labels[i])) / 2,
                         screen_btn_y, btn_labels[i], 0.0f, 0.8f, 0.0f);
         } else if (i == TERRAIN_FOGINT_ROW) {
           // Fog Intensity: "Fog Intensity  [-] [N%] [+]" — same spinner layout as Auto Save
-          const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
+          const int btn_w = 22, val_w = 56;
           const char* lbl = "Fog Intensity";
-           int label_px = RetailPauseTextWidth(lbl);
-          int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-          int gx = menu_x + (menu_w - group_w) / 2;
-          draw_pause_text(gx, screen_btn_y, lbl,
+          int label_px = pause_text_width(lbl);
+          const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+              pause_layout, screen_btn_y, label_px, val_w);
+          draw_pause_text(spinner.group_left, screen_btn_y, lbl,
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
-          int minus_x = gx + label_px + label_gap;
-          int box_x   = minus_x + btn_w + gap;
-          int plus_x  = box_x + val_w + gap;
-          int rt = gl_btn_y - 14, rb = gl_btn_y + 10;
+          int minus_x = spinner.minus_left;
+          int box_x   = spinner.value_left;
+          int plus_x  = spinner.plus_left;
+          const auto [rt, rb] = spinner_box_bounds(gl_btn_y);
           char fibuf[8];
           snprintf(fibuf, sizeof(fibuf), "%d%%", Config::Get().fogIntensity);
           sbox(minus_x, btn_w, "-",    rt, rb, screen_btn_y);
@@ -1939,7 +1977,7 @@ void Renderer::Draw(const draw_params_s &params,
             glEnd();
             glDisable(GL_BLEND);
           }
-           draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
+          draw_pause_text(menu_x + (menu_w - pause_text_width(btn_labels[i])) / 2,
                         screen_btn_y, btn_labels[i],
                         hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
 
@@ -1955,10 +1993,10 @@ void Renderer::Draw(const draw_params_s &params,
             glVertex2i(menu_x + 20, gl_btn_y + 12);
             glEnd();
             glDisable(GL_BLEND);
-             draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
+            draw_pause_text(menu_x + (menu_w - pause_text_width(btn_labels[i])) / 2,
                       screen_btn_y, btn_labels[i], 1.0f, 1.0f, 1.0f);
           } else {
-             draw_pause_text(menu_x + (menu_w - RetailPauseTextWidth(btn_labels[i])) / 2,
+             draw_pause_text(menu_x + (menu_w - pause_text_width(btn_labels[i])) / 2,
                       screen_btn_y, btn_labels[i], 0.0f, 0.85f, 0.0f);
           }
         }
@@ -1999,7 +2037,7 @@ void Renderer::Draw(const draw_params_s &params,
       const int menu_h  = vh - 80;
       const int menu_x  = (vw - menu_w) / 2;
       const int menu_y  = 40; // top in screen coords
-      const int row_h   = 16;
+      const int row_h   = uiFontMetrics.rowHeight;
       const int pad     = 12;
       const int bar_w   = 14;  // vertical scrollbar width
       const int content_x = menu_x + pad;
@@ -2108,7 +2146,9 @@ void Renderer::Draw(const draw_params_s &params,
           PropPanel::Layout L = PropPanel::BuildLayout(schema, task_tree_view.selected_obj_is_ai, child_schemas,
                                                         task_tree_view.prop_anim_bone_hierarchy_,
                                                         task_tree_view.prop_anim_ids_,
-                                                        showLightmapButton);
+                                                        showLightmapButton,
+                                                        uiFontMetrics.rowHeight,
+                                                        uiFontMetrics.boxHeight);
 
           // Apply vertical scroll: shift all widget Y positions.
           const int scroll = task_tree_view.prop_panel_scroll_;
@@ -2203,9 +2243,9 @@ void Renderer::Draw(const draw_params_s &params,
                                    int start_line = 0, int hscroll = 0) {
             bool editing = (resolveEdit(curObjIdx) && task_tree_view.prop_text_edit_field_ == field_id);
             const std::string& txt = editing ? task_tree_view.prop_text_buf_ : live_text;
-            const int cw = 7;
+            const int cw = uiFontMetrics.charWidth;
             int max_chars = std::max(1, (w.x2 - w.x1 - 6) / cw);
-            int box_lines_cap = std::max(1, (w.y2 - w.y1) / PropPanel::kBoxH);
+            int box_lines_cap = std::max(1, (w.y2 - w.y1) / L.box_h);
 
             // Selection range for THIS field (if active). anchor == focus
             // means caret-only, no highlight.
@@ -2292,7 +2332,7 @@ void Renderer::Draw(const draw_params_s &params,
                 int xa = w.x1 + 3 + measure_text_width(beforeA.c_str(), (int)beforeA.size());
                 int xb = w.x1 + 3 + measure_text_width(beforeB.c_str(), (int)beforeB.size());
                 // OpenGL Y is bottom-up — convert top-down `w.y1` via gl_y.
-                int yt_top = w.y1 + 3 + rl * PropPanel::kBoxH;
+                int yt_top = w.y1 + 3 + rl * L.box_h;
                 int yt_bot = gl_y(yt_top + 13);
                 int yt_top_gl = gl_y(yt_top);
                 glBegin(GL_QUADS);
@@ -2311,12 +2351,12 @@ void Renderer::Draw(const draw_params_s &params,
               int seg_len = std::min(le - ls, max_chars);
               if (seg_len < 0) seg_len = 0;
               std::string seg = txt.substr(ls, seg_len);
-              draw_text(w.x1 + 3, w.y1 + 12 + render_line * PropPanel::kBoxH, seg.c_str(), 1.0f, 1.0f, 0.85f);
+              draw_text(w.x1 + 3, w.y1 + 12 + render_line * L.box_h, seg.c_str(), 1.0f, 1.0f, 0.85f);
               if (editing && caret_on && caret_line == li) {
                 int cc = std::min(caret_col, (int)seg.size());
                 std::string before = seg.substr(0, cc);
                 int cx  = w.x1 + 3 + measure_text_width(before.c_str(), (int)before.size());
-                int cyt = w.y1 + 3 + render_line * PropPanel::kBoxH;
+                int cyt = w.y1 + 3 + render_line * L.box_h;
                 glColor3f(1.0f, 0.95f, 0.2f);
                 glBegin(GL_LINES);
                 glVertex2i(cx, gl_y(cyt)); glVertex2i(cx, gl_y(cyt + 13));
@@ -2330,9 +2370,9 @@ void Renderer::Draw(const draw_params_s &params,
           char hdr[160];
           snprintf(hdr, sizeof(hdr), "QTasktype: %s", obj.type.c_str());
           draw_text(L.panel_x + PropPanel::kPad, ty + 11, hdr, 1.0f, 1.0f, 1.0f);
-          ty += PropPanel::kRowH;
+          ty += L.row_h;
           draw_text(L.panel_x + PropPanel::kPad, ty + 11, "QTask Note (QTaskNote):", 1.0f, 0.9f, 0.2f);
-          ty += PropPanel::kRowH;
+          ty += L.row_h;
 
           // Walk widgets; field headers + value labels are derived from layout y.
           // Note box (first widget).
@@ -2375,7 +2415,7 @@ void Renderer::Draw(const draw_params_s &params,
             if (sub[0]) snprintf(fhdr, sizeof(fhdr), "%s (%s)%s:", fd.name.c_str(), tn.c_str(), sub);
             else        snprintf(fhdr, sizeof(fhdr), "%s (%s):", fd.name.c_str(), tn.c_str());
             draw_text(L.panel_x + PropPanel::kPad, y + 11, fhdr, 1.0f, 0.9f, 0.2f);
-            y += PropPanel::kRowH;
+            y += L.row_h;
 
             // Helper: editable numeric box (NumBox) — label + box + caret.
             auto draw_numbox = [&](const PropPanel::Widget& w, const char* label) {
@@ -2462,7 +2502,7 @@ void Renderer::Draw(const draw_params_s &params,
                 char ab[80];
                 snprintf(ab, sizeof(ab), "Altitude: %.6f meter", tObj.pos.z);
                 draw_text(L.panel_x + PropPanel::kPad, y + 11, ab, 0.75f, 0.7f, 0.4f);
-                y += PropPanel::kRowH;
+                y += L.row_h;
               }
             } else if (is_float3) {
               // Generic 3-component float (Speed, etc.) — three labeled NumBoxes, no pad
@@ -2507,7 +2547,7 @@ void Renderer::Draw(const draw_params_s &params,
                 draw_text(track_x2 + 4, w.y1 + 12, tok(fd.argOffset + w.comp).c_str(), 1.0f, 1.0f, 0.85f);
                 y = w.y2;
               }
-              if (ori_count == 0) y += PropPanel::kBoxH;  // fallback if no widgets
+              if (ori_count == 0) y += L.box_h;  // fallback if no widgets
             } else if (is_rgb) {
               const char* rgbl[3] = {"R", "G", "B"};
               float rgb[3] = {0,0,0};
@@ -2557,7 +2597,7 @@ void Renderer::Draw(const draw_params_s &params,
               std::string v = tok(fd.argOffset);
               if (v.size() > 38) v = v.substr(0, 35) + "...";
               draw_text(L.panel_x + PropPanel::kPad + 4, y + 11, v.c_str(), 0.75f, 0.7f, 0.4f);
-              y += PropPanel::kRowH;
+              y += L.row_h;
             } else if (is_int) {
               const auto& w = L.widgets[wi++];
               draw_numbox(w, nullptr);
@@ -2625,7 +2665,7 @@ void Renderer::Draw(const draw_params_s &params,
                       char lbl[80];
                       snprintf(lbl, sizeof(lbl), "Bone Hierarchy: %03d.IFF (check an id to play/pause)",
                                task_tree_view.prop_anim_bone_hierarchy_);
-                      draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, lbl, 0.8f, 0.8f, 1.0f);
+                      draw_text(w.x1, w.y1 - L.row_h + 12, lbl, 0.8f, 0.8f, 1.0f);
                   }
                   // Checkbox glyph, left-aligned within the row.
                   const int boxSz = w.y2 - w.y1 - 4;
@@ -2649,7 +2689,7 @@ void Renderer::Draw(const draw_params_s &params,
               } else if (w.kind == K::AIScriptPath) {
                   bool ed = resolveEdit(sel) &&
                             task_tree_view.prop_text_edit_field_ == PropPanel::kAIScriptPathField;
-                  draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, "AI Script Path:", 0.8f, 0.8f, 1.0f);
+                   draw_text(w.x1, w.y1 - L.row_h + 12, "AI Script Path:", 0.8f, 0.8f, 1.0f);
                   quad(w.x1, w.y1, w.x2, w.y2, 0.0f, 0.0f, 0.0f, 0.40f);
                   border(w.x1, w.y1, w.x2, w.y2, 1.0f, ed ? 0.95f : 1.0f, ed ? 0.2f : 1.0f);
                   draw_edit_box(w, PropPanel::kAIScriptPathField,
@@ -2661,7 +2701,7 @@ void Renderer::Draw(const draw_params_s &params,
                   const char* label = task_tree_view.ai_script_dirty_
                                           ? "AI Script (modified -- save to compile):"
                                           : "AI Script:";
-                  draw_text(w.x1, w.y1 - PropPanel::kRowH + 12, label,
+                   draw_text(w.x1, w.y1 - L.row_h + 12, label,
                             task_tree_view.ai_script_dirty_ ? 1.0f : 0.8f,
                             task_tree_view.ai_script_dirty_ ? 0.6f : 0.8f,
                             task_tree_view.ai_script_dirty_ ? 0.2f : 1.0f);
@@ -2863,7 +2903,7 @@ void Renderer::Draw(const draw_params_s &params,
         }
       }
       int count = (int)filtered.size();
-      const int row_h = 16, hdr_h = 50, ftr_h = 20;
+      const int row_h = uiFontMetrics.rowHeight, hdr_h = 50, ftr_h = 20;
       int body_h = vh - hdr_h - ftr_h;
       int max_vis = std::max(1, body_h / row_h);
 
@@ -2929,7 +2969,7 @@ void Renderer::Draw(const draw_params_s &params,
         }
       }
       int count = (int)filtered.size();
-      const int row_h = 16, hdr_h = 50, ftr_h = 20;
+      const int row_h = uiFontMetrics.rowHeight, hdr_h = 50, ftr_h = 20;
       int body_h = vh - hdr_h - ftr_h;
       int max_vis = std::max(1, body_h / row_h);
 

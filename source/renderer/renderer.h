@@ -152,6 +152,16 @@ namespace GraphNodePanel {
 */
 namespace PropPanel {
 
+// Layout constants (kept in one place so draw + hit-test agree exactly).
+static constexpr int kLeft       = 8;
+static constexpr int kTop        = 8;
+static constexpr int kWidth      = 460;
+static constexpr int kPad        = 8;
+static constexpr int kRowH       = 16;   // fallback text line height
+static constexpr int kBoxH       = 18;   // fallback editable box / slider row height
+static constexpr int kPadSize    = 100;  // 2D pad square
+static constexpr int kZSliderW   = 22;   // vertical Z slider width
+
 enum class WidgetKind {
     NoteBox,       // editable note (obj.name)
     PosPad,        // 2D X/Y pad
@@ -181,6 +191,8 @@ struct Widget {
 
 struct Layout {
     int panel_x = 8, panel_y = 8, panel_w = 320, panel_h = 0;
+    int row_h = kRowH;
+    int box_h = kBoxH;
     std::vector<Widget> widgets;
 };
 
@@ -189,16 +201,6 @@ struct Layout {
 static constexpr int kAIScriptPathField = -10;
 static constexpr int kAIScriptTextField = -11;
 
-// Layout constants (kept in one place so draw + hit-test agree exactly).
-static constexpr int kLeft       = 8;
-static constexpr int kTop        = 8;
-static constexpr int kWidth      = 460;
-static constexpr int kPad        = 8;
-static constexpr int kRowH       = 16;   // text line height (matches draw_text spacing)
-static constexpr int kBoxH       = 18;   // editable box / slider row height
-static constexpr int kPadSize    = 100;  // 2D pad square
-static constexpr int kZSliderW   = 22;   // vertical Z slider width
-
 // Build the layout for one task type's schema. `is_multi` types (ObjectPos /
 // Real32x9 / RGB) expand to multiple sub-rows. Returns rows' y positions implicitly
 // via widget rects; panel_h is the total height.
@@ -206,10 +208,17 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                           const std::vector<std::pair<int, const TaskSchemaNS::TaskSchema*>>& children = {},
                           int animBoneHierarchy = -1,
                           const std::vector<int>& animIds = {},
-                          bool showLightmapButton = false) {
+                          bool showLightmapButton = false,
+                          int rowH = kRowH,
+                          int boxH = kBoxH) {
     using namespace TaskSchemaNS;
     Layout L;
     L.panel_x = kLeft; L.panel_y = kTop; L.panel_w = kWidth;
+    L.row_h = std::max(1, rowH);
+    L.box_h = std::max(1, boxH);
+
+    rowH = L.row_h;
+    boxH = L.box_h;
 
     int y = kTop + kPad;
 
@@ -236,14 +245,14 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
             bool is_ro     = (tn == "Graph" || tn == "AnimData" || tn == "TrainPos1D");
             bool is_int    = (tn == "Int16" || tn == "Int32" || tn == "EnumInt32");
 
-            y += kRowH;  // field header line
+            y += rowH;  // field header line
 
             if (is_pos) {
                 const int pBoxX1 = kLeft + kPad + 20;
                 const int pBoxX2 = pBoxX1 + 180;
                 for (int c = 0; c < 3; ++c) {
-                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
-                    y += kBoxH + 2;
+                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + boxH, fi, c});
+                    y += boxH + 2;
                 }
                 int pad_x1 = kLeft + kPad;
                 int pad_y1 = y;
@@ -255,53 +264,53 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
                 y += kPadSize + 6;
                 int bw = (kWidth - 2 * kPad - 8) / 2;
                 L.widgets.push_back({WidgetKind::SnapGround, kLeft + kPad, y,
-                                     kLeft + kPad + bw, y + kBoxH, -1, 0});
+                                     kLeft + kPad + bw, y + boxH, -1, 0});
                 L.widgets.push_back({WidgetKind::SnapObject, kLeft + kPad + bw + 8, y,
-                                     kLeft + kPad + bw + 8 + bw, y + kBoxH, -1, 0});
-                y += kBoxH + 4;
-                y += kRowH;  // "Altitude: ... meter"
+                                     kLeft + kPad + bw + 8 + bw, y + boxH, -1, 0});
+                y += boxH + 4;
+                y += rowH;  // "Altitude: ... meter"
             } else if (is_float3) {
                 const int pBoxX1 = kLeft + kPad + 20;
                 const int pBoxX2 = pBoxX1 + 180;
                 for (int c = 0; c < 3; ++c) {
-                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + kBoxH, fi, c});
-                    y += kBoxH + 2;
+                    L.widgets.push_back({WidgetKind::NumBox, pBoxX1, y, pBoxX2, y + boxH, fi, c});
+                    y += boxH + 2;
                 }
             } else if (is_ori) {
                 int sx1 = kLeft + kPad + 64;
                 int sx2 = kLeft + kWidth - kPad;
                 int c_start = ai ? 2 : 0;
                 for (int c = c_start; c < 3; ++c) {
-                    L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + kBoxH, fi, c});
-                    y += kBoxH;
+                    L.widgets.push_back({WidgetKind::OriSlider, sx1, y, sx2, y + boxH, fi, c});
+                    y += boxH;
                 }
             } else if (is_rgb) {
                 for (int c = 0; c < 3; ++c) {
                     int sx1 = kLeft + kPad + 64;
                     int sx2 = kLeft + kWidth - kPad - 24;
-                    L.widgets.push_back({WidgetKind::RgbSlider, sx1, y, sx2, y + kBoxH, fi, c});
-                    y += kBoxH;
+                    L.widgets.push_back({WidgetKind::RgbSlider, sx1, y, sx2, y + boxH, fi, c});
+                    y += boxH;
                 }
             } else if (is_str) {
-                int h = (tn == "VarString" || tn == "String256") ? kBoxH * 3 : kBoxH;
+                int h = (tn == "VarString" || tn == "String256") ? boxH * 3 : boxH;
                 L.widgets.push_back({WidgetKind::StringBox, kLeft + kPad, y,
                                      kLeft + kWidth - kPad, y + h, fi, 0});
                 y += h + 2;
             } else if (is_bool) {
                 L.widgets.push_back({WidgetKind::Checkbox, kLeft + kPad, y,
-                                     kLeft + kWidth - kPad, y + kBoxH, fi, 0});
-                y += kBoxH;
+                                     kLeft + kWidth - kPad, y + boxH, fi, 0});
+                y += boxH;
             } else if (is_ro) {
-                y += kRowH;  // read-only grey value line, no widget
+                y += rowH;  // read-only grey value line, no widget
             } else if (is_int) {
-                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
-                y += kBoxH;
+                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + boxH, fi, 0});
+                y += boxH;
             } else {
                 int sx1 = kLeft + kPad;
                 int sx2 = boxX1 - 8;
-                L.widgets.push_back({WidgetKind::NumSlider, sx1, y, sx2, y + kBoxH, fi, 0});
-                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + kBoxH, fi, 0});
-                y += kBoxH;
+                L.widgets.push_back({WidgetKind::NumSlider, sx1, y, sx2, y + boxH, fi, 0});
+                L.widgets.push_back({WidgetKind::NumBox, boxX1, y, boxX2, y + boxH, fi, 0});
+                y += boxH;
             }
             y += 4;  // gap between fields
         }
@@ -310,17 +319,17 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
     };
 
     // Parent: type header + note box + [lightmap button] + fields.
-    y += kRowH;            // "QTasktype: <type>"
-    y += kRowH;            // "QTask Note (QTaskNote):"
-    L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH, -1, 0});
-    y += kBoxH + 6;
+    y += rowH;            // "QTasktype: <type>"
+    y += rowH;            // "QTask Note (QTaskNote):"
+    L.widgets.push_back({WidgetKind::NoteBox, kLeft + kPad, y, kLeft + kWidth - kPad, y + boxH, -1, 0});
+    y += boxH + 6;
 
     // Lightmap button immediately after the note box — always visible regardless
     // of how many child sections the object has below.
     if (showLightmapButton) {
         L.widgets.push_back({WidgetKind::LightmapButton, kLeft + kPad, y,
-                             kLeft + kWidth - kPad, y + kBoxH, -1, 0});
-        y += kBoxH + 4;
+                             kLeft + kWidth - kPad, y + boxH, -1, 0});
+        y += boxH + 4;
     }
 
     emitFields(schema, is_ai, -1);
@@ -330,8 +339,8 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
     for (const auto& [childIdx, cscp] : children) {
         if (!cscp) continue;
         L.widgets.push_back({WidgetKind::ChildHeader, kLeft + kPad, y,
-                             kLeft + kWidth - kPad, y + kRowH, -1, 0, childIdx});
-        y += kRowH + 2;
+                             kLeft + kWidth - kPad, y + rowH, -1, 0, childIdx});
+        y += rowH + 2;
         emitFields(*cscp, false, childIdx);
         y += 4;
     }
@@ -341,34 +350,34 @@ inline Layout BuildLayout(const TaskSchemaNS::TaskSchema& schema, bool is_ai = f
     // discovered animation id (Stand Animation + AI script + PatrolPath
     // "predefined animation" commands); checking toggles play/pause for that clip.
     if (animBoneHierarchy >= 0) {
-        y += kRowH;  // "Bone Hierarchy: <NNN>.IFF" label line
+        y += rowH;  // "Bone Hierarchy: <NNN>.IFF" label line
         int rowY = y;
         if (animIds.empty()) {
             // comp = -1 sentinel: non-interactive "no animations found" placeholder,
             // so the draw/hit-test code always has a widget to anchor the section to.
             L.widgets.push_back({WidgetKind::AnimIdButton, kLeft + kPad, rowY,
-                                 kLeft + kWidth - kPad, rowY + kBoxH, -1, -1});
-            y = rowY + kBoxH + 4;
+                                 kLeft + kWidth - kPad, rowY + boxH, -1, -1});
+            y = rowY + boxH + 4;
         } else {
             for (size_t i = 0; i < animIds.size(); ++i) {
-                int y1 = rowY + (int)i * (kBoxH + 4);
+                int y1 = rowY + (int)i * (boxH + 4);
                 L.widgets.push_back({WidgetKind::AnimIdButton, kLeft + kPad, y1,
-                                     kLeft + kWidth - kPad, y1 + kBoxH, -1, animIds[i]});
+                                     kLeft + kWidth - kPad, y1 + boxH, -1, animIds[i]});
             }
-            y = rowY + (int)animIds.size() * (kBoxH + 4) + 2;
+            y = rowY + (int)animIds.size() * (boxH + 4) + 2;
         }
     }
 
     // AI Script section — only for AI tasks (HumanSoldier, HumanAI, etc.)
     if (is_ai) {
-        y += kRowH;  // "AI Script Path:" label line
+        y += rowH;  // "AI Script Path:" label line
         L.widgets.push_back({WidgetKind::AIScriptPath,
-                             kLeft + kPad, y, kLeft + kWidth - kPad, y + kBoxH,
+                             kLeft + kPad, y, kLeft + kWidth - kPad, y + boxH,
                              kAIScriptPathField, 0});
-        y += kBoxH + 6;
+        y += boxH + 6;
 
-        y += kRowH;  // "AI Script:" label line
-        const int scriptH = kBoxH * 12;
+        y += rowH;  // "AI Script:" label line
+        const int scriptH = boxH * 12;
         L.widgets.push_back({WidgetKind::AIScriptText,
                              kLeft + kPad, y, kLeft + kWidth - kPad, y + scriptH,
                              kAIScriptTextField, 0});
@@ -806,6 +815,8 @@ private:
 	Renderer_Splines		splines_;
 	Renderer_Rain			rain_;
 	std::unordered_set<std::string>	logged_skinned_draws_;
+	std::unordered_map<std::string, float>	skinned_pose_samples_;
+	std::unordered_set<std::string>	logged_skinned_pose_updates_;
 
 	glm::mat4				mat_proj_;
 	glm::mat4				mat_view_;

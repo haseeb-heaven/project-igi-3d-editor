@@ -124,6 +124,7 @@ set_source_files_properties(
   source/cli/verify_level.cpp
   source/utils_igi1conv.cpp
   source/runtime/config_qvm.cpp
+  source/runtime/pause_menu_font.cpp
   source/runtime/human_player_config.cpp
   source/runtime/audio_system.cpp
   source/runtime/audio_asset_resolver.cpp
@@ -392,6 +393,7 @@ target_sources(igi_tests PRIVATE
     source/runtime/audio_system.cpp
     source/runtime/audio_asset_resolver.cpp
     source/runtime/config_qvm.cpp
+    source/runtime/pause_menu_font.cpp
     source/runtime/human_player_config.cpp
     source/runtime/magic_object_registry.cpp
     source/runtime/map_computer_camera.cpp

@@ -6,8 +6,11 @@
 #include "app_internal.h"
 #include "renderer/object_lightmap.h"
 #include "runtime/pause_menu_layout.h"
+#include "runtime/pause_menu_font.h"
+#include "runtime/pause_menu_state.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
+	(void)wheel;
 	if (in_game_mode_ && IsGameplayInputFocused() &&
 		!gameplay_host_.IsGameplayWindowCurrent()) return;
 	if (in_game_mode_ && IsGameplayInputFocused() && !pause_mode_) {
@@ -18,7 +21,67 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		}
 		return;
 	}
-	if (igi::IsPauseMenuInputActive(pause_mode_, IsGameplayInputFocused())) return;
+	if (pause_mode_) {
+		const PauseMenuFontMetrics fontMetrics = GetPauseMenuFontMetrics(
+			Config::Get().useEditorFont, Config::Get().systemFontSize);
+		const igi::PauseMenuLayout layout = igi::BuildPauseMenuLayout(
+			window_state_.viewport_width_, window_state_.viewport_height_,
+			pause_terrain_expanded_, fontMetrics.lineHeight);
+		int row = 3; // Resume, mode, and collision rows precede the controls below.
+		const int fontRow = row++;
+		const int levelRow = row++;
+		const int autosaveRow = row++;
+		row += 4; // music, lightmaps, calculate-lightmaps, terrain header
+		const int terrainHeaderRow = row - 1;
+		if (pause_terrain_expanded_) {
+			row += 5;
+		}
+
+		auto adjust = [&](int targetRow, int labelWidth, int valueWidth,
+		                  int minimum, int maximum, int step, int& value) {
+			if (!igi::IsPauseMenuRowHit(layout, targetRow, y)) return false;
+			const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+				layout, igi::PauseMenuRowCenter(layout, targetRow), labelWidth, valueWidth);
+			if (!igi::IsPauseMenuSpinnerHit(spinner, x)) return false;
+			value = igi::AdjustPauseMenuSpinner(value, direction, minimum, maximum, step);
+			return true;
+		};
+
+		char fontLabel[32];
+		snprintf(fontLabel, sizeof(fontLabel), "Font: %s",
+			Config::Get().useEditorFont ? "Editor" : "System");
+		int fontSize = Config::Get().systemFontSize;
+		if (adjust(fontRow, PauseMenuTextWidth(fontLabel, Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 44, 8, 32, 1, fontSize)) {
+			Config::Get().systemFontSize = fontSize;
+			Config::Save();
+			return;
+		}
+
+		int level = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
+		if (adjust(levelRow, PauseMenuTextWidth("Select Level", Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 44, 1, 14, 1, level)) {
+			pause_level_input_ = std::to_string(level);
+			return;
+		}
+
+		int autosaveInterval = auto_save_interval_seconds_;
+		const char* autosaveLabel = auto_save_enabled_ ? "Save Enable" : "Save Disable";
+		if (adjust(autosaveRow, PauseMenuTextWidth(autosaveLabel, Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 44,
+		           10, 3600, 10, autosaveInterval)) {
+			AdjustAutoSaveInterval(autosaveInterval - auto_save_interval_seconds_);
+			return;
+		}
+
+		int fogIntensity = Config::Get().fogIntensity;
+		const int fogRow = pause_terrain_expanded_ ? terrainHeaderRow + 5 : -1;
+		if (pause_terrain_expanded_ &&
+			adjust(fogRow, PauseMenuTextWidth("Fog Intensity", Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 56,
+			       0, 1000, 100, fogIntensity)) {
+			Config::Get().fogIntensity = fogIntensity;
+			SetFogIntensity(fogIntensity);
+			Config::Save();
+		}
+		return;
+	}
 	if (show_help_) {
 		// Scroll keybindings help panel
 		if (direction > 0) { if (help_scroll_offset_ > 0) help_scroll_offset_--; }
@@ -28,7 +91,9 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 	// Over property panel: scroll it
 	if (prop_editor_open_ &&
 	    x >= PropPanel::kLeft && x <= PropPanel::kLeft + PropPanel::kWidth) {
-		const int kScrollStep = PropPanel::kBoxH + 4;
+		const PauseMenuFontMetrics fontMetrics = GetPauseMenuFontMetrics(
+			Config::Get().useEditorFont, Config::Get().systemFontSize);
+		const int kScrollStep = fontMetrics.boxHeight + 4;
 		if (direction > 0) prop_panel_scroll_ = std::max(0, prop_panel_scroll_ - kScrollStep);
 		else               prop_panel_scroll_ += kScrollStep;
 		return;
@@ -179,7 +244,10 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 						int animBoneHierarchy; std::vector<int> animIds; int animActiveId; bool animIsPlaying;
 						ComputePropAnimUiState(animBoneHierarchy, animIds, animActiveId, animIsPlaying);
 						bool showLightmapButton = (obj.type == "Building" || obj.type == "EditRigidObj");
-						PropPanel::Layout L = PropPanel::BuildLayout(schema, is_ai, children, animBoneHierarchy, animIds, showLightmapButton);
+						const PauseMenuFontMetrics fontMetrics = GetPauseMenuFontMetrics(
+							Config::Get().useEditorFont, Config::Get().systemFontSize);
+						PropPanel::Layout L = PropPanel::BuildLayout(schema, is_ai, children, animBoneHierarchy, animIds, showLightmapButton,
+							fontMetrics.rowHeight, fontMetrics.boxHeight);
 						// Apply the same vertical scroll the renderer uses so hit-tests align.
 						if (prop_panel_scroll_ > 0)
 							for (auto& w : L.widgets) { w.y1 -= prop_panel_scroll_; w.y2 -= prop_panel_scroll_; }
@@ -293,9 +361,11 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 									prop_text_edit_field_ = PropPanel::kAIScriptTextField;
 									prop_text_buf_ = ai_script_text_;
 									{
-										const int mc = AiScriptMaxChars();
-										int click_row = std::max(0, (y - w.y1) / PropPanel::kBoxH);
-										int click_col = std::max(0, (x - w.x1 - 3) / 7);
+										const int char_width = GetPauseMenuFontMetrics(
+											Config::Get().useEditorFont, Config::Get().systemFontSize).charWidth;
+										const int mc = AiScriptMaxChars(char_width);
+										int click_row = std::max(0, (y - w.y1) / L.box_h);
+										int click_col = std::max(0, (x - w.x1 - 3) / char_width);
 										int abs_line  = ai_script_vscroll_ + click_row;
 										auto lstarts  = AiTextLineStarts(ai_script_text_, mc);
 										abs_line = std::max(0, std::min(abs_line, (int)lstarts.size() - 1));
@@ -343,13 +413,15 @@ void App::Input_OnMouse(int button, int state, int x, int y) {
 
 			if (pause_mode_) {
 				// *** Layout MUST match renderer_draw.cpp pause menu exactly ***
-				const int menu_w = igi::kPauseMenuWidth;
-				const int menu_h = igi::kPauseMenuHeight;
-				const int menu_x = (window_state_.viewport_width_  - menu_w) / 2;
-				const int screen_menu_top = igi::PauseMenuTop(window_state_.viewport_height_);
+				const PauseMenuFontMetrics fontMetrics = GetPauseMenuFontMetrics(
+					Config::Get().useEditorFont, Config::Get().systemFontSize);
+				const igi::PauseMenuLayout pause_layout = igi::BuildPauseMenuLayout(
+					window_state_.viewport_width_, window_state_.viewport_height_,
+					pause_terrain_expanded_, fontMetrics.lineHeight);
+				const int menu_x = pause_layout.menu_left;
 
-				if (x >= menu_x && x <= menu_x + menu_w &&
-				    y >= screen_menu_top && y <= screen_menu_top + menu_h) {
+				if (x >= menu_x && x <= menu_x + pause_layout.menu_width &&
+				    y >= pause_layout.menu_top && y <= pause_layout.menu_top + pause_layout.menu_height) {
 					mouse_state_.left_button_down_ = false;
 					int clicked_input = -1;
 
@@ -377,8 +449,7 @@ int RESUME_ROW = btn_idx++;
 					int QUIT_ROW = btn_idx++;
 
 					auto btn_hit2 = [&](int idx) -> bool {
-						return igi::IsPauseMenuRowHit(
-							window_state_.viewport_height_, pause_terrain_expanded_, idx, y);
+						return igi::IsPauseMenuRowHit(pause_layout, idx, y);
 					};
 
 					if      (btn_hit2(RESUME_ROW)) { TogglePauseMenu(); }
@@ -386,56 +457,50 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 				else if (btn_hit2(CLIP_ROW))  { noclip_mode_ = !noclip_mode_; }
 				else if (btn_hit2(FONT_ROW)) {
 						// Layout MUST match renderer: dynamic label width, val_w=44
-						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
 						char font_lbl[32];
 						snprintf(font_lbl, sizeof(font_lbl), "Font: %s",
 								 Config::Get().useEditorFont ? "Editor" : "System");
-						int label_px = (int)strlen(font_lbl) * 6;
-						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_px + label_gap;
-						int box_x   = minus_x + btn_w + gap;
-						int plus_x  = box_x + val_w + gap;
+						const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+							pause_layout, igi::PauseMenuRowCenter(pause_layout, FONT_ROW),
+							PauseMenuTextWidth(font_lbl, Config::Get().useEditorFont,
+								Config::Get().systemFontSize, pause_layout.text_scale), 44);
 						int& fs = Config::Get().systemFontSize;
-						if (x >= minus_x && x < minus_x + btn_w) {
+						if (x >= spinner.minus_left && x < spinner.minus_left + 22) {
 							fs = std::max(8, fs - 1); Config::Save();
-						} else if (x >= plus_x && x < plus_x + btn_w) {
+						} else if (x >= spinner.plus_left && x < spinner.plus_left + 22) {
 							fs = std::min(32, fs + 1); Config::Save();
-						} else if (x < minus_x) {
+						} else if (x < spinner.minus_left) {
 							Config::Get().useEditorFont = !Config::Get().useEditorFont; Config::Save();
 						}
 					}
 					else if (btn_hit2(LEVEL_ROW)) {
+						clicked_input = igi::kPauseMenuLevelRow;
 						// Layout MUST match renderer: dynamic label width, val_w=44
-						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
 						const char* lbl = "Select Level";
-						int label_px = (int)strlen(lbl) * 6;
-						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_px + label_gap;
-						int plus_x  = minus_x + btn_w + gap + val_w + gap;
+						const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+							pause_layout, igi::PauseMenuRowCenter(pause_layout, LEVEL_ROW),
+							PauseMenuTextWidth(lbl, Config::Get().useEditorFont,
+								Config::Get().systemFontSize, pause_layout.text_scale), 44);
 						int cur = pause_level_input_.empty() ? 1 : std::atoi(pause_level_input_.c_str());
-						if (x >= minus_x && x < minus_x + btn_w) {
+						if (x >= spinner.minus_left && x < spinner.minus_left + 22) {
 							cur = (cur > 1) ? cur - 1 : 1;
 							pause_level_input_ = std::to_string(cur);
-						} else if (x >= plus_x && x < plus_x + btn_w) {
+						} else if (x >= spinner.plus_left && x < spinner.plus_left + 22) {
 							cur = (cur < 14) ? cur + 1 : 14;
 							pause_level_input_ = std::to_string(cur);
 						}
 					}
 					else if (btn_hit2(AUTOSAVE_ROW)) {
 						// Layout MUST match renderer: dynamic label width, val_w=44
-						const int btn_w = 22, gap = 6, val_w = 44, label_gap = 14;
-						const char* lbl = Config::Get().auto_save_enabled
+						const char* lbl = auto_save_enabled_
 								 ? "Save Enable" : "Save Disable";
-						int label_px = (int)strlen(lbl) * 6;
-						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_px + label_gap;
-						int plus_x  = minus_x + btn_w + gap + val_w + gap;
-						if      (x >= minus_x && x < minus_x + btn_w) AdjustAutoSaveInterval(-10);
-						else if (x >= plus_x  && x < plus_x  + btn_w) AdjustAutoSaveInterval(10);
-						else if (x >= gx      && x < minus_x)         ToggleAutoSave();
+						const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+							pause_layout, igi::PauseMenuRowCenter(pause_layout, AUTOSAVE_ROW),
+							PauseMenuTextWidth(lbl, Config::Get().useEditorFont,
+								Config::Get().systemFontSize, pause_layout.text_scale), 44);
+						if      (x >= spinner.minus_left && x < spinner.minus_left + 22) AdjustAutoSaveInterval(-10);
+						else if (x >= spinner.plus_left  && x < spinner.plus_left  + 22) AdjustAutoSaveInterval(10);
+						else if (x >= spinner.group_left && x < spinner.minus_left) ToggleAutoSave();
 					}
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
 					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
@@ -456,18 +521,16 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 					}
 					else if (pause_terrain_expanded_ && btn_hit2(TERRAIN_FOGINT_ROW)) {
 						// Layout MUST match renderer: dynamic label width, val_w=56
-						const int btn_w = 22, gap = 6, val_w = 56, label_gap = 14;
 						const char* lbl = "Fog Intensity";
-						int label_px = (int)strlen(lbl) * 6;
-						int group_w = label_px + label_gap + btn_w + gap + val_w + gap + btn_w;
-						int gx = menu_x + (menu_w - group_w) / 2;
-						int minus_x = gx + label_px + label_gap;
-						int plus_x  = minus_x + btn_w + gap + val_w + gap;
+						const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+							pause_layout, igi::PauseMenuRowCenter(pause_layout, TERRAIN_FOGINT_ROW),
+							PauseMenuTextWidth(lbl, Config::Get().useEditorFont,
+								Config::Get().systemFontSize, pause_layout.text_scale), 56);
 						int& fi = Config::Get().fogIntensity;
-						if (x >= minus_x && x < minus_x + btn_w) {
+						if (x >= spinner.minus_left && x < spinner.minus_left + 22) {
 							fi = std::max(0, fi - 100);
 							SetFogIntensity(fi); Config::Save();
-						} else if (x >= plus_x && x < plus_x + btn_w) {
+						} else if (x >= spinner.plus_left && x < spinner.plus_left + 22) {
 							fi = std::min(1000, fi + 100);
 							SetFogIntensity(fi); Config::Save();
 						}
@@ -495,7 +558,7 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 				const int picker_x = 20;
 				const int picker_w = 520;
 				const int picker_items_top_y = 50; // items start below header (screen coords)
-				const int row_h = 16;
+				const int row_h = CurrentUiRowHeight();
 
 				if (x >= picker_x && x <= picker_x + picker_w && y >= picker_items_top_y) {
 					int row = (y - picker_items_top_y) / row_h;
@@ -674,11 +737,14 @@ void App::Input_OnMotion(int x, int y) {
 	    && mouse_state_.left_button_down_) {
 		const int local_x = x - ai_text_box_x1_;
 		const int local_y = y - ai_text_box_y1_;
-		const int row_h   = PropPanel::kBoxH;
+		const PauseMenuFontMetrics fontMetrics = GetPauseMenuFontMetrics(
+			Config::Get().useEditorFont, Config::Get().systemFontSize);
+		const int row_h   = fontMetrics.boxHeight;
 		prop_text_caret_ = AiScriptPixelToCaret(prop_text_buf_,
 		                                         local_x - 3, local_y,
 		                                         ai_script_vscroll_,
-		                                         ai_text_box_h_, AiScriptMaxChars(), row_h);
+		                                         ai_text_box_h_, AiScriptMaxChars(fontMetrics.charWidth), row_h,
+		                                         fontMetrics.charWidth);
 		prop_text_sel_focus_ = prop_text_caret_;
 		// Auto-scroll vertically if the drag moves above/below the box.
 		if (local_y < 0)

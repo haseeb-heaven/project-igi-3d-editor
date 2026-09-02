@@ -405,7 +405,7 @@ static void RenderSampleToTGA(const FntFont& font, const std::string& text, cons
     int penW = pad;
     for (char ch : text) {
         auto it = font.glyphs.find((int)(unsigned char)ch);
-        if (it == font.glyphs.end()) { penW += (font.lineHeight > 0 ? font.lineHeight / 2 : 4); continue; }
+        if (it == font.glyphs.end()) { penW += (font.defaultAdvance > 0 ? font.defaultAdvance : 4); continue; }
         penW += it->second.advance;
     }
     const int canvasW = penW + pad;
@@ -417,7 +417,7 @@ static void RenderSampleToTGA(const FntFont& font, const std::string& text, cons
     int penX = pad;
     for (char ch : text) {
         auto it = font.glyphs.find((int)(unsigned char)ch);
-        if (it == font.glyphs.end()) { penX += (font.lineHeight > 0 ? font.lineHeight / 2 : 4); continue; }
+        if (it == font.glyphs.end()) { penX += (font.defaultAdvance > 0 ? font.defaultAdvance : 4); continue; }
         const FntGlyph& g = it->second;
         int ax = (int)(g.u0 * font.texWidth + 0.5f);
         int ay = (int)(g.v0 * font.texHeight + 0.5f);

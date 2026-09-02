@@ -54,6 +54,11 @@ struct AnimationClip {
     std::vector<AnimEvent> events;
 };
 
+// Returns true when a clip contains an actual time-varying pose. Some retail
+// action clips are intentionally single-frame poses; they are valid assets but
+// are not useful as the editor's continuous AI preview animation.
+bool AnimationClipHasTemporalMotion(const AnimationClip& clip);
+
 // ── Animation registry ──────────────────────────────────────────────────────
 // Manages imported animation sets per bone hierarchy. A "bone hierarchy" is
 // the index (HumanSoldier-family arg@10) into the shared, model-independent
@@ -86,6 +91,9 @@ public:
     // so "every AI animates" without depending on unordered_map iteration order
     // (which is arbitrary). Returns nullptr if the hierarchy has no clips.
     const AnimationClip* GetDefaultClip(int boneHierarchy) const;
+    // Get a deterministic clip containing time-varying keys for continuous
+    // preview. Action-only clips remain available through the normal lookup.
+    const AnimationClip* GetFirstTemporalClip(int boneHierarchy) const;
 
     // Evaluate bone transforms at a given time (ms). Fills boneTransforms with
     // local-space transforms for each bone in the clip's skeleton.
@@ -122,6 +130,15 @@ private:
     // Find the common/ANIMS/<NNN>.IFF file for a bone hierarchy.
     std::string FindIffFile(int boneHierarchy) const;
 };
+
+// Align the world-space transforms emitted by a BEF clip with the bind pose
+// already baked into a MEF mesh. BEF exports may omit the mesh root offset;
+// applying one bind correction preserves animation deltas while making the
+// first frame coincide with the static model.
+void AlignAnimationWorldToMefBind(
+    const std::vector<glm::mat4>& animation_bind_world,
+    const std::vector<glm::vec3>& mef_bind_world,
+    std::vector<glm::mat4>& animation_world);
 
 // Parses ai/<aiTaskId>.qvm directly and resolves literal
 // AIAction_PlayAnimation(<id>, ...) arguments in first-seen order. Dynamic

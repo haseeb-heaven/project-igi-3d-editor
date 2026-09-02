@@ -2568,7 +2568,11 @@ void RuntimeWorld::DispatchGuardScripts() {
             continue;
         }
 
-        int32_t event_type = 4; // AIEVENT_IDLE
+        const bool patrol_pending = guard.state == AiGuardState::Patrol
+            && !guard.patrol_commands.empty()
+            && guard.script_patrol_path_id >= 0
+            && !guard.patrol_stopped;
+        int32_t event_type = patrol_pending ? -1 : 4; // AIEVENT_IDLE
         if (!script.dispatched_create) {
             event_type = 0; // AIEVENT_CREATE
             script.dispatched_create = true;
@@ -2578,6 +2582,10 @@ void RuntimeWorld::DispatchGuardScripts() {
             event_type = 7; // AIEVENT_COMBAT
         } else if (guard.state == AiGuardState::Suspicious) {
             event_type = 5; // AIEVENT_ALERT
+        }
+
+        if (event_type < 0) {
+            continue;
         }
 
         if (!ai_script_host_.Run(script.program, guard, event_type)) {

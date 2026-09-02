@@ -5,6 +5,8 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "runtime/auto_save_policy.h"
+#include "runtime/editor_history.h"
 
 std::string App::StripQuotes(const std::string& s) {
 	if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
@@ -205,6 +207,9 @@ void App::AiScriptRedo() {
 }
 
 void App::LoadAIScriptForSelected() {
+	// AI text history is scoped to the selected script. A different object may
+	// have a different file and caret state, so cross-script undo is unsafe.
+	igi::ClearEditorHistory(ai_text_undo_, ai_text_redo_);
 	if (ai_script_dirty_)
 		status_message_ = "Warning: unsaved AI script edits discarded (save level first)";
 	ai_script_path_.clear();
@@ -903,10 +908,7 @@ void App::PushUndoState() {
 		state.graph_overlay = renderer_.GetGraphOverlaySnapshot();
 		state.graph_overlay_visible = true;
 	}
-	undo_stack_.push_back(std::move(state));
-	redo_stack_.clear();
-	if (undo_stack_.size() > 20)
-		undo_stack_.erase(undo_stack_.begin());
+	igi::PushEditorUndo(undo_stack_, redo_stack_, std::move(state));
 }
 
 void App::SaveAndReloadObjects() {
@@ -968,10 +970,14 @@ void App::Undo() {
 		current.graph_overlay = renderer_.GetGraphOverlaySnapshot();
 		current.graph_overlay_visible = true;
 	}
-	redo_stack_.push_back(std::move(current));
+	UndoState restored;
+	if (!igi::MoveEditorUndoToRedo(undo_stack_, redo_stack_, std::move(current), restored)) {
+		status_message_ = "Nothing to undo";
+		return;
+	}
 
 	// Restore from undo stack
-	const UndoState& s = undo_stack_.back();
+	const UndoState& s = restored;
 	level_.GetLevelObjects().GetObjects() = s.objects;
 	ai_script_path_ = s.ai_script_path;
 	ai_script_text_ = s.ai_script_text;
@@ -988,7 +994,6 @@ void App::Undo() {
 			renderer_.SetGraphOverlayVisible(false);
 	}
 
-	undo_stack_.pop_back();
 	// Mark ATTA proxies as modified so FlushAttaProxiesToMef() rewrites their
 	// local positions back into the MEF binary. Without this, undoing a building
 	// ATTA move left the MEF at the post-edit position while the proxy's world
@@ -1054,10 +1059,14 @@ void App::Redo() {
 		current.graph_overlay = renderer_.GetGraphOverlaySnapshot();
 		current.graph_overlay_visible = true;
 	}
-	undo_stack_.push_back(std::move(current));
+	UndoState restored;
+	if (!igi::MoveEditorRedoToUndo(undo_stack_, redo_stack_, std::move(current), restored)) {
+		status_message_ = "Nothing to redo";
+		return;
+	}
 
 	// Restore from redo stack
-	const UndoState& s = redo_stack_.back();
+	const UndoState& s = restored;
 	level_.GetLevelObjects().GetObjects() = s.objects;
 	ai_script_path_ = s.ai_script_path;
 	ai_script_text_ = s.ai_script_text;
@@ -1074,7 +1083,6 @@ void App::Redo() {
 			renderer_.SetGraphOverlayVisible(false);
 	}
 
-	redo_stack_.pop_back();
 	// Same ATTA-proxy resync as Undo — see comment there.
 	for (auto& o : level_.GetLevelObjects().GetObjects())
 		if (o.isAttaProxy) o.modified = true;
@@ -1334,8 +1342,14 @@ void App::LaunchGame() {
 	// own copy of the same track, so leaving ours running doubles it up.
 	StopLevelMusic();
 
-	SaveCurrentLevel();
-	Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Level saved");
+	if (igi::ShouldSaveBeforeExternalGameLaunch(
+			!in_game_mode_, Config::Get().auto_save_enabled)) {
+		SaveCurrentLevel();
+		Logger::Get().Log(LogLevel::INFO, "[ToggleGame] Level saved");
+	} else {
+		Logger::Get().Log(LogLevel::INFO,
+			"[ToggleGame] Auto-save disabled; launching without persisting editor changes");
+	}
 
 	std::string workDir = Utils::GetIGIRootPath();
 	std::string cmdLine = workDir + "\\igi.exe level" + std::to_string(level_.GetLevelNo());
@@ -1502,7 +1516,7 @@ void App::ProcessTreeViewClick(int mx, int my) {
     if (!level_.GetLevelObjects().GetObjects().empty()) {
         auto& objects = level_.GetLevelObjects().GetObjects();
         int tree_x = 20;
-        int row_h = 16;
+        int row_h = CurrentUiRowHeight();
         int start_y = 30;
         int current_row = 0;
 
@@ -1591,7 +1605,7 @@ void App::ProcessTreeViewClick(int mx, int my) {
 void App::ProcessTreeViewHover(int mx, int my) {
     int tree_x = 20;
     int start_y = 30;
-    int row_h = 16;
+    int row_h = CurrentUiRowHeight();
     int current_row = 0;
     
     auto& objects = level_.GetLevelObjects().GetObjects();

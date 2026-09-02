@@ -4,6 +4,7 @@
 #include "runtime/audio_system.h"
 #include "runtime/gameplay_spawn.h"
 #include "runtime/map_computer_camera.h"
+#include "runtime/auto_save_policy.h"
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
@@ -260,13 +261,19 @@ void App::Shutdown() {
 	}
 	gameplay_host_.ShutdownGameplayWindow();
 	if (game_process_.running) {
-		// Wait briefly for monitor thread (it's blocking on the game process handle)
+		// Terminate an editor-owned game before tearing down its handles. The
+		// monitor thread waits on hProcess, so it must be joined before hProcess
+		// is closed or the editor can crash during quit.
+		if (game_process_.hProcess) {
+			TerminateProcess(game_process_.hProcess, 0);
+			WaitForSingleObject(game_process_.hProcess, 2000);
+		}
 		if (game_process_.hMonitorThread) {
-			WaitForSingleObject(game_process_.hMonitorThread, 500);
+			WaitForSingleObject(game_process_.hMonitorThread, 2000);
 			CloseHandle(game_process_.hMonitorThread);
 		}
-		CloseHandle(game_process_.hProcess);
-		CloseHandle(game_process_.hThread);
+		if (game_process_.hProcess) CloseHandle(game_process_.hProcess);
+		if (game_process_.hThread) CloseHandle(game_process_.hThread);
 		game_process_ = {};
 	}
 	bridge_.Stop();
@@ -274,6 +281,8 @@ void App::Shutdown() {
 	level_.Unload();
 	level_.FreeTerrainCubeDataPools();
 	animPlaybacks_.clear();
+	gameplayAnimPlaybacks_.clear();
+	lastGameplayAnimationTick_ = 0;
 	animIdsCache_.clear();
 	runtime_animation_request_serials_.clear();
 	animRegistry_.Clear();
@@ -520,12 +529,15 @@ void App::OnIdle() {
 		if (exited) {
 			Logger::Get().Log(LogLevel::INFO, "[App] Game process exited (PID=" +
 			                  std::to_string(game_process_.pid) + "), restoring editor");
-			CloseHandle(game_process_.hProcess);
-			CloseHandle(game_process_.hThread);
+			// The monitor thread is still waiting on hProcess. Join it before
+			// closing that handle; closing a handle while another thread waits on
+			// it is undefined and caused intermittent editor access violations.
 			if (game_process_.hMonitorThread) {
 				WaitForSingleObject(game_process_.hMonitorThread, 1000);
 				CloseHandle(game_process_.hMonitorThread);
 			}
+			if (game_process_.hProcess) CloseHandle(game_process_.hProcess);
+			if (game_process_.hThread) CloseHandle(game_process_.hThread);
 			game_exited_.store(false, std::memory_order_relaxed);
 			game_process_ = {};
 			prior_frame_time_ = Sys_Milliseconds();
@@ -620,11 +632,22 @@ void App::Frame(float delta_seconds) {
 	if (developer_mode_ && (!rendering_editor_window_ || IsEditorInputActive())) {
 		debug_cmd_mgr_.Update();
 	}
+	// Config::Init() can be requested at runtime. Keep the timer's cached
+	// values synchronized so a disabled menu/config state cannot leave the old
+	// enabled state running for the remainder of the session.
+	ConfigData& runtime_cfg = Config::Get();
+	if (auto_save_enabled_ != runtime_cfg.auto_save_enabled ||
+		auto_save_interval_seconds_ != runtime_cfg.auto_save_interval_seconds) {
+		auto_save_enabled_ = runtime_cfg.auto_save_enabled;
+		auto_save_interval_seconds_ = runtime_cfg.auto_save_interval_seconds;
+		auto_save_last_time_ms_ = Sys_Milliseconds();
+	}
 	// Auto-save timer
-	if (!in_game_mode_ && auto_save_enabled_ && !pause_mode_ &&
-		level_.GetLevelNo() > 0) {
+	if (igi::ShouldRunAutoSave(!in_game_mode_, runtime_cfg.auto_save_enabled,
+			pause_mode_, level_.GetLevelNo())) {
 		int64_t now = Sys_Milliseconds();
-		if (now - auto_save_last_time_ms_ >= (int64_t)auto_save_interval_seconds_ * 1000) {
+		if (now - auto_save_last_time_ms_ >=
+				(int64_t)(std::max)(1, runtime_cfg.auto_save_interval_seconds) * 1000) {
 			auto_save_last_time_ms_ = now;
 			SaveCurrentLevel();
 			status_message_ = "Auto-saved level " + std::to_string(level_.GetLevelNo());
@@ -825,7 +848,7 @@ void App::Frame(float delta_seconds) {
 			}
 		}
 		ApplyRuntimeGuardGeneratorStates();
-		ApplyRuntimeAiAnimationRequests();
+		AdvanceGameplayAnimationClocks();
 		if (profile_frames) {
 			static int64_t acc_total = 0, acc_sim = 0, acc_sync = 0;
 			static int acc_frames = 0;
@@ -845,11 +868,19 @@ void App::Frame(float delta_seconds) {
 	} else if (!in_game_mode_ || IsEditorInputActive()) {
 		ProcessInput(delta_seconds);
 	}
+	if (in_game_mode_ && !render_gameplay) {
+		// The editor window can stay focused while gameplay continues simulating.
+		// Keep the gameplay-owned animation state current across that focus change.
+		CaptureGameplayRenderSnapshot();
+		AdvanceGameplayAnimationClocks();
+	}
 	UpdateGameplayFieldOfView();
 
 	// Update animation playback (auto-play for AI NPCs)
 	if (!rendering_editor_window_ || IsEditorInputActive()) {
-		UpdateAnimations(delta_seconds);
+		if (!render_gameplay) {
+			UpdateAnimations(delta_seconds);
+		}
 		CheckMusicLoop();
 	}
 
@@ -928,7 +959,7 @@ void App::Frame(float delta_seconds) {
 	// continued to render, which made the log claim animations were playing even
 	// though no animated pose was ever submitted in editor mode.
 	std::unordered_set<int> skinnedReplacementIndices =
-		GetSkinnedReplacementObjectIndices();
+		GetSkinnedReplacementObjectIndices(render_gameplay);
 	draw_params_.skip_static_draw_indices_ = &skinnedReplacementIndices;
 	draw_params_.terrain_id_at_world_xy_ =
 		[this](double x, double y) { return level_.GetTerrainNodeId(x, y); };
@@ -1103,15 +1134,37 @@ void App::Frame(float delta_seconds) {
     // this would leave those objects invisible. The bone wireframe stays scoped
     // to the selected object only (avoids clutter) and gated by 'B'.
     {
+        auto& active_playbacks = render_gameplay
+            ? gameplayAnimPlaybacks_ : animPlaybacks_;
         auto& objs = GetActiveRenderLevelObjects().GetObjects();
         for (int idx : skinnedReplacementIndices) {
             if (idx < 0 || idx >= (int)objs.size()) continue;
-            auto& pb = animPlaybacks_[idx];
+            auto playback_it = active_playbacks.find(idx);
+            if (playback_it == active_playbacks.end()) continue;
+            auto& pb = playback_it->second;
             std::vector<glm::mat4> worldTransforms;
             animRegistry_.EvaluateWorld(pb.clip, pb.currentTimeMs, worldTransforms);
             if (worldTransforms.empty()) continue;
 
             const auto& obj = objs[idx];
+            // The BEF exporter stores the skeleton relative to its animation
+            // root, while the MEF vertex stream is baked against the model's
+            // native root pivot. Align the evaluated pose to that MEF bind root
+            // before CPU skinning; otherwise the AI body is rendered at the
+            // wrong local height and appears frozen/missing in the scene.
+            const ParsedGeometry* skinGeo =
+                renderer_.GetOrLoadSkinGeometry(obj.modelId, obj.isBuilding);
+            if (skinGeo != nullptr && !skinGeo->bones.empty()) {
+                std::vector<glm::vec3> mefBindWorld =
+                    ComputeBoneWorldPositionsPublic(skinGeo->bones);
+                for (glm::vec3& position : mefBindWorld) {
+                    position *= kMefNativeScale;
+                }
+                std::vector<glm::mat4> animationBindWorld;
+                animRegistry_.EvaluateWorld(pb.clip, 0.0f, animationBindWorld);
+                AlignAnimationWorldToMefBind(
+                    animationBindWorld, mefBindWorld, worldTransforms);
+            }
             glm::mat4 objMat(1.0f);
             objMat = glm::translate(objMat, glm::vec3((float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z));
             objMat = glm::rotate(objMat, (float)obj.rot.z, glm::vec3(0, 0, 1));
@@ -1535,6 +1588,7 @@ void App::TogglePauseMenu() {
 		// Opening pause menu: seed level spinner with current level
 		int cur = level_.GetLevelNo();
 		if (cur > 0) pause_level_input_ = std::to_string(cur);
+		pause_active_input_ = -1;
 		// The menu is mouse-driven: the pointer must be visible. Gameplay
 		// motion handlers return early while paused, so nothing else would
 		// restore the cursor here — an invisible pointer made the menu
@@ -1748,6 +1802,8 @@ void App::ToggleGamePlayMode() {
 		ApplyRuntimeGuardGeneratorStates();
 		SetupRuntimeLadders();
 		SetupRuntimePlayerAnimation();
+		gameplayAnimPlaybacks_.clear();
+		lastGameplayAnimationTick_ = 0;
 		SetupRuntimeInteractionState();
 
 		// Initialize authored mission objectives for this specific level.
@@ -1795,6 +1851,8 @@ void App::ToggleGamePlayMode() {
 		runtime_conditionally_hidden_flags_.clear();
 		runtime_guard_generator_hidden_flags_.clear();
 		runtime_animation_request_serials_.clear();
+		gameplayAnimPlaybacks_.clear();
+		lastGameplayAnimationTick_ = 0;
 		gameplay_map_computer_camera_.Reset();
 		gameplay_map_computer_open_ = false;
 		player_animation_driver_.ClearAnimationClips();
@@ -1842,6 +1900,8 @@ void App::ApplyAndRestartGameplay() {
 		runtime_initial_deleted_flags_.push_back(object.deleted ? 1U : 0U);
 	}
 	runtime_animation_request_serials_.clear();
+	gameplayAnimPlaybacks_.clear();
+	lastGameplayAnimationTick_ = 0;
 
 	if (!gameplay_host_.ApplyAndRestartGameplay(*gameplay_editor_snapshot_)) {
 		status_message_ = "Cannot apply gameplay: runtime session is not active";
@@ -1856,6 +1916,8 @@ void App::ApplyAndRestartGameplay() {
 	ApplyRuntimeGuardGeneratorStates();
 	SetupRuntimeLadders();
 	SetupRuntimePlayerAnimation();
+	gameplayAnimPlaybacks_.clear();
+	lastGameplayAnimationTick_ = 0;
 	SetupRuntimeInteractionState();
 	InitializeGameplayMissionObjectives();
 
@@ -3151,23 +3213,33 @@ void App::ApplyRuntimeAiAnimationRequests() {
             object.boneHierarchy,
             guard.requested_animation);
         if (requested_clip == nullptr) {
-            static std::unordered_map<uint32_t, int> logged_missing;
-            if (logged_missing[guard.id]++ == 0) {
-                Logger::Get().Log(LogLevel::WARNING,
-                    "[AI-ANIM] Guard " + std::to_string(guard.id) +
-                    " rig " + std::to_string(object.boneHierarchy) +
-                    " missing clip " + std::to_string(guard.requested_animation));
-            }
             continue;
         }
 
-        auto& playback = animPlaybacks_[static_cast<int>(guard.id)];
+		auto& playback = gameplayAnimPlaybacks_[static_cast<int>(guard.id)];
         if (playback.clip != requested_clip || !playback.playing) {
             playback.Start(requested_clip);
             playback.forceLoop = true;
         }
         runtime_animation_request_serials_[guard.id] = guard.animation_request_serial;
-    }
+	}
+}
+
+void App::AdvanceGameplayAnimationClocks() {
+	ApplyRuntimeAiAnimationRequests();
+	const uint64_t simulation_tick = gameplay_host_.GetRenderSnapshot().simulation_tick;
+	if (simulation_tick <= lastGameplayAnimationTick_) {
+		return;
+	}
+
+	const uint64_t elapsed_ticks = simulation_tick - lastGameplayAnimationTick_;
+	const float elapsed_ms = static_cast<float>(elapsed_ticks) *
+		(1000.0f / static_cast<float>(igi::GameClock::TICK_RATE_HZ));
+	for (auto& [object_index, playback] : gameplayAnimPlaybacks_) {
+		(void)object_index;
+		playback.Update(elapsed_ms);
+	}
+	lastGameplayAnimationTick_ = simulation_tick;
 }
 
 std::string App::BuildAnimStatusString() {
@@ -3332,10 +3404,12 @@ void App::ToggleAnimationForObject(int objIndex, int animId) {
     }
 }
 
-std::unordered_set<int> App::GetSkinnedReplacementObjectIndices() {
+std::unordered_set<int> App::GetSkinnedReplacementObjectIndices(bool gameplay_render) {
     std::unordered_set<int> result;
     auto& objs = GetActiveRenderLevelObjects().GetObjects();
-    for (const auto& [idx, pb] : animPlaybacks_) {
+    const auto& active_playbacks = gameplay_render
+        ? gameplayAnimPlaybacks_ : animPlaybacks_;
+    for (const auto& [idx, pb] : active_playbacks) {
         if (idx < 0 || idx >= (int)objs.size()) continue;
         const auto& obj = objs[idx];
         // Only replace the static mesh if the skinned replacement can actually

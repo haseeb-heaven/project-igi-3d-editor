@@ -323,20 +323,17 @@ bool PlayerCollision::RaycastSolidGeometry(
         static_cast<int>(std::ceil(ray_length / 512.0f)),
         1,
         kRayMarchSampleCount);
+    bool previous_solid = solid_geometry_query_(ray_origin);
     float previous_fraction = 0.0f;
-    if (solid_geometry_query_(ray_origin)) {
-        hit.position = ray_origin;
-        hit.distance = 0.0f;
-        hit.normal = EstimateSurfaceNormal(ray_origin, ray_delta);
-        return true;
-    }
 
     for (int sample_index = 1; sample_index <= sample_count; ++sample_index) {
         const float current_fraction = static_cast<float>(sample_index) /
             static_cast<float>(sample_count);
         const glm::vec3 sample_position = ray_origin + ray_delta * current_fraction;
-        if (!solid_geometry_query_(sample_position)) {
+        const bool current_solid = solid_geometry_query_(sample_position);
+        if (!current_solid || previous_solid) {
             previous_fraction = current_fraction;
+            previous_solid = current_solid;
             continue;
         }
 
