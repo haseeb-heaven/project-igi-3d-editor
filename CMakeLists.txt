@@ -335,6 +335,7 @@ target_sources(igi_tests PRIVATE
     source/level/qvm_ai_bindings.cpp
     source/level/qvm_compiler.cpp
     source/level/qvm_decompiler.cpp
+    source/level/level_common.cpp
     source/config.cpp
     source/utils.cpp
     source/common.cpp

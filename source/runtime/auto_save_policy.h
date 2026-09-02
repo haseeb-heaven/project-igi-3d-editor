@@ -12,4 +12,9 @@ constexpr bool ShouldSaveBeforeExternalGameLaunch(bool editorMode,
     return editorMode && autoSaveEnabled;
 }
 
+constexpr bool ShouldSaveBeforeEditorExit(bool editorMode, bool autoSaveEnabled,
+                                          int levelNumber) noexcept {
+    return editorMode && autoSaveEnabled && levelNumber > 0;
+}
+
 } // namespace igi

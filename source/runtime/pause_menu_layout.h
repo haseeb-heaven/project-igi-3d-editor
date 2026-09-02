@@ -24,9 +24,9 @@ struct PauseMenuLayout {
 };
 
 constexpr int PauseMenuRowCount(bool terrainOptionsExpanded) noexcept {
-    // Resume, mode, collision, font, level, autosave, music, lightmaps,
-    // calculate-lightmaps, terrain header, reset, save, quit.
-    return terrainOptionsExpanded ? 18 : 13;
+    // Resume, mode, collision, font, level, autosave, logging, log level,
+    // music, lightmaps, calculate-lightmaps, terrain header, reset, save, quit.
+    return terrainOptionsExpanded ? 20 : 15;
 }
 
 constexpr int PauseMenuPreferredRowHeight(bool terrainOptionsExpanded) noexcept {

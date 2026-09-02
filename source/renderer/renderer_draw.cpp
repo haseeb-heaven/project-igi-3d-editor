@@ -10,6 +10,7 @@
 #include "../runtime/map_computer_projection.h"
 #include "../runtime/pause_menu_layout.h"
 #include "../runtime/pause_menu_font.h"
+#include "../runtime/log_policy.h"
 #include "../utils.h"
 #include <vector>
 #include <unordered_map>
@@ -431,29 +432,11 @@ void Renderer::Draw(const draw_params_s &params,
     splines_.Draw(params.level_objects_->GetObjects(), ubo_mats_,
                   objects_.GetShaderProgram());
 
-    // Suppress rain when the camera is inside a building AABB.
-    // Uses the mesh's local-space halfExtents scaled to world units (BASE_SCALE=40.96).
-    {
-        constexpr float BASE_SCALE = 40.96f;
-        bool indoors = false;
-        const glm::vec3 camPos = params.view_define_->pos_;
-        for (const auto& obj : params.level_objects_->GetObjects()) {
-            if (obj.deleted || !obj.isBuilding || obj.modelId.empty()) continue;
-            Mesh bm = objects_.GetOrLoadMesh(obj.modelId, true);
-            if (bm.vertexCount == 0 && bm.subMeshes.empty()) continue;
-            float ws = BASE_SCALE * obj.scale;
-            glm::vec3 wc = glm::vec3(obj.pos) + bm.center * ws;
-            glm::vec3 hw = bm.halfExtents * ws;
-            glm::vec3 d  = camPos - wc;
-            if (glm::abs(d.x) < hw.x && glm::abs(d.y) < hw.y && glm::abs(d.z) < hw.z) {
-                indoors = true;
-                break;
-            }
-        }
-        rain_.SetIndoors(indoors);
-    }
-    rain_.Draw(ubo_mats_, params.view_define_->pos_);
   }
+
+  // RainEffect is authoritative and must not be gated by object, building, or
+  // prop visibility filters in the editor.
+  rain_.Draw(ubo_mats_, params.view_define_->pos_);
 
   // 3D navigation-graph pass: solid boxes + edges, depth-tested, before the HUD.
   if (graph_overlay_visible_)
@@ -1774,6 +1757,10 @@ void Renderer::Draw(const draw_params_s &params,
       btn_labels.push_back("Select Level");
       const int AUTOSAVE_ROW = btn_labels.size();
       btn_labels.push_back("Auto Save");
+      const int LOGGING_ROW = btn_labels.size();
+      btn_labels.push_back("Logging");
+      const int LOG_LEVEL_ROW = btn_labels.size();
+      btn_labels.push_back("Log Level");
       const int MUSIC_ROW = btn_labels.size();
       btn_labels.push_back("Music");
       const int LIGHTMAPS_ROW = btn_labels.size();
@@ -1898,6 +1885,36 @@ void Renderer::Draw(const draw_params_s &params,
           sbox(minus_x, btn_w, "-",     rt, rb, screen_btn_y);
           sbox(box_x,   val_w, secbuf,  rt, rb, screen_btn_y);
           sbox(plus_x,  btn_w, "+",     rt, rb, screen_btn_y);
+
+        } else if (i == LOGGING_ROW) {
+          if (hovered) {
+            glEnable(GL_BLEND);
+            glColor4f(0.0f, 0.8f, 0.0f, 0.35f);
+            glBegin(GL_QUADS);
+            glVertex2i(menu_x, gl_btn_y - 15); glVertex2i(menu_x + menu_w, gl_btn_y - 15);
+            glVertex2i(menu_x + menu_w, gl_btn_y + 15); glVertex2i(menu_x, gl_btn_y + 15);
+            glEnd();
+            glDisable(GL_BLEND);
+          }
+          char loggingbuf[24];
+          snprintf(loggingbuf, sizeof(loggingbuf), "[%c] Logging",
+                   task_tree_view.logging_enabled_ ? 'X' : ' ');
+          const int tw = pause_text_width(loggingbuf);
+          draw_pause_text(menu_x + (menu_w - tw) / 2, screen_btn_y, loggingbuf,
+                          hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+
+        } else if (i == LOG_LEVEL_ROW) {
+          const int btn_w = 22, val_w = 78;
+          const char* lbl = "Log Level";
+          const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+              pause_layout, screen_btn_y, pause_text_width(lbl), val_w);
+          draw_pause_text(spinner.group_left, screen_btn_y, lbl,
+                          hovered ? 1.0f : 0.0f, hovered ? 1.0f : 0.85f, 0.0f);
+          const auto [rt, rb] = spinner_box_bounds(gl_btn_y);
+          sbox(spinner.minus_left, btn_w, "-", rt, rb, screen_btn_y);
+          sbox(spinner.value_left, val_w,
+               igi::LogLevelLabel(task_tree_view.log_level_threshold_), rt, rb, screen_btn_y);
+          sbox(spinner.plus_left, btn_w, "+", rt, rb, screen_btn_y);
 
         } else if (i == MUSIC_ROW) {
           // Music on/off checkbox: "[X] Music" / "[ ] Music", centered, hover-highlighted.

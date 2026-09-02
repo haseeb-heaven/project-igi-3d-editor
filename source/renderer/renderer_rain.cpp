@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "renderer_rain.h"
+#include "../runtime/weather_visibility.h"
 #include "../logger.h"
 #include <freeglut.h>
 #include <vector>
@@ -132,7 +133,7 @@ void Renderer_Rain::SetParams(bool active, bool is_snow, float startMeters, floa
 }
 
 void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
-    if (!active_ || !shader_program_ || indoors_) return;
+    if (!igi::ShouldDrawWeatherForFrame(active_, shader_program_ != 0)) return;
 
     // RainEffect's Traceline start/end are raycast-occlusion heights (sky-to-ground
     // probe), not absolute world Y — re-anchor them to the camera each frame so the

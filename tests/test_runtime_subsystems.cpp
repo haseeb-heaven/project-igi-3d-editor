@@ -37,9 +37,13 @@
 #include "../source/runtime/human_player_config.h"
 #include "../source/runtime/render_target.h"
 #include "../source/runtime/pause_menu_layout.h"
+#include "../source/runtime/pause_menu_cursor.h"
+#include "../source/runtime/log_policy.h"
 #include "../source/runtime/pause_menu_state.h"
 #include "../source/runtime/pause_menu_font.h"
 #include "../source/runtime/auto_save_policy.h"
+#include "../source/runtime/progress_overlay_policy.h"
+#include "../source/runtime/window_style_policy.h"
 #include "../source/utils.h"
 #include "../source/runtime/runtime_renderer.h"
 #include "../source/runtime/magic_object_registry.h"
@@ -293,9 +297,21 @@ TEST(PauseMenuLayoutTest, ExpandedTerrainOptionsKeepQuitRowOnScreen) {
     EXPECT_GE(layout.menu_left, 0);
     EXPECT_LE(layout.menu_top + layout.menu_height, 480);
     EXPECT_LE(layout.menu_left + layout.menu_width, 640);
-    EXPECT_EQ(layout.row_count, 18);
+    EXPECT_EQ(layout.row_count, 20);
     const int quitY = PauseMenuRowCenter(layout, layout.row_count - 1);
     EXPECT_TRUE(IsPauseMenuRowHit(layout, layout.row_count - 1, quitY));
+}
+
+TEST(PauseMenuLayoutTest, IncludesLoggingToggleAndSeverityRows) {
+    EXPECT_EQ(PauseMenuRowCount(false), 15);
+    EXPECT_EQ(PauseMenuRowCount(true), 20);
+}
+
+TEST(RuntimeRenderTargetTest, PauseMenuUsesOnlyTheNativeMouseCursor) {
+    EXPECT_TRUE(ShouldDrawCustomCursor(false));
+    EXPECT_FALSE(ShouldDrawCustomCursor(true));
+    EXPECT_FALSE(ShouldUseNativeCursor(false));
+    EXPECT_TRUE(ShouldUseNativeCursor(true));
 }
 
 TEST(PauseMenuLayoutTest, RendererAndInputShareSpinnerGeometry) {
@@ -322,6 +338,20 @@ TEST(PauseMenuInputTest, MouseWheelAdjustsOnlyTheHoveredSpinnerAndClamps) {
     EXPECT_EQ(AdjustPauseMenuSpinner(12, 1, 8, 32, 1), 13);
     EXPECT_EQ(AdjustPauseMenuSpinner(32, 1, 8, 32, 1), 32);
     EXPECT_EQ(AdjustPauseMenuSpinner(50, -1, 10, 60, 10), 40);
+}
+
+TEST(LogPolicyTest, EnableSwitchAndEverySupportedSeverityAreApplied) {
+    EXPECT_FALSE(IsLogLevelEnabled(false, kLogLevelDebug, kLogLevelFatal));
+
+    EXPECT_TRUE(IsLogLevelEnabled(true, kLogLevelDebug, kLogLevelDebug));
+    EXPECT_TRUE(IsLogLevelEnabled(true, kLogLevelInfo, kLogLevelInfo));
+    EXPECT_FALSE(IsLogLevelEnabled(true, kLogLevelInfo, kLogLevelDebug));
+    EXPECT_TRUE(IsLogLevelEnabled(true, kLogLevelWarning, kLogLevelWarning));
+    EXPECT_FALSE(IsLogLevelEnabled(true, kLogLevelWarning, kLogLevelInfo));
+    EXPECT_TRUE(IsLogLevelEnabled(true, kLogLevelError, kLogLevelError));
+    EXPECT_FALSE(IsLogLevelEnabled(true, kLogLevelError, kLogLevelWarning));
+    EXPECT_TRUE(IsLogLevelEnabled(true, kLogLevelFatal, kLogLevelFatal));
+    EXPECT_FALSE(IsLogLevelEnabled(true, kLogLevelFatal, kLogLevelError));
 }
 
 TEST(PauseMenuInputTest, EnterOnlyCommitsAnExplicitlyFocusedLevelSelector) {
@@ -406,6 +436,47 @@ TEST(AutoSavePolicyTest, DisabledMenuStateCannotSaveBeforeGameLaunch) {
     EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(true, false));
     EXPECT_TRUE(ShouldSaveBeforeExternalGameLaunch(true, true));
     EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(false, true));
+}
+
+TEST(AutoSavePolicyTest, EnabledEditorStateSavesBeforeGracefulQuit) {
+    EXPECT_TRUE(ShouldSaveBeforeEditorExit(true, true, 1));
+    EXPECT_TRUE(ShouldSaveBeforeEditorExit(true, true, 14));
+    EXPECT_FALSE(ShouldSaveBeforeEditorExit(true, false, 1));
+    EXPECT_FALSE(ShouldSaveBeforeEditorExit(false, true, 1));
+    EXPECT_FALSE(ShouldSaveBeforeEditorExit(true, true, 0));
+}
+
+// The loading bar is drawn synchronously on the main loop; a queued scene
+// repaint dispatched by the overlay's event pump must never overwrite or swap
+// over it, or the bar is never seen (the "progress bar missing" bug).
+TEST(ProgressOverlayPolicyTest, VisibleOverlaySuppressesSceneRepaintAndPresentsFirst) {
+    const igi::ProgressOverlayState visible{true, true};
+    EXPECT_TRUE(igi::ShouldSuppressSceneRepaint(visible));
+    EXPECT_TRUE(igi::ShouldPresentOverlayBeforePumpingEvents(visible));
+
+    const igi::ProgressOverlayState hidden{false, true};
+    EXPECT_FALSE(igi::ShouldSuppressSceneRepaint(hidden));
+    EXPECT_FALSE(igi::ShouldPresentOverlayBeforePumpingEvents(hidden));
+}
+
+// The editor must launch with no title bar and no minimize/maximize/close
+// chrome; Pause -> Quit is the supported exit path.
+TEST(WindowStylePolicyTest, BorderlessFullscreenStripsAllChrome) {
+    const std::intptr_t glut_windowed =
+        0x00CF0000 | igi::kWinStyleCaption | igi::kWinStyleThickFrame |
+        igi::kWinStyleMinimizeBox | igi::kWinStyleMaximizeBox |
+        igi::kWinStyleSysMenu | igi::kWinStyleVisible;
+    const std::intptr_t borderless =
+        igi::BorderlessFullscreenWindowStyle(glut_windowed);
+
+    EXPECT_EQ(borderless & igi::kWinStyleCaption, 0);
+    EXPECT_EQ(borderless & igi::kWinStyleThickFrame, 0);
+    EXPECT_EQ(borderless & igi::kWinStyleMinimizeBox, 0);
+    EXPECT_EQ(borderless & igi::kWinStyleMaximizeBox, 0);
+    EXPECT_EQ(borderless & igi::kWinStyleSysMenu, 0);
+    EXPECT_EQ(borderless & igi::kWinStylePopup, igi::kWinStylePopup);
+    // Unrelated bits (visibility, clipping) must survive the restyle.
+    EXPECT_EQ(borderless & igi::kWinStyleVisible, igi::kWinStyleVisible);
 }
 
 TEST(PauseMenuMusicTest, FailedStartDoesNotPersistEnabledState) {

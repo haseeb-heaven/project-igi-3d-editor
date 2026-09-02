@@ -79,6 +79,7 @@ struct ConfigData {
     // NEW: Logging
     bool enableLogging;
     bool debugLogging;
+    int logLevelThreshold; // DEBUG=0 through FATAL=4
 
     // [Renderer]
     bool enableLOD; // Portal/attachment distance culling for buildings

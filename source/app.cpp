@@ -5,6 +5,8 @@
 #include "runtime/gameplay_spawn.h"
 #include "runtime/map_computer_camera.h"
 #include "runtime/auto_save_policy.h"
+#include "runtime/progress_overlay_policy.h"
+#include "runtime/window_style_policy.h"
 #include "mission_flow_loader.h"
 #include "mission_objective_loader.h"
 #include "mission_state_loader.h"
@@ -221,6 +223,30 @@ bool App::Init(int argc, char** argv) {
 		Logger::Get().Log(LogLevel::WARNING, "[App] editor_hwnd_ is NULL â€” global hotkey will not work");
 	}
 
+#ifdef _WIN32
+	// Borderless fullscreen: strip caption/frame/box chrome and size the
+	// surface to the monitor. Pause -> Quit stays the supported exit path.
+	if (editor_hwnd_) {
+		const LONG_PTR style = GetWindowLongPtr(editor_hwnd_, GWL_STYLE);
+		SetWindowLongPtr(editor_hwnd_, GWL_STYLE,
+		                 static_cast<LONG_PTR>(
+		                     igi::BorderlessFullscreenWindowStyle(style)));
+		MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+		if (GetMonitorInfo(MonitorFromWindow(editor_hwnd_, MONITOR_DEFAULTTONEAREST),
+		                   &monitor_info)) {
+			SetWindowPos(editor_hwnd_, HWND_TOP,
+			             monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
+			             monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+			             monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+			             SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+			window_state_.old_viewport_width_ = window_state_.viewport_width_;
+			window_state_.old_viewport_height_ = window_state_.viewport_height_;
+			window_state_.full_screen_ = true;
+			Logger::Get().Log(LogLevel::INFO, "[App] Editor window switched to borderless fullscreen");
+		}
+	}
+#endif
+
 	extern App g_app;
 	static auto s_terrain_cb = [](float x, float y) -> float {
 		extern App g_app;
@@ -252,6 +278,11 @@ void App::Shutdown() {
 	// run once so renderer and gameplay resources are not invalidated twice.
 	if (shutdown_started_) return;
 	shutdown_started_ = true;
+
+	if (igi::ShouldSaveBeforeEditorExit(
+			!in_game_mode_, Config::Get().auto_save_enabled, level_.GetLevelNo())) {
+		SaveCurrentLevel();
+	}
 
 	if (editor_hwnd_) {
 		KillTimer(editor_hwnd_, 1);
@@ -419,6 +450,10 @@ void App::RestoreEditorViewport() {
 }
 
 void App::OnDisplay() {
+	// A synchronous progress overlay owns the surface while it presents its
+	// frame; a scene repaint dispatched by the overlay's event pump would
+	// redraw and swap over the bar before it is ever seen.
+	if (igi::ShouldSuppressSceneRepaint({progress_overlay_active_, false})) return;
 	// Same-window gameplay: the shared surface renders gameplay whenever the
 	// runtime session is active, and the editor scene otherwise.
 	if (in_game_mode_ && !rendering_editor_window_) {
@@ -775,6 +810,8 @@ void App::Frame(float delta_seconds) {
 			.terrain_brush_strength_ = edit_brush_strength_,
 			.auto_save_enabled_        = auto_save_enabled_,
 			.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+			.logging_enabled_ = Config::Get().enableLogging,
+			.log_level_threshold_ = Config::Get().logLevelThreshold,
 			.music_on_ = music_playing_,
 			.lightmaps_on_ = Config::Get().enableLightmaps,
 			.anim_status_  = BuildAnimStatusString(),
@@ -1082,6 +1119,8 @@ void App::Frame(float delta_seconds) {
 		.terrain_brush_strength_ = edit_brush_strength_,
 		.auto_save_enabled_        = auto_save_enabled_,
 		.auto_save_interval_seconds_ = auto_save_interval_seconds_,
+		.logging_enabled_ = Config::Get().enableLogging,
+		.log_level_threshold_ = Config::Get().logLevelThreshold,
 		.music_on_ = music_playing_,
 		.anim_status_  = BuildAnimStatusString(),
 		.anim_playing_ = !animPlaybacks_.empty(),

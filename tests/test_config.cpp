@@ -185,22 +185,63 @@ TEST(ConfigQvmTest, UsesGameQscAndRebuildsItsQvm) {
     {
         std::ofstream qsc(qscPath);
         ASSERT_TRUE(qsc.is_open());
-        qsc << "QEDLogs(FALSE);\nQEDDebug(TRUE);\n";
+        qsc << "QEDLogs(FALSE);\nQEDDebug(FALSE);\nQEDLogLevel(3);\n";
     }
 
     ScopedEnvironmentVariable gamePath("IGI_GAME_PATH", gameRoot.string());
     Config::Init();
 
     EXPECT_FALSE(Config::Get().enableLogging);
-    EXPECT_TRUE(Config::Get().debugLogging);
+    EXPECT_FALSE(Config::Get().debugLogging);
+    EXPECT_EQ(Config::Get().logLevelThreshold, 3);
     ASSERT_TRUE(fs::is_regular_file(qvmPath));
     const QVMFile qvm = QVM_Parse(qvmPath.string());
     ASSERT_TRUE(qvm.valid) << qvm.error;
     const std::string decompiled = QVM_DecompileToString(qvm);
     EXPECT_NE(decompiled.find("QEDLogs(FALSE)"), std::string::npos);
-    EXPECT_NE(decompiled.find("QEDDebug(TRUE)"), std::string::npos);
+    EXPECT_NE(decompiled.find("QEDDebug(FALSE)"), std::string::npos);
+    EXPECT_NE(decompiled.find("QEDLogLevel(3)"), std::string::npos);
 
     fs::remove_all(gameRoot, ec);
+}
+
+TEST(ConfigQvmTest, SavesAndReloadsPauseMenuLogEnableAndSeverity) {
+    namespace fs = std::filesystem;
+    const fs::path gameRoot = fs::temp_directory_path() /
+        ("igi1ed-log-severity-config-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path qedDir = gameRoot / "editor" / "qed";
+    std::error_code ec;
+    fs::create_directories(qedDir, ec);
+    ASSERT_FALSE(ec);
+    {
+        std::ofstream qsc(qedDir / "qedconfig.qsc");
+        ASSERT_TRUE(qsc.is_open());
+        qsc << "QEDLogs(TRUE);\nQEDDebug(FALSE);\nQEDLogLevel(2);\n";
+    }
+
+    {
+        ScopedEnvironmentVariable gamePath("IGI_GAME_PATH", gameRoot.string());
+        Config::Init();
+        EXPECT_TRUE(Config::Get().enableLogging);
+        EXPECT_EQ(Config::Get().logLevelThreshold, 2);
+
+        Config::Get().enableLogging = false;
+        Config::Get().logLevelThreshold = 3;
+        Config::Save();
+
+        Config::Init();
+        EXPECT_FALSE(Config::Get().enableLogging);
+        EXPECT_EQ(Config::Get().logLevelThreshold, 3);
+    }
+
+    const QVMFile qvm = QVM_Parse((qedDir / "qedconfig.qvm").string());
+    ASSERT_TRUE(qvm.valid) << qvm.error;
+    const std::string decompiled = QVM_DecompileToString(qvm);
+    EXPECT_NE(decompiled.find("QEDLogs(FALSE)"), std::string::npos);
+    EXPECT_NE(decompiled.find("QEDLogLevel(3)"), std::string::npos);
+    fs::remove_all(gameRoot, ec);
+    Config::Init();
 }
 
 TEST(ConfigQvmTest, AcceptsUtf8BomInAuthoritativeGameQsc) {

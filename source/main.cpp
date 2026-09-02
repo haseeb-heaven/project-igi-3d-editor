@@ -7,6 +7,7 @@
 #include "config.h"
 #include "logger.h"
 #include "pch.h"
+#include "runtime/pause_menu_cursor.h"
 #include "utils.h"
 #include <freeglut.h>
 #include <filesystem>
@@ -135,7 +136,9 @@ static void OnKeyboardUp(unsigned char key, int x, int y) {
 }
 
 static void OnDisplay() {
-  glutSetCursor(GLUT_CURSOR_NONE);  // keep system cursor hidden; SPR cursor draws it
+  glutSetCursor(igi::ShouldUseNativeCursor(g_app.GetPauseMode())
+                    ? GLUT_CURSOR_INHERIT
+                    : GLUT_CURSOR_NONE);
   g_app.OnDisplay();
 }
 

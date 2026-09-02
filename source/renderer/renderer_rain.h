@@ -18,7 +18,6 @@ public:
     void SetParams(bool active, bool is_snow, float startMeters, float endMeters, float alpha);
 
     void Draw(GLuint ubo_mats, const glm::vec3& cameraPos);
-    void SetIndoors(bool indoors) { indoors_ = indoors; }
 
 private:
     GLuint shader_program_ = 0;
@@ -29,7 +28,6 @@ private:
 
     bool active_ = false;
     bool is_snow_ = false;
-    bool indoors_ = false;
     float start_meters_ = 0.0f;
     float end_meters_ = 0.0f;
     float alpha_ = 0.5f;

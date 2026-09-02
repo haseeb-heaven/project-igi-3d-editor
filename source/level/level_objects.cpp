@@ -86,15 +86,13 @@ void LevelObjects::LoadRecursive(const QSC* qsc, const QSC::func_s* func, int pa
     std::string funcName = func->func_name_;
     std::string typeStr;
 
-    Logger::Get().Log(LogLevel::INFO, "[DEBUG] Function name: " + funcName);
-    // Check if it's a Task_New call (common wrapper)
+	// Check if it's a Task_New call (common wrapper)
     if (funcName == "Task_New") {
         const QSC::arg_s* cur = a;
         int argCount = 0;
         while (cur) {
             if (argCount == 1 && cur->type_ == QSC::arg_s::type_t::STR) {
                 typeStr = cur->str_;
-                Logger::Get().Log(LogLevel::INFO, "[DEBUG] Task_New typeStr: '" + typeStr + "'");
             }
             cur = cur->next_;
             argCount++;

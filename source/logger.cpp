@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "logger.h"
 #include "config.h"
+#include "runtime/log_policy.h"
 #include <ctime>
 #include <cstdlib>
 #include <system_error>
@@ -90,13 +91,10 @@ void Logger::OpenLogFileLocked() {
 }
 
 void Logger::Log(LogLevel level, const std::string& message) {
-    // Check if logging is enabled at all (if Config is ready)
-    if (!Config::Get().enableLogging) {
-        return;
-    }
-
-    // Skip DEBUG logs if debugLogging is disabled
-    if (level == LogLevel::DEBUG && !Config::Get().debugLogging) {
+    if (!igi::IsLogLevelEnabled(
+            Config::Get().enableLogging,
+            Config::Get().logLevelThreshold,
+            static_cast<int>(level))) {
         return;
     }
 

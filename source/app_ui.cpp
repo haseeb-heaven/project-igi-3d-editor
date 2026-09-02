@@ -4,6 +4,8 @@
  *          Split from app.cpp; shares app_internal.h.
  *****************************************************************************/
 #include "app_internal.h"
+#include "runtime/pause_menu_cursor.h"
+#include "runtime/progress_overlay_policy.h"
 
 static GLuint LoadOneSpr(const char* path, int& w, int& h) {
 	TEXFile tex = TEX_Parse(path);
@@ -253,6 +255,7 @@ void App::UpdateCursorMode() {
 }
 
 void App::DrawCustomCursor() {
+	if (!igi::ShouldDrawCustomCursor(pause_mode_)) return;
 	UpdateCursorMode();
 	int idx = (int)current_cursor_mode_;
 	if (idx < 0 || idx >= NUM_CURSORS || !cursor_tex_ids_[idx]) {
@@ -307,6 +310,16 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 	int vw = window_state_.viewport_width_;
 	int vh = window_state_.viewport_height_;
 	if (vw <= 0 || vh <= 0) return;
+
+	// The overlay owns the surface for this pass: present it BEFORE pumping
+	// events and suppress any scene repaint the pump dispatches (see
+	// runtime/progress_overlay_policy.h), or the bar is never seen.
+	struct OverlayGuard {
+		bool& flag;
+		~OverlayGuard() { flag = false; }
+	} guard{progress_overlay_active_};
+	progress_overlay_active_ = true;
+
 	glViewport(0, 0, vw, vh);
 	glDisable(GL_SCISSOR_TEST); // prevent ImGui from clipping the overlay
 	glClearColor(0.02f, 0.06f, 0.02f, 1.0f);
@@ -355,7 +368,10 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 	glMatrixMode(GL_PROJECTION); glPopMatrix();
 	glMatrixMode(GL_MODELVIEW);  glPopMatrix();
 	glEnable(GL_DEPTH_TEST);
+
+	const igi::ProgressOverlayState overlay_state{progress_overlay_active_, false};
+	if (igi::ShouldPresentOverlayBeforePumpingEvents(overlay_state))
+		glutSwapBuffers();
 	glutMainLoopEvent();
-	glutSwapBuffers();
 }
 

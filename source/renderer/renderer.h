@@ -547,6 +547,8 @@ public:
 		// Auto-save state
 		bool   auto_save_enabled_        = false;
 		int    auto_save_interval_seconds_ = 300;
+		bool   logging_enabled_          = false;
+		int    log_level_threshold_      = 1;
 		bool   music_on_                 = false; // Escape-menu Music checkbox state
 		bool   lightmaps_on_             = false; // Escape-menu Lightmaps checkbox state
 

@@ -165,6 +165,7 @@ private:
   int terrain_mod_options_;
   // editor & runtime
   bool in_game_mode_ = false;
+  bool progress_overlay_active_ = false; // overlay owns the surface; suppress scene repaints
   igi::GameplayHost gameplay_host_;
   std::optional<igi::EditorSnapshot> gameplay_editor_snapshot_;
   std::optional<LevelObjects> runtime_level_objects_;

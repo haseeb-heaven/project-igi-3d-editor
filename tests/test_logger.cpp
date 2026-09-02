@@ -18,6 +18,7 @@ TEST(LoggerTest, DoesNotCreateFileUntilLoggingIsEnabled) {
 
     Config::Get().enableLogging = false;
     Config::Get().debugLogging = false;
+    Config::Get().logLevelThreshold = 1;
     Logger& logger = Logger::Get();
     logger.Init(path.string());
     EXPECT_FALSE(fs::exists(path));
@@ -31,10 +32,14 @@ TEST(LoggerTest, DoesNotCreateFileUntilLoggingIsEnabled) {
     ASSERT_TRUE(logger.IsOpen());
     ASSERT_EQ(fs::path(logger.GetLogPath()).lexically_normal(), path.lexically_normal());
     logger.Log(LogLevel::DEBUG, "logger debug disabled message");
+    Config::Get().logLevelThreshold = 3;
+    logger.Log(LogLevel::WARNING, "logger warning filtered message");
+    logger.Log(LogLevel::ERR, "logger error enabled message");
     Config::Get().enableLogging = false;
     logger.Log(LogLevel::INFO, "logger disabled after opening message");
     Config::Get().enableLogging = true;
     Config::Get().debugLogging = true;
+    Config::Get().logLevelThreshold = 0;
     logger.Log(LogLevel::DEBUG, "logger debug enabled message");
     logger.Flush();
 
@@ -46,5 +51,7 @@ TEST(LoggerTest, DoesNotCreateFileUntilLoggingIsEnabled) {
     EXPECT_EQ(contents.find("logger debug disabled message"), std::string::npos);
     EXPECT_EQ(contents.find("logger disabled message"), std::string::npos);
     EXPECT_EQ(contents.find("logger disabled after opening message"), std::string::npos);
+    EXPECT_EQ(contents.find("logger warning filtered message"), std::string::npos);
+    EXPECT_NE(contents.find("logger error enabled message"), std::string::npos);
     EXPECT_NE(contents.find("logger debug enabled message"), std::string::npos);
 }

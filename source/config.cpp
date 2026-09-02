@@ -7,6 +7,7 @@
 #include "level/qvm_compiler.h"
 #include "level/qvm_parser.h"
 #include "level/qvm_decompiler.h"
+#include "runtime/log_policy.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -169,6 +170,7 @@ void Config::CreateDefault() {
     data_.keyRedo = {0x59, true, false, false};    // Ctrl+Y
     data_.enableLogging = true;
     data_.debugLogging = false;
+    data_.logLevelThreshold = igi::kLogLevelInfo;
     data_.enableLOD = true;
     data_.enableLightmaps = false;
     data_.enableFog = true;
@@ -208,6 +210,7 @@ void Config::Init() {
     // qedconfig.qsc has been compiled and loaded successfully.
     data_.enableLogging = false;
     data_.debugLogging = false;
+    data_.logLevelThreshold = igi::kLogLevelFatal;
     const std::filesystem::path qedDir = GetQEDDirectory();
     const std::string contentDir = qedDir.parent_path().string();
     if (!std::filesystem::is_directory(qedDir)) {
@@ -266,7 +269,14 @@ void Config::Load(bool configQvmReady) {
                 }
                 else if (key == "Logs" || key == "Enable") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "SaveConfigOnExit") data_.saveConfigOnExit = (val == "TRUE" || val == "true" || val == "1");
-                else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+                else if (key == "Debug") {
+                    data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+                    if (data_.debugLogging) data_.logLevelThreshold = igi::kLogLevelDebug;
+                }
+                else if (key == "LogLevel") {
+                    data_.logLevelThreshold = igi::ClampLogLevel(std::stoi(val));
+                    data_.debugLogging = data_.logLevelThreshold == igi::kLogLevelDebug;
+                }
                 else if (key == "Lod") data_.enableLOD = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Lightmaps") data_.enableLightmaps = (val == "TRUE" || val == "true" || val == "1");
                 else if (key == "Fog") data_.enableFog = (val == "TRUE" || val == "true" || val == "1");
@@ -371,7 +381,14 @@ void Config::Load(bool configQvmReady) {
             }
             else if (key == "Logs" || key == "Enable") data_.enableLogging = (val == "TRUE" || val == "true" || val == "1");
             else if (key == "SaveConfigOnExit") data_.saveConfigOnExit = (val == "TRUE" || val == "true" || val == "1");
-            else if (key == "Debug") data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+            else if (key == "Debug") {
+                data_.debugLogging = (val == "TRUE" || val == "true" || val == "1");
+                if (data_.debugLogging) data_.logLevelThreshold = igi::kLogLevelDebug;
+            }
+            else if (key == "LogLevel") {
+                data_.logLevelThreshold = igi::ClampLogLevel(std::stoi(val));
+                data_.debugLogging = data_.logLevelThreshold == igi::kLogLevelDebug;
+            }
             else if (key == "ConsoleAutoActivate") data_.consoleAutoActivate = std::stoi(val);
             else if (key == "SearchType") data_.searchType = std::stoll(val);
             else if (key == "InvertMouse") data_.invertMouse = (val == "TRUE" || val == "true" || val == "1");
@@ -401,6 +418,7 @@ void Config::Load(bool configQvmReady) {
         } else {
             data_.enableLogging = false;
             data_.debugLogging = false;
+            data_.logLevelThreshold = igi::kLogLevelFatal;
             std::cerr << "[Config] Cannot load qedconfig.qvm: " << qvm.error
                       << "; logging remains disabled.\n";
         }
@@ -423,6 +441,8 @@ void Config::Load(bool configQvmReady) {
 }
 
 void Config::Save() {
+    data_.logLevelThreshold = igi::ClampLogLevel(data_.logLevelThreshold);
+    data_.debugLogging = data_.logLevelThreshold == igi::kLogLevelDebug;
     std::string qscPath = GetConfigPath();
     std::ofstream file(qscPath);
     if (file.is_open()) {
@@ -434,6 +454,7 @@ void Config::Save() {
         file << "QEDFontColorB(" << data_.fontColorB << ");\n";
         file << "QEDLogs(" << (data_.enableLogging ? "TRUE" : "FALSE") << ");\n";
         file << "QEDDebug(" << (data_.debugLogging ? "TRUE" : "FALSE") << ");\n";
+        file << "QEDLogLevel(" << data_.logLevelThreshold << ");\n";
         file << "QEDConsoleAutoActivate(" << data_.consoleAutoActivate << ");\n";
         file << "QEDSearchType(" << data_.searchType << ");\n";
         file << "QEDInvertMouse(" << (data_.invertMouse ? "TRUE" : "FALSE") << ");\n";

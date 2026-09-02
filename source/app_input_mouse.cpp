@@ -7,6 +7,7 @@
 #include "renderer/object_lightmap.h"
 #include "runtime/pause_menu_layout.h"
 #include "runtime/pause_menu_font.h"
+#include "runtime/log_policy.h"
 #include "runtime/pause_menu_state.h"
 
 void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
@@ -31,6 +32,9 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		const int fontRow = row++;
 		const int levelRow = row++;
 		const int autosaveRow = row++;
+		const int loggingRow = row++;
+		const int logLevelRow = row++;
+		(void)loggingRow; // The checkbox is click-only; the wheel adjusts severity only.
 		row += 4; // music, lightmaps, calculate-lightmaps, terrain header
 		const int terrainHeaderRow = row - 1;
 		if (pause_terrain_expanded_) {
@@ -68,6 +72,15 @@ void App::Input_OnMouseWheel(int wheel, int direction, int x, int y) {
 		if (adjust(autosaveRow, PauseMenuTextWidth(autosaveLabel, Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 44,
 		           10, 3600, 10, autosaveInterval)) {
 			AdjustAutoSaveInterval(autosaveInterval - auto_save_interval_seconds_);
+			return;
+		}
+
+		int logLevel = Config::Get().logLevelThreshold;
+		if (adjust(logLevelRow, PauseMenuTextWidth("Log Level", Config::Get().useEditorFont, Config::Get().systemFontSize, layout.text_scale), 78,
+		           igi::kLogLevelDebug, igi::kLogLevelFatal, 1, logLevel)) {
+			Config::Get().logLevelThreshold = logLevel;
+			Config::Get().debugLogging = logLevel == igi::kLogLevelDebug;
+			Config::Save();
 			return;
 		}
 
@@ -432,6 +445,8 @@ int RESUME_ROW = btn_idx++;
 				int FONT_ROW = btn_idx++;
 					int LEVEL_ROW = btn_idx++;
 					int AUTOSAVE_ROW = btn_idx++;
+					int LOGGING_ROW = btn_idx++;
+					int LOG_LEVEL_ROW = btn_idx++;
 					int MUSIC_ROW = btn_idx++;
 					int LIGHTMAPS_ROW = btn_idx++;
 					int LIGHTMAPS_CALC_ROW = btn_idx++;
@@ -502,6 +517,28 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 						else if (x >= spinner.plus_left  && x < spinner.plus_left  + 22) AdjustAutoSaveInterval(10);
 						else if (x >= spinner.group_left && x < spinner.minus_left) ToggleAutoSave();
 					}
+					else if (btn_hit2(LOGGING_ROW)) {
+						Config::Get().enableLogging = !Config::Get().enableLogging;
+						Config::Save();
+						status_message_ = Config::Get().enableLogging ? "Logging: ON" : "Logging: OFF";
+					}
+					else if (btn_hit2(LOG_LEVEL_ROW)) {
+						const igi::PauseMenuSpinner spinner = igi::BuildPauseMenuSpinner(
+							pause_layout, igi::PauseMenuRowCenter(pause_layout, LOG_LEVEL_ROW),
+							PauseMenuTextWidth("Log Level", Config::Get().useEditorFont,
+								Config::Get().systemFontSize, pause_layout.text_scale), 78);
+						int& level = Config::Get().logLevelThreshold;
+						if (x >= spinner.minus_left && x < spinner.minus_left + 22) {
+							level = std::max(igi::kLogLevelDebug, level - 1);
+						} else if (x >= spinner.plus_left && x < spinner.plus_left + 22) {
+							level = std::min(igi::kLogLevelFatal, level + 1);
+						} else {
+							level = igi::ClampLogLevel(level);
+						}
+						Config::Get().debugLogging = level == igi::kLogLevelDebug;
+						Config::Save();
+						status_message_ = std::string("Log level: ") + igi::LogLevelLabel(level);
+					}
 					else if (btn_hit2(MUSIC_ROW)) { ToggleMusic(); }
 					else if (btn_hit2(LIGHTMAPS_ROW)) { igi::ObjectLightmapManager::Get().CycleRenderMode(); }
 					else if (btn_hit2(LIGHTMAPS_CALC_ROW)) {
@@ -537,7 +574,7 @@ else if (btn_hit2(MODE_ROW))   { ToggleGamePlayMode(); TogglePauseMenu(); }
 					}
 					else if (btn_hit2(RESET_ROW)) { ResetLevel(); TogglePauseMenu(); }
 					else if (btn_hit2(SAVE_ROW)) { SaveCurrentLevel(); }
-					else if (btn_hit2(QUIT_ROW)) { exit(0); }
+					else if (btn_hit2(QUIT_ROW)) { glutLeaveMainLoop(); }
 
 					pause_active_input_ = clicked_input;
 				} else {
