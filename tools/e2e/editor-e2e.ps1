@@ -203,18 +203,18 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root)
         'capture_window_state' { }
         'assert_file_hash' {
             if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'path'))) { Fail "$ScenarioName/$id requires path." }
-            Assert-DeclaredPathUnderRoot ([string](Get-Property $Step 'path')) $Root "$ScenarioName/$id"
+            [void](Assert-DeclaredPathUnderRoot ([string](Get-Property $Step 'path')) $Root "$ScenarioName/$id")
             Assert-Sha256 ([string](Get-Property $Step 'sha256')) "$ScenarioName/$id"
             if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
         }
         'snapshot_paths' {
             Assert-PathArray (Get-Property $Step 'paths') "$ScenarioName/$id"
-            foreach ($path in @(Get-Property $Step 'paths')) { Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id" }
+            foreach ($path in @(Get-Property $Step 'paths')) { [void](Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id") }
         }
         'restore_paths' {
             if ($null -ne (Get-Property $Step 'paths')) {
                 Assert-PathArray (Get-Property $Step 'paths') "$ScenarioName/$id"
-                foreach ($path in @(Get-Property $Step 'paths')) { Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id" }
+                foreach ($path in @(Get-Property $Step 'paths')) { [void](Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id") }
             }
         }
         'assert_log_count' {
@@ -710,6 +710,9 @@ function Invoke-RestorePaths($Record, [string]$Root, [string]$ScenarioDir, [stri
     $Record.restoreSummary = [ordered]@{ restored=@($records | Where-Object { $_.verified }).Count; total=$records.Count }
 }
 function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$OutputRoot) {
+    if ($null -eq $Scenario -or $Scenario -is [string] -or $null -eq (Get-Property $Scenario 'name')) {
+        Fail 'Runner encountered a non-scenario entry; manifest validation leaked an object into the scenario list.'
+    }
     $scenarioDir = Join-Path $OutputRoot ([string]$Scenario.name)
     New-Item -ItemType Directory -Path $scenarioDir -Force | Out-Null
     $logPath = Join-Path $Root 'igi1ed.log'
@@ -985,6 +988,10 @@ try {
     $GameRoot = Get-FullPath $GameRoot
     if (-not (Test-Path -LiteralPath $GameRoot)) { Fail "Game root not found: $GameRoot" }
     $scenarios = Validate-Manifest $manifest $GameRoot
+    $declaredCount = @($manifest.scenarios).Count
+    if (@($scenarios).Count -ne $declaredCount) {
+        Fail "Manifest validation returned $(@($scenarios).Count) scenarios but the manifest declares $declaredCount; a validation step leaked a value into the scenario list."
+    }
     if ($ValidateOnly) { Write-Host "Validated $(@($scenarios).Count) editor E2E scenarios."; exit 0 }
     if (-not [string]::IsNullOrWhiteSpace($ScenarioName)) {
         $scenarios = @($scenarios | Where-Object { $_.name -like $ScenarioName })
