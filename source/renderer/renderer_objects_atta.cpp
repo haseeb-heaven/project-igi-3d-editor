@@ -404,6 +404,10 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     std::vector<RESEntry> texEntries;
     std::set<std::string> seenTex;
     EnsureGlobalTextureMapLoaded();
+    // AddModelToLevelRes appends to the current archive. Refresh before
+    // resolving family textures so a previous import cannot leave a stale
+    // archive index hiding entries that are already packed on disk.
+    RefreshTextureResCache();
     for (const auto& fm : familyModels) {
         for (const std::string& texId : GetTextureIdsForModel(fm.first)) {
             if (!seenTex.insert(texId).second) continue; // dedupe across the family
@@ -420,6 +424,15 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
                 auto tit = texture_level_map_.find(texId);
                 if (tit != texture_level_map_.end() && tit->second != current_level_) {
                     LoadResCache(tit->second, Utils::GetIGIRootPath());
+                    texBytes = FindTextureData(texId);
+                }
+            }
+            if (texBytes.empty()) {
+                // DAT files are not guaranteed to provide a complete owner
+                // map for cross-level references. Search every packed texture
+                // archive using the same indexed reader used by rendering.
+                for (int level = 1; level <= 14 && texBytes.empty(); ++level) {
+                    LoadResCache(level, Utils::GetIGIRootPath());
                     texBytes = FindTextureData(texId);
                 }
             }
@@ -442,6 +455,9 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
             std::string terr;
             if (AddEntriesToRes(texturesRes, texEntries, terr, onProgress)) {
                 texAdded = (int)texEntries.size();
+                // PreloadModel runs immediately after this call. Re-index the
+                // appended archive so it sees the newly packed textures.
+                RefreshTextureResCache();
             } else {
                 Logger::Get().Log(LogLevel::WARNING, "[Renderer] AddModelToLevelRes: texture pack failed for family '" +
                     prefix + "': " + terr);

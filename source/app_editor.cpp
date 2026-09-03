@@ -53,10 +53,8 @@ void App::UpdateAIScriptPathHScroll() {
 }
 
 // ── AI Script editor — notepad-style helpers ───────────────────────────────
-// All of these gate on IsAIScriptTextFocused() so the editor-level
-// Ctrl+Z / Ctrl+F / Ctrl+N bindings still fire when other text fields are
-// being edited. Only the AI Script text field gets the full notepad
-// surface (Ctrl+C/V/X/A/Z/Y + mouse drag selection).
+// Text selection is shared by the property fields. The AI Script text field
+// additionally uses the full notepad surface (Ctrl+C/V/X/A/Z/Y + mouse drag).
 bool App::HasPropTextSelection() const {
 	return prop_text_sel_anchor_ >= 0 && prop_text_sel_focus_ >= 0
 		&& prop_text_sel_anchor_ != prop_text_sel_focus_;
@@ -68,13 +66,13 @@ void App::GetPropTextSelection(int& selStart, int& selEnd) const {
 	selEnd   = std::max(prop_text_sel_anchor_, prop_text_sel_focus_);
 }
 
-void App::AiScriptSelectAll() {
-	if (!IsAIScriptTextFocused()) return;
+void App::SelectPropTextAll() {
+	if (prop_text_edit_field_ == -1) return;
 	prop_text_sel_anchor_ = 0;
 	prop_text_sel_focus_  = (int)prop_text_buf_.size();
 	// Move caret to the end so subsequent typing replaces the selection.
 	prop_text_caret_ = (int)prop_text_buf_.size();
-	UpdateAIScriptScroll();
+	if (IsAIScriptTextFocused()) UpdateAIScriptScroll();
 }
 
 void App::PushAiTextUndo() {

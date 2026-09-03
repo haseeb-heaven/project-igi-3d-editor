@@ -657,6 +657,27 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 	bool altDown = (glutGetModifiers() & GLUT_ACTIVE_ALT) != 0 ||
 	               (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
 
+	// GLUT reports Ctrl+letter as the ASCII control character (Ctrl+A=1,
+	// Ctrl+W=23). The normal configurable binding path samples
+	// GetAsyncKeyState, which can miss that chord after the native key event has
+	// already been queued. Recognize the configured SaveState binding from the
+	// actual event as well, while still honoring its modifiers and key choice.
+	{
+		auto saveBinding = config.eventBindings_.find("SaveState");
+		if (saveBinding != config.eventBindings_.end() && saveBinding->second.ctrl &&
+			!saveBinding->second.shift && !saveBinding->second.alt && ctrlDown) {
+			const int vk = saveBinding->second.vkCode;
+			const bool isLetter = vk >= 'A' && vk <= 'Z';
+			const bool matchesEvent = key == vk ||
+				(isLetter && key == static_cast<unsigned char>(vk - 'A' + 1));
+			if (matchesEvent) {
+				CommitPropTextEdit();
+				SaveCurrentLevel();
+				return;
+			}
+		}
+	}
+
 	// Alt+H: toggle the gameplay HUD overlay (crosshair, health bar, weapon
 	// readout). Hidden by default until the vanilla presentation is finished.
 	if (altDown && (key == 'h' || key == 'H')) {
@@ -691,13 +712,19 @@ void App::Input_OnKeyboard(unsigned char key, int x, int y) {
 			const bool is_v = (key == 22 || key == 'v' || key == 'V');
 			const bool is_y = (key == 25 || key == 'y' || key == 'Y');
 			const bool is_z = (key == 26 || key == 'z' || key == 'Z');
-			if (is_a) { AiScriptSelectAll(); return; }
+			if (is_a) { SelectPropTextAll(); return; }
 			if (is_c) { AiScriptCopy();     return; }
 			if (is_x) { AiScriptCut();      return; }
 			if (is_v) { AiScriptPaste();    return; }
 			// Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
 			if (is_z) { if (shiftDown) AiScriptRedo(); else AiScriptUndo(); return; }
 			if (is_y) { AiScriptRedo(); return; }
+		}
+		// Ctrl+A is also valid for every focused property text/numeric box. The
+		// same selection state lets the next printable character replace its value.
+		if ((key == 1 || key == 'a' || key == 'A') && prop_text_edit_field_ != -1) {
+			SelectPropTextAll();
+			return;
 		}
 		if (key == 14 && !shiftDown) { // Ctrl+N only (not Ctrl+Shift+N — that's TaskFindByTaskNote)
 			// Only open when a property text box is focused, so Enter knows which

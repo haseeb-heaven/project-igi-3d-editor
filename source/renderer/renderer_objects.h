@@ -77,6 +77,8 @@ public:
     void LoadResCache(int levelNo, const std::string& igi_path);
     // Clear all .res indexes (called on level switch before LoadResCache for new level).
     void ClearResCache();
+    // Re-index the current level's texture archive after an editor-side append.
+    void RefreshTextureResCache();
 
     // Find texture/mesh bytes from the in-memory .res index.
     // Returns empty vector if not found (callers fall back to on-disk paths).

@@ -625,7 +625,7 @@ private:
   // prop_text_sel_*, and sync ai_script_text_ + ai_script_dirty_). Each
   // mutating op pushes an undo entry. No-ops if the AI Script editor isn't
   // focused.
-  void AiScriptSelectAll();
+  void SelectPropTextAll();
   void AiScriptCopy();
   void AiScriptCut();
   void AiScriptPaste();

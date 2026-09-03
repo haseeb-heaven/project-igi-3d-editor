@@ -304,9 +304,10 @@ std::string Renderer_Objects::FindTextureFile(const std::string& textureId) cons
         if (!result.empty()) return result;
     }
 
-    Logger::Get().Log(LogLevel::ERR,
-        "[TEX Native] Texture NOT FOUND: '" + textureId +
-        "' — searched level " + std::to_string(current_level_) + ", common, and all fallback paths.");
+    // This helper is also a speculative loose-file probe used before packed
+    // .res lookup. Do not report a hard error here: callers may still resolve
+    // the texture from an archive and the final GetOrLoadTexture warning is
+    // the authoritative missing-texture diagnostic.
     return "";
 }
 

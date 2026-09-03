@@ -375,6 +375,13 @@ void Renderer_Objects::ClearResCache() {
     Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] ResCache cleared");
 }
 
+void Renderer_Objects::RefreshTextureResCache() {
+    res_tex_indexes_.clear();
+    LoadResCache(current_level_, Utils::GetIGIRootPath());
+    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Refreshed texture .res index for level " +
+        std::to_string(current_level_));
+}
+
 void Renderer_Objects::LoadResCache(int levelNo, const std::string& igi_path) {
     // APPEND-ONLY: never clear existing indexes. Cross-level lazy calls add new
     // .res archives without evicting the current level's already-indexed files.

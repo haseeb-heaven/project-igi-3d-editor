@@ -152,3 +152,28 @@ Copy-Item bin\Release\fixtures\*     D:\IGI1\fixtures\      -Force
 ```
 
 > **Note:** Always deploy the `fixtures\` directory alongside `igi_tests.exe`. Without it, all fixture-dependent tests fail.
+
+---
+
+## Live editor end-to-end tests
+
+Google Test validates parsers and runtime policies, but it cannot prove that a visible editor accepts mouse/keyboard input, renders a level, imports a model with its textures, or preserves a change after restart. The data-driven live runner covers those paths with WMI-launched editor processes, Session 1 health checks, screenshots, bounded log/file assertions, and JSON/Markdown reports.
+
+Run from the installed game directory so the editor and all assets resolve consistently:
+
+```powershell
+Set-Location D:\IGI1
+$runner = 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1'
+$manifest = 'D:\Code\project-igi-editor\tools\e2e\scenarios\editor-regression.json'
+
+# Validate scenario structure without launching the editor
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $runner -GameRoot D:\IGI1 -ScenarioPath $manifest -ValidateOnly
+
+# Non-mutating smoke/regression scenarios
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $runner -GameRoot D:\IGI1 -ScenarioPath $manifest -ScenarioName 'level*'
+
+# Persistence, pause settings, and model import; explicitly allows game-data writes
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $runner -GameRoot D:\IGI1 -ScenarioPath $manifest -AllowGameDataMutation
+```
+
+Each run writes `run.json`, `run.md`, the copied manifest, one JSON record per scenario, and checkpoint/failure PNGs below `artifacts\e2e\`. Coordinates and optional `inputScale` are scenario data because display scaling is a machine/runtime property. Do not run mutating scenarios in parallel; they intentionally exercise the same installed editor state and reset their test edits through the UI where the manifest provides cleanup steps.
