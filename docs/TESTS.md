@@ -192,11 +192,13 @@ $matrix = 'D:\Code\project-igi-editor\artifacts\e2e\corpus-matrix-manifest.json'
 & 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -GameRoot D:\IGI1 -ScenarioPath $matrix -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\corpus-matrix-run'
 ```
 
-This executes one visible-editor scenario for each Level 1–14 and records load
-completion, resource-file presence, weather resolution, texture-miss
-diagnostics, viewport and pause screenshots, cursor visibility, and graceful
-shutdown. It complements the focused model-import, property-edit, save/reopen,
-and pause-setting scenarios above.
+This generates two visible-editor scenarios for each Level 1–14. The smoke
+scenario records load completion, resource-file presence, weather resolution,
+texture-miss diagnostics, viewport and pause screenshots, cursor-state
+transitions, and graceful shutdown. The terrain scenario presses `T` and
+requires the terrain-edit palette in its screenshot. It complements the
+focused model-import, property-edit, save/reopen, and pause-setting scenarios
+above.
 
 ### Visual regression gate
 

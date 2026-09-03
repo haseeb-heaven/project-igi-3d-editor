@@ -17,7 +17,7 @@ $script:SupportedSteps = @(
     'key', 'key_hold', 'click', 'type_text', 'wait', 'screenshot',
     'assert_screenshot_region', 'assert_screenshot_color_ratio',
     'assert_screenshot_difference', 'assert_log', 'mark_log', 'assert_file',
-    'assert_path', 'assert_cursor_visible', 'close_editor'
+    'assert_path', 'assert_cursor_visible', 'assert_cursor_hidden', 'close_editor'
 )
 
 function Fail([string]$Message) {
@@ -118,6 +118,7 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
             if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
         }
         'assert_cursor_visible' { }
+        'assert_cursor_hidden' { }
     }
 }
 function Validate-Manifest($Manifest) {
@@ -474,6 +475,10 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         if (-not [EditorE2E_Native]::CursorVisible()) { Fail 'Mouse cursor is not visible.' }
                         $record.cursorVisible = $true
                     }
+                    'assert_cursor_hidden' {
+                        if ([EditorE2E_Native]::CursorVisible()) { Fail 'Native mouse cursor is still visible.' }
+                        $record.cursorVisible = $false
+                    }
                     'screenshot' {
                         Focus-Editor $process
                         $file = Join-Path $scenarioDir (([string]$step.name) + '.png')
@@ -513,7 +518,7 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         $closed = Close-Editor $process $force
                         if ($null -ne $closed) {
                             $record.exited = $closed.exited; $record.exitCode = $closed.exitCode; $record.forced = $closed.forced
-                            if (-not $force -and $closed.exited -and $closed.exitCode -ne 0) { Fail "Editor exited with code $($closed.exitCode) during graceful close." }
+                            if (-not $force -and $closed.exited -and $null -ne $closed.exitCode -and $closed.exitCode -ne 0) { Fail "Editor exited with code $($closed.exitCode) during graceful close." }
                         }
                         $process = $null
                     }

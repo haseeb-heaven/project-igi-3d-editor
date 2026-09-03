@@ -46,11 +46,12 @@ $matrix = 'D:\Code\project-igi-editor\artifacts\e2e\corpus-matrix-manifest.json'
 & 'D:\Code\project-igi-editor\tools\e2e\test-editor-corpus.ps1'
 ```
 
-The generated matrix has one scenario per installed Level 1–14. Each scenario
-checks load completion, required level archives, authored weather resolution,
-texture-miss diagnostics, viewport rendering, pause-menu rendering, cursor
-visibility, and graceful process exit. Run it serially with an explicit
-artifacts directory:
+The generated matrix has two scenarios per installed Level 1–14. The smoke
+scenario checks load completion, required level archives, authored weather
+resolution, texture-miss diagnostics, viewport/pause rendering, native cursor
+visibility while paused, custom-cursor resumption after pause, and graceful
+process exit. The terrain scenario presses `T` and requires the terrain-edit
+palette in a screenshot. Run it serially with an explicit artifacts directory:
 
 ```powershell
 & 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' `
