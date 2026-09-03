@@ -1071,9 +1071,8 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 if (s.alphaMode == 2) { attHasAlpha = true; break; }
             }
         }
-        if (current_level_ == 12 && !attIsWindow) {
-            attHasAlpha = false;
-        }
+        // No level-12 forced-opaque case: it discarded the winch-house ARGB
+        // glass in the opaque pass (invisible until ATTA promotion).
 
         // Skip this sub-model if it doesn't belong in the current pass:
         //   Windows: transparent pass only
@@ -1111,9 +1110,6 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 // In the transparent pass, only draw alpha submeshes (with blending).
                 // In the opaque pass, draw everything — the shader discards α<0.5 pixels.
                 bool subNeedsBlend = (sub.alphaMode == 2);
-                if (current_level_ == 12 && !attIsWindow) {
-                    subNeedsBlend = false;
-                }
                 if (attIsTree) subNeedsBlend = false;
                 if (isTransparentPass && !attIsWindow && !subNeedsBlend) continue;
 
@@ -1164,6 +1160,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         if (attIsWindow) {
             glDisable(GL_BLEND);
             glUniform1f(loc_alpha, 1.0f);
+            glUniform1f(loc_glass_min_, 0.0f); // don't leak the glass sheen floor
         }
 
         // Recurse into this attachment's own children

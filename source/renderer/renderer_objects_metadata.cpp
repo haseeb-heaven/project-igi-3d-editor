@@ -117,9 +117,11 @@ void Renderer_Objects::EnsureWindowModelIdsLoaded() {
         pos = idEnd + 1;
     }
 
-    // These glass-room shells in level 12 must render opaque (solid walls, not see-through).
-    window_model_ids_.erase("463_03_1");
-    window_model_ids_.erase("463_04_1");
+    // NOTE: 463_03_1 / 463_04_1 (level-12 winch-house glass-room shells) used to
+    // be erased here to force them opaque. That sent their real-alpha texels to
+    // the opaque pass's alpha cutout, which discarded them — the glass building
+    // was invisible until an ATTA promotion redraw. They keep their normal
+    // window/glass classification now.
 
     Logger::Get().Log(LogLevel::INFO,
         "[Renderer_Objects] Loaded " + std::to_string(window_model_ids_.size()) +

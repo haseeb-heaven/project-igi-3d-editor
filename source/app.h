@@ -302,7 +302,11 @@ private:
 	// object's task type doesn't carry lightmap bindings.
 	void CalculateLightmapForSelectedObject();
 	void CalculateLightmapsForAllObjects(); // Escape-menu Lightmaps checkbox ON: every Building/EditRigidObj in the level
-	size_t ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath); // shared resolve+convert+upload core
+	// shared resolve+convert+upload core. olm_from_recalc: the .olm on disk was
+	// just re-baked toward the object's live pose (record that as bake pose);
+	// otherwise record the authored QSC pose the shipped bake was made at.
+	size_t ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath,
+	                               bool olm_from_recalc = false);
 	// Bake the current orientation's re-light into one object's .olm files (game
 	// write-back). Returns true if files were rewritten. Used by Save write-back.
 	bool RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath, bool force = false);

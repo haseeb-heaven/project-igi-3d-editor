@@ -331,7 +331,10 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix(); glLoadIdentity();
 
-	int pw = 340, ph = 84;
+	// Panel and text scale with the pause-menu Font Size (12 is the baseline)
+	// so loading progress is readable instead of tiny.
+	const float uiScale = Config::Get().systemFontSize / 12.0f;
+	int pw = (int)(340 * uiScale), ph = (int)(84 * uiScale);
 	int px = (vw - pw) / 2, py = (vh - ph) / 2;
 	glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(0.0f, 0.15f, 0.0f, 0.9f);
@@ -344,7 +347,7 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 	glVertex2i(px, py); glVertex2i(px+pw, py);
 	glVertex2i(px+pw, py+ph); glVertex2i(px, py+ph);
 	glEnd();
-	int bx = px+20, by = py+18, bw = pw-40, bh = 12;
+	int bx = px+20, by = py+18, bw = pw-40, bh = (int)(12 * uiScale);
 	glColor3f(0.0f, 0.3f, 0.0f);
 	glBegin(GL_QUADS);
 	glVertex2i(bx, by); glVertex2i(bx+bw, by);
@@ -361,9 +364,12 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 	char msg[160];
 	snprintf(msg, sizeof(msg), "%s  -  %d%%  (%s)", title ? title : "", pct, stage ? stage : "");
 	glColor3f(0.0f, 0.9f, 0.0f);
-	glRasterPos2i(px + 20, py + ph - 18);
+	void* overlayFont = (Config::Get().systemFontSize >= 15) ? GLUT_BITMAP_HELVETICA_18
+	                  : (Config::Get().systemFontSize <= 11) ? GLUT_BITMAP_HELVETICA_10
+	                                                         : GLUT_BITMAP_HELVETICA_12;
+	glRasterPos2i(px + 20, py + ph - (int)(18 * uiScale));
 	for (const char* c = msg; *c; ++c)
-		glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, *c);
+		glutBitmapCharacter(overlayFont, *c);
 
 	glMatrixMode(GL_PROJECTION); glPopMatrix();
 	glMatrixMode(GL_MODELVIEW);  glPopMatrix();

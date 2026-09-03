@@ -106,6 +106,7 @@ uniform int   u_useTexture;
 uniform sampler2D u_lightmap;
 uniform int   u_useLightmap;   // 0 = no baked lightmap for this submesh
 uniform vec3  u_lightmapScale; // live re-light scale when object was moved since bake
+uniform int   u_lm_authentic;  // Baked mode: exact diffuse x lightmap multiply, like the original engine
 uniform float u_alpha;
 uniform vec4  u_baseColor;
 uniform vec3  u_tint;
@@ -134,7 +135,14 @@ void main() {
     vec3 light = hemi + u_dirlight * (diff + backFill + spec);
 
     vec4 texColor = (u_useTexture != 0) ? texture(u_texture, v_uv) : u_baseColor;
-    float finalAlpha = (u_useTexture != 0 ? texColor.a : 1.0) * u_alpha;
+    // Alpha of blended submeshes (glass, alpha-routed floors) must not decay
+    // with mip level: glGenerateMipmap averages the alpha channel, so distant
+    // fragments faded and then hit the cutout discard — whole building floors
+    // washed out / vanished at range. Sample mip 0 for the blended case;
+    // true opaque cutouts (u_alpha ~ 1.0) keep mip-filtered cutout behavior.
+    float texA = (u_alpha >= 0.99) ? texColor.a
+                                   : textureLod(u_texture, v_uv, 0.0).a;
+    float finalAlpha = (u_useTexture != 0 ? texA : 1.0) * u_alpha;
 
     if (u_glassMin > 0.0) {
         finalAlpha = max(finalAlpha, u_glassMin);
@@ -145,18 +153,22 @@ void main() {
     if (u_useLightmap != 0) {
         vec2 olmUV = vec2(v_uv2.x, 1.0 - v_uv2.y);
         vec3 lm = texture(u_lightmap, olmUV).rgb * u_lightmapScale;
-        // Warm ambient floor: no lightmapped face should be black.
-        // OLM stores absolute lighting; dark faces get lifted to warm minimum.
-        lm = max(lm, u_ambient * 0.90);
+        if (u_lm_authentic == 0) {
+            // Warm ambient floor: no lightmapped face should be black.
+            // OLM stores absolute lighting; dark faces get lifted to warm minimum.
+            lm = max(lm, u_ambient * 0.90);
+        }
         litColor = texColor.rgb * lm * u_tint;
     } else {
         litColor = light * texColor.rgb * u_tint;
     }
 
-    litColor = pow(max(litColor, 0.0), vec3(u_gamma));
+    if (u_lm_authentic == 0) {
+        litColor = pow(max(litColor, 0.0), vec3(u_gamma));
+    }
     fragColor = vec4(litColor, finalAlpha);
 
-    if (u_glassMin <= 0.0 && u_alpha >= 0.9 && texColor.a < 0.75) discard;
+    if (u_glassMin <= 0.0 && u_alpha >= 0.99 && texA < 0.75) discard;
     if (fragColor.a < 0.01) discard;
 }
 )";
@@ -605,6 +617,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
     }
     GLint loc_gamma = glGetUniformLocation(shader_program_, "u_gamma");
     glUniform1f(loc_gamma, global_gamma_);
+    GLint loc_lm_authentic = glGetUniformLocation(shader_program_, "u_lm_authentic");
+    glUniform1i(loc_lm_authentic, 0);
     GLint loc_lightmap_scale = glGetUniformLocation(shader_program_, "u_lightmapScale");
     GLint loc_useTex   = glGetUniformLocation(shader_program_, "u_useTexture");
     GLint loc_tex      = glGetUniformLocation(shader_program_, "u_texture");
@@ -795,9 +809,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 if (sub.alphaMode == 2) { hasArgbSubMeshes = true; break; }
             }
         }
-        if (current_level_ == 12 && !isWindowModel) {
-            hasArgbSubMeshes = false;
-        }
+        // NOTE: no level-12 forced-opaque special case here anymore. It routed
+        // the winch-house ARGB glass (463_0x_1) into the opaque pass, where the
+        // shader's alpha cutout discarded every texel — the building rendered
+        // invisible until an ATTA promotion redrew it as a normal object.
         // A model belongs in this pass if: it's a uniform transparent/opaque
         // object that matches the pass, OR it has mixed sub-meshes and we draw
         // it in both passes (filtering per-sub-mesh below).
@@ -908,9 +923,6 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
 
                     bool isBlendSub = (sub.alphaMode == 2);
-                    if (current_level_ == 12 && !isWindowModel) {
-                        isBlendSub = false;
-                    }
                     if (isTreeModel) isBlendSub = false;
 
                     if (isBlendSub) {
@@ -966,11 +978,15 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     // Lightmap: bind unit 1 if this submesh has a baked lightmap and mode is not Off.
                     auto curMode = igi::ObjectLightmapManager::Get().GetRenderMode();
                     if (curMode != igi::LightmapRenderMode::Off && hasWorkingLightmap && si < lightmaps->size() && (*lightmaps)[si] != 0) {
-                        glm::vec3 scale = blockScale(sub.avgNormal);
+                        // Baked mode reproduces the original engine exactly: the bake is
+                        // used verbatim, with no live sun re-light modulation.
+                        const bool authentic = (curMode == igi::LightmapRenderMode::Baked);
+                        glm::vec3 scale = authentic ? glm::vec3(1.0f) : blockScale(sub.avgNormal);
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, (*lightmaps)[si]);
                         glUniform1i(loc_lightmap, 1);
                         glUniform1i(loc_useLightmap, 1);
+                        glUniform1i(loc_lm_authentic, authentic ? 1 : 0);
                         glUniform3f(loc_lightmap_scale, scale.r, scale.g, scale.b);
                     } else {
                         glUniform1i(loc_useLightmap, 0);
@@ -1065,6 +1081,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                 glDisable(GL_BLEND);
                 glDepthMask(GL_TRUE);
                 glUniform1f(loc_alpha, 1.0f);
+                // Window ATTA children leave u_glassMin raised (0.30), which
+                // would make every later object skip the alpha cutout.
+                glUniform1f(loc_glass_min_, 0.0f);
                 glDisable(GL_POLYGON_OFFSET_FILL);
             }
         }

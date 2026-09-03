@@ -312,12 +312,14 @@ static void DrawFontText(int x, int y_gl, const char* str, float r, float g, flo
 }
 
 // Draw a string with the small editor bitmap font (editorsm.fnt) for tooltips.
-static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, float b) {
+// scale mirrors DrawFontText so tooltip text honors the pause-menu Font Size
+// instead of rendering the tiny native bitmap size.
+static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, float b, float scale = 1.0f) {
   if (!g_editorSmFont.valid || !g_editorSmFontTex) {
     return;
   }
 
-  const int spaceAdvance = g_editorSmFont.defaultAdvance > 0 ? g_editorSmFont.defaultAdvance : 4;
+  const float spaceAdvance = (g_editorSmFont.defaultAdvance > 0 ? g_editorSmFont.defaultAdvance : 4) * scale;
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, g_editorSmFontTex);
@@ -325,15 +327,15 @@ static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, f
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glColor4f(r, g, b, 1.0f); // Use glColor4f to ensure alpha is 1
 
-  int pen_x = x;
-  int pen_y = y_gl;
+  float pen_x = (float)x;
+  float pen_y = (float)y_gl;
 
   glBegin(GL_QUADS);
   for (const char* p = str; *p; ++p) {
     unsigned char c = (unsigned char)*p;
     if (c == '\n') {
-      pen_x = x;
-      pen_y -= g_editorSmFont.lineHeight;
+      pen_x = (float)x;
+      pen_y -= g_editorSmFont.lineHeight * scale;
       continue;
     }
 
@@ -344,17 +346,17 @@ static void DrawFontTextSm(int x, int y_gl, const char* str, float r, float g, f
     }
 
     const FntGlyph& gl = it->second;
-    float x0 = (float)pen_x + gl.offsetX;
-    float x1 = x0 + gl.width;
-    float yTop = (float)pen_y - gl.offsetY;
-    float yBot = yTop - gl.height;
+    float x0 = pen_x + gl.offsetX * scale;
+    float x1 = x0 + gl.width * scale;
+    float yTop = pen_y - gl.offsetY * scale;
+    float yBot = yTop - gl.height * scale;
 
     glTexCoord2f(gl.u0, gl.v0); glVertex2f(x0, yTop);
     glTexCoord2f(gl.u1, gl.v0); glVertex2f(x1, yTop);
     glTexCoord2f(gl.u1, gl.v1); glVertex2f(x1, yBot);
     glTexCoord2f(gl.u0, gl.v1); glVertex2f(x0, yBot);
 
-    pen_x += gl.advance;
+    pen_x += gl.advance * scale;
   }
   glEnd();
 
@@ -602,7 +604,11 @@ void Renderer::Draw(const draw_params_s &params,
       }
     };
 
-    // draw_text_sm: uses editorsm.fnt bitmap font for tooltip text.
+    // draw_text_sm: uses editorsm.fnt bitmap font for tooltip text, scaled by
+    // the pause-menu Font Size like every other UI text (12 is the baseline).
+    const float smScale = uiFontScale;
+    const int smLineH = g_editorSmFont.valid && g_editorSmFont.lineHeight > 0
+        ? (int)(g_editorSmFont.lineHeight * smScale) + 2 : uiLineH;
     auto draw_text_sm = [&](int x, int y, const char *str, float r, float g,
                             float b) {
       if (useEditorFont && g_editorSmFont.valid && g_editorSmFontTex) {
@@ -611,24 +617,24 @@ void Renderer::Draw(const draw_params_s &params,
         int line_y = y;
         while (std::getline(ss, line)) {
           int y_gl = params.view_define_->viewport_height_ - line_y;
-          DrawFontTextSm(x + 1, y_gl - 1, line.c_str(), 0.0f, 0.0f, 0.0f);
-          DrawFontTextSm(x, y_gl, line.c_str(), r, g, b);
-          line_y += g_editorSmFont.lineHeight > 0 ? g_editorSmFont.lineHeight + 2 : 15;
+          DrawFontTextSm(x + 1, y_gl - 1, line.c_str(), 0.0f, 0.0f, 0.0f, smScale);
+          DrawFontTextSm(x, y_gl, line.c_str(), r, g, b, smScale);
+          line_y += smLineH;
         }
         return;
       }
-      // Fallback: GLUT bitmap font (smaller).
+      // Fallback: GLUT bitmap font, sized by the configured UI font size.
       std::stringstream ss(str);
       std::string line;
       int line_y = y;
       while (std::getline(ss, line)) {
         glColor3f(0.0f, 0.0f, 0.0f);
         glRasterPos2i(x + 1, params.view_define_->viewport_height_ - line_y - 1);
-        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_10, c);
+        for (char c : line) glutBitmapCharacter(uiGlutFont, c);
         glColor3f(r, g, b);
         glRasterPos2i(x, params.view_define_->viewport_height_ - line_y);
-        for (char c : line) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_10, c);
-        line_y += 13;
+        for (char c : line) glutBitmapCharacter(uiGlutFont, c);
+        line_y += uiLineH;
       }
     };
 
@@ -1011,12 +1017,12 @@ void Renderer::Draw(const draw_params_s &params,
 
     if (tooltip_x < 10)
       tooltip_x = 10;
-    if (tooltip_x > params.view_define_->viewport_width_ - 260)
-      tooltip_x = params.view_define_->viewport_width_ - 260;
+    if (tooltip_x > params.view_define_->viewport_width_ - (int)(260 * smScale))
+      tooltip_x = params.view_define_->viewport_width_ - (int)(260 * smScale);
     if (tooltip_y < 10)
       tooltip_y = 10;
-    if (tooltip_y > params.view_define_->viewport_height_ - 100)
-      tooltip_y = params.view_define_->viewport_height_ - 100;
+    if (tooltip_y > params.view_define_->viewport_height_ - (int)(100 * smScale))
+      tooltip_y = params.view_define_->viewport_height_ - (int)(100 * smScale);
 
     if (info_object_index >= 0 && task_tree_view.level_objects_) {
       const auto &objects = task_tree_view.level_objects_->GetObjects();
@@ -1043,12 +1049,12 @@ void Renderer::Draw(const draw_params_s &params,
           std::string aiName = obj.name.empty() ? "AI Soldier" : obj.name;
           snprintf(buf, sizeof(buf), "Name: %s (Type: %s)", aiName.c_str(), obj.type.c_str());
           draw_text_sm(text_x, text_y, buf, 0.0f, 0.8f, 1.0f); // Sky blue title
-          text_y += 15;
+          text_y += smLineH;
 
           snprintf(buf, sizeof(buf), "Soldier ID: %s | AI ID: %s",
                    task_id.c_str(), obj.aiId.empty() ? "-1" : obj.aiId.c_str());
           draw_text_sm(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-          text_y += 15;
+          text_y += smLineH;
 
           // Read Team from argTokens via schema (more accurate than obj.team)
           int teamVal = obj.team;
@@ -1069,37 +1075,37 @@ void Renderer::Draw(const draw_params_s &params,
           float tb = 0.2f;
           snprintf(buf, sizeof(buf), "Team: %s (%d)", teamStr.c_str(), teamVal);
           draw_text_sm(text_x, text_y, buf, tr, tg, tb);
-          text_y += 15;
+          text_y += smLineH;
 
           if (!obj.primaryWeapon.empty()) {
             snprintf(buf, sizeof(buf), "Pri: %s (%s Ammo)",
                      obj.primaryWeapon.c_str(), obj.primaryAmmo.c_str());
             draw_text_sm(text_x, text_y, buf, 0.9f, 0.9f, 0.9f);
-            text_y += 15;
+            text_y += smLineH;
           }
 
           if (!obj.secondaryWeapon.empty()) {
             snprintf(buf, sizeof(buf), "Sec: %s (%s Ammo)",
                      obj.secondaryWeapon.c_str(), obj.secondaryAmmo.c_str());
             draw_text_sm(text_x, text_y, buf, 0.8f, 0.8f, 0.8f);
-            text_y += 15;
+            text_y += smLineH;
           }
 
           if (!obj.graphName.empty() || !obj.graphId.empty()) {
             snprintf(buf, sizeof(buf), "Graph: %s (ID: %s)",
                      obj.graphName.c_str(), obj.graphId.c_str());
             draw_text_sm(text_x, text_y, buf, 0.9f, 0.6f, 0.9f);
-            text_y += 15;
+            text_y += smLineH;
           }
         } else {
           snprintf(buf, sizeof(buf), "%s ID: %s", display_name.c_str(),
                    task_id.c_str());
           draw_text_sm(text_x, text_y, buf, 1.0f, 1.0f, 1.0f);
-          text_y += 15;
+          text_y += smLineH;
 
           snprintf(buf, sizeof(buf), "%s", obj.modelId.c_str());
           draw_text_sm(text_x, text_y, buf, 0.0f, 1.0f, 0.0f);  // always green
-          text_y += 15;
+          text_y += smLineH;
         }
 
         if (!task_tree_view.status_msg_.empty() &&

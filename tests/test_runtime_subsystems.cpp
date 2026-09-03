@@ -42,6 +42,7 @@
 #include "../source/runtime/pause_menu_state.h"
 #include "../source/runtime/pause_menu_font.h"
 #include "../source/runtime/auto_save_policy.h"
+#include "../source/runtime/lightmap_recalc_policy.h"
 #include "../source/runtime/progress_overlay_policy.h"
 #include "../source/runtime/window_style_policy.h"
 #include "../source/utils.h"
@@ -477,6 +478,41 @@ TEST(WindowStylePolicyTest, BorderlessFullscreenStripsAllChrome) {
     EXPECT_EQ(borderless & igi::kWinStylePopup, igi::kWinStylePopup);
     // Unrelated bits (visibility, clipping) must survive the restyle.
     EXPECT_EQ(borderless & igi::kWinStyleVisible, igi::kWinStyleVisible);
+}
+
+// --rot-orig must be the pose the .olm on disk was baked at. Using the live
+// pose for both ends (or recording it as the bake origin) makes the rotation
+// delta zero, so rotating a building then recalculating was a silent no-op.
+TEST(LightmapRecalcPolicyTest, RecalcOriginUsesDiskBakePoseNotLivePose) {
+    glm::dvec3 authored(10.0, 20.0, 30.0);
+    glm::dvec3 rotated(40.0, 50.0, 60.0);
+    const igi::LightmapRecalcPoses poses = igi::ComputeLightmapRecalcPoses(
+        {true, authored, authored, authored, authored, authored, rotated});
+    EXPECT_EQ(poses.orig_rot, authored);   // disk bake orientation...
+    EXPECT_EQ(poses.new_rot, rotated);     // ...toward the live pose: nonzero delta
+    EXPECT_EQ(poses.orig_pos, authored);
+}
+
+TEST(LightmapRecalcPolicyTest, RecalcWithoutBakePoseFallsBackToAuthoredPose) {
+    glm::dvec3 authored(1.0, 2.0, 3.0);
+    glm::dvec3 moved(9.0, 9.0, 9.0);
+    const igi::LightmapRecalcPoses poses = igi::ComputeLightmapRecalcPoses(
+        {false, {}, {}, authored, authored, moved, authored});
+    EXPECT_EQ(poses.orig_rot, authored);   // shipped .olm was baked at authored pose
+    EXPECT_EQ(poses.orig_pos, authored);
+    EXPECT_EQ(poses.new_pos, moved);
+}
+
+TEST(LightmapRecalcPolicyTest, RecordedBakePoseTracksWhatTheDiskOlmEncodes) {
+    glm::dvec3 authored(1.0, 2.0, 3.0);
+    glm::dvec3 live(4.0, 5.0, 6.0);
+    const igi::LightmapBakeOrigin in{
+        true, authored, authored, authored, authored, live, live};
+    // Shipped/reloaded bake: the authored pose stays the recorded origin...
+    EXPECT_EQ(igi::RecordedBakeRot(in, false), authored);
+    // ...but right after a recalc the .olm encodes the live pose.
+    EXPECT_EQ(igi::RecordedBakeRot(in, true), live);
+    EXPECT_EQ(igi::RecordedBakePos(in, true), live);
 }
 
 TEST(PauseMenuMusicTest, FailedStartDoesNotPersistEnabledState) {

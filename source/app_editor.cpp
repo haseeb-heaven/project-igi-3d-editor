@@ -7,6 +7,7 @@
 #include "app_internal.h"
 #include "runtime/auto_save_policy.h"
 #include "runtime/editor_history.h"
+#include "runtime/lightmap_recalc_policy.h"
 
 std::string App::StripQuotes(const std::string& s) {
 	if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
@@ -337,7 +338,8 @@ bool EnsureLightmapsUnpacked(const std::string& levelDir, std::string& err) {
 // Resolves + converts + uploads the lightmap textures for one Building/EditRigidObj,
 // given an already-decompiled objects.qsc sitting next to the real lightmaps/ dir.
 // Returns the number of textures uploaded (0 = no binding / all conversions failed).
-size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath) {
+size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath,
+                                    bool olm_from_recalc) {
 	// taskId="-1" (nested/ATTA tasks) can't be disambiguated by task id — resolve
 	// by the object's authored position instead. The stored lightmap is keyed the
 	// same way (LightmapTaskKey) so the renderer finds it.
@@ -382,7 +384,18 @@ size_t App::ResolveAndApplyLightmap(LevelObject& obj, const std::string& qscPath
 			Logger::Get().Log(LogLevel::INFO, "[Lightmap][1117] olm[" + std::to_string(i) + "] = " + fn);
 		}
 	}
-	renderer_.SetLightmapForTask(key, std::move(textures), obj.pos, obj.rot);
+	// Record the pose the bound .olm was baked at: the authored QSC pose for
+	// shipped/reloaded bakes, or the live pose when the .olm was just
+	// recalculated toward it. Recording the live pose unconditionally made the
+	// next recalc compute a zero rotation delta (an identity no-op).
+	glm::dvec3 prevBakedPos, prevBakedRot;
+	const bool hasBake = renderer_.GetLightmapBakePose(key, prevBakedPos, prevBakedRot);
+	const igi::LightmapBakeOrigin bake_origin{
+	    hasBake, prevBakedPos, prevBakedRot,
+	    obj.original_pos, obj.original_rot, obj.pos, glm::dvec3(obj.rot)};
+	renderer_.SetLightmapForTask(key, std::move(textures),
+	                             igi::RecordedBakePos(bake_origin, olm_from_recalc),
+	                             igi::RecordedBakeRot(bake_origin, olm_from_recalc));
 	return uploaded;
 }
 
@@ -462,13 +475,12 @@ void App::CalculateLightmapForSelectedObject() {
 			if (RecalcLightmapToOlm(objects[ci], qscPath, /*force=*/true)) ++baked;
 	}
 
-	// Step 3: reload the freshly baked .olm into the GPU texture.
 	if (baked > 0) {
 		DrawProgressOverlay("Calculating Lightmap", 80, "reloading into viewport");
-		ResolveAndApplyLightmap(obj, qscPath);
+		ResolveAndApplyLightmap(obj, qscPath, /*olm_from_recalc=*/true);
 		for (int ci : obj.childrenIndices) {
 			if (ci >= 0 && ci < (int)objects.size())
-				ResolveAndApplyLightmap(objects[ci], qscPath);
+				ResolveAndApplyLightmap(objects[ci], qscPath, /*olm_from_recalc=*/true);
 		}
 	}
 
@@ -509,14 +521,16 @@ bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath, bool
 	if (obj.taskId.empty() || obj.taskId == "-1") return false; // recalc CLI needs a real task id
 	const std::string key = LightmapTaskKey(obj);
 	glm::dvec3 bakedPos, bakedRot;
-	if (!renderer_.GetLightmapBakePose(key, bakedPos, bakedRot)) {
-		// No bake pose yet — treat current pose as both old and new so the
-		// CLI can still recalculate from the object's current position.
-		if (!force) return false;
-		bakedPos = obj.pos;
-		bakedRot = glm::dvec3(obj.rot);
-	}
-	if (!force && glm::length(obj.rot - bakedRot) < 0.01 && glm::length(obj.pos - bakedPos) < 1.0) return false; // unmoved
+	const bool hasBake = renderer_.GetLightmapBakePose(key, bakedPos, bakedRot);
+	// --rot-orig must be the pose the .olm on disk was baked at: the recorded
+	// bake pose, or the authored QSC pose when nothing is recorded. Using the
+	// live pose for both ends made the delta zero and the recalc a no-op.
+	const igi::LightmapBakeOrigin bake_origin{
+	    hasBake, bakedPos, bakedRot,
+	    obj.original_pos, obj.original_rot, obj.pos, glm::dvec3(obj.rot)};
+	const igi::LightmapRecalcPoses poses = igi::ComputeLightmapRecalcPoses(bake_origin);
+	if (!force && glm::length(poses.new_rot - poses.orig_rot) < 0.01 &&
+	    glm::length(poses.new_pos - poses.orig_pos) < 1.0) return false; // unmoved
 
 	std::string mefPath = renderer_.GetOrExtractMefTemp(obj.modelId, obj.isBuilding);
 	if (mefPath.empty()) {
@@ -525,7 +539,7 @@ bool App::RecalcLightmapToOlm(LevelObject& obj, const std::string& qscPath, bool
 	}
 	std::string recalcErr;
 	bool ok = igi1conv::LightmapRecalc(obj.modelId, qscPath, obj.taskId, mefPath,
-		bakedRot, obj.rot, renderer_.GetSunDir(), renderer_.GetSunFrontColor(), renderer_.GetGlobalAmbient(), recalcErr);
+		poses.orig_rot, poses.new_rot, renderer_.GetSunDir(), renderer_.GetSunFrontColor(), renderer_.GetGlobalAmbient(), recalcErr);
 	if (!ok) {
 		Logger::Get().Log(LogLevel::WARNING, "[Lightmap] Write-back recalc failed for taskId=" + obj.taskId + ": " + recalcErr);
 		return false;
@@ -588,10 +602,10 @@ void App::AutoRecalcLightmapForManipulated(int objIndex) {
 	}
 
 	// Reload the updated .olm into the GPU texture for immediate visual feedback.
-	ResolveAndApplyLightmap(obj, qscPath);
+	ResolveAndApplyLightmap(obj, qscPath, /*olm_from_recalc=*/true);
 	for (int ci : obj.childrenIndices) {
 		if (ci >= 0 && ci < (int)objects.size())
-			ResolveAndApplyLightmap(objects[ci], qscPath);
+			ResolveAndApplyLightmap(objects[ci], qscPath, /*olm_from_recalc=*/true);
 	}
 
 	std::error_code qscEc; std::filesystem::remove(qscPath, qscEc);
