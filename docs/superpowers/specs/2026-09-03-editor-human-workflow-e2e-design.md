@@ -40,6 +40,12 @@ level; weather cases distinguish inactive, active exterior, and selected
 indoor-building views where the corpus provides them. The report lists every
 exclusion with its corpus reason. Silent skips are forbidden.
 
+The corpus inventory is exhaustive for object instances and referenced assets,
+not a sample. Each object receives a stable level/task/model anchor, authored
+position/orientation, referenced textures, available LODs, and sound references.
+The inventory is hashed so changed level data produces a new manifest instead
+of silently reusing old anchors.
+
 ## Workflow coverage
 
 ### Every level
@@ -68,6 +74,21 @@ restore sequence. Corpus validation resolves every referenced model/texture.
 The visible model-picker imports at least one member of every discovered model
 family and asserts registration, applied textures, non-empty rendered geometry,
 and no texture-miss diagnostic.
+
+Every renderable object instance also receives a deterministic camera orbit:
+front, back, left, right, top, bottom, and four diagonal views where geometry
+permits. Each view asserts projected presence and stable authored transform.
+Texture coverage cross-checks every material reference against the resolved
+archive and requires a non-empty live assignment. Models with LODs repeat the
+orbit at each available LOD distance. Failures retain task ID, model ID, angle,
+screenshot, and resolver diagnostics.
+
+Sound coverage inventories every referenced sound and resolved archive path.
+The visible workflow triggers each sound-capable object or menu control when a
+deterministic trigger exists, checks resolution and process health, and records
+non-triggerable sounds as explicit inventory results. Object creation scenarios
+use a disposable level copy: create, set transform/model/material, save,
+reload, delete, and verify exact restoration of the original files.
 
 ### Graphs, AI, and animations
 
