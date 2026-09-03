@@ -26,12 +26,28 @@ function Get-IndependentTaskIds([string]$Source) {
     return $taskIds.ToArray()
 }
 
+function New-RunnerFixtureFile([string]$Path, $Manifest) {
+    $Manifest | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+function Invoke-RunnerValidate([string]$ManifestPath) {
+    # Run the child out of process so an intentional validation rejection cannot
+    # be promoted by this script's $ErrorActionPreference; the exit code and
+    # rendered message stay authoritative.
+    $lines = @(& pwsh -NoProfile -ExecutionPolicy Bypass -File $runner -ValidateOnly -ScenarioPath $ManifestPath 2>&1)
+    return [pscustomobject]@{ ExitCode = [int]$LASTEXITCODE; Output = ($lines | Out-String) }
+}
+function Assert-OutputContains([string]$Text, [string]$Keyword, [string]$CaseLabel) {
+    Require ($Text.IndexOf($Keyword, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) "$CaseLabel output did not mention '$Keyword': $Text"
+}
+
 $gameRoot = 'D:\IGI1'
+$runner = Join-Path $PSScriptRoot 'editor-e2e.ps1'
 $cataloguePath = Join-Path $PSScriptRoot 'editor-workflow-catalogue.json'
 $generatorPath = Join-Path $PSScriptRoot 'New-EditorWorkflowManifest.ps1'
 $converterPath = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'assets\editor\tools\igi1conv\igi1conv.exe'
 $manifestPath = Join-Path $env:TEMP ('igi-editor-workflow-manifest-' + [guid]::NewGuid().ToString('N') + '.json')
 $decompileRoot = Join-Path $env:TEMP ('igi-editor-workflow-contract-' + [guid]::NewGuid().ToString('N'))
+$runnerFixtureRoot = Join-Path $env:TEMP ('igi-editor-runner-contract-' + [guid]::NewGuid().ToString('N'))
 $locationPushed = $false
 
 try {
@@ -41,12 +57,16 @@ try {
     if (-not (Test-Path -LiteralPath $generatorPath -PathType Leaf)) {
         Fail "Editor workflow manifest generator is missing: $generatorPath"
     }
+    if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
+        Fail "Editor E2E runner is missing: $runner"
+    }
     if (-not (Test-Path -LiteralPath $converterPath -PathType Leaf)) {
         Fail "Installed converter is missing: $converterPath"
     }
     if (-not (Test-Path -LiteralPath $gameRoot -PathType Container)) {
         Fail "Game root is missing: $gameRoot"
     }
+    New-Item -ItemType Directory -Path $runnerFixtureRoot -Force | Out-Null
 
     Push-Location -LiteralPath $gameRoot
     $locationPushed = $true
@@ -137,9 +157,147 @@ try {
         }
     }
 
+    # ---- Runner evidence/reversible primitives contract (Task 2) ----
+    # Every case below is validated by editor-e2e.ps1 -ValidateOnly BEFORE any
+    # editor launch.  Each scenario is otherwise well-formed (carries both a UI
+    # oracle and a state oracle) and carries exactly one defect, so the runner
+    # must reject it for that specific reason; the two pair cases prove the
+    # generic screenshot/state-pair rule, and the valid cases must pass.
+
+    $invalidOrbitAngle = Join-Path $runnerFixtureRoot 'invalid-orbit-angle.json'
+    New-RunnerFixtureFile $invalidOrbitAngle @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-invalid-orbit-angle'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='orbit'; type='orbit_camera'; angle='sideways'; distance=200; pixels=12; screenshotAfter='orbit-shot' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $invalidOrbitDistance = Join-Path $runnerFixtureRoot 'invalid-orbit-distance.json'
+    New-RunnerFixtureFile $invalidOrbitDistance @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-invalid-orbit-distance'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='orbit'; type='orbit_camera'; angle='front'; distance=-5; pixels=12; screenshotAfter='orbit-shot' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $outsidePath = Join-Path $runnerFixtureRoot 'outside-path.json'
+    New-RunnerFixtureFile $outsidePath @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-path-outside-game-root'; level=1; requiresMutation=$true; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='snapshot'; type='snapshot_paths'; paths=@('C:\Windows\win.ini') }
+            @{ id='restore'; type='restore_paths' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $escapePath = Join-Path $runnerFixtureRoot 'escape-path.json'
+    New-RunnerFixtureFile $escapePath @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-path-escape-attempt'; level=1; requiresMutation=$true; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='snapshot'; type='snapshot_paths'; paths=@('..\..\Windows\win.ini') }
+            @{ id='restore'; type='restore_paths' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $missingRestoreHashes = Join-Path $runnerFixtureRoot 'missing-restore-hashes.json'
+    New-RunnerFixtureFile $missingRestoreHashes @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-restore-without-snapshot'; level=1; requiresMutation=$true; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='restore'; type='restore_paths'; paths=@('editor/qed/qedconfig.qsc') }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $invalidAssertFileHash = Join-Path $runnerFixtureRoot 'invalid-assert-file-hash.json'
+    New-RunnerFixtureFile $invalidAssertFileHash @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-invalid-file-hash'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='hash-check'; type='assert_file_hash'; path='editor/qed/qedconfig.qsc'; sha256='not-a-hex-digest' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $failedStateOnly = Join-Path $runnerFixtureRoot 'failed-state-only.json'
+    New-RunnerFixtureFile $failedStateOnly @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-state-only-pair'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='healthy'; type='capture_window_state' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $failedVisualOnly = Join-Path $runnerFixtureRoot 'failed-visual-only.json'
+    New-RunnerFixtureFile $failedVisualOnly @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-visual-only-pair'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-pair-shot' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $validPair = Join-Path $runnerFixtureRoot 'valid-pair.json'
+    New-RunnerFixtureFile $validPair @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-screenshot-state-valid-pair'; level=1; requiresMutation=$false; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-pair-shot' }
+            @{ id='healthy'; type='capture_window_state' }
+            @{ id='state-shot'; type='screenshot'; name='primitive-pair-state-shot' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $validMutation = Join-Path $runnerFixtureRoot 'valid-mutation.json'
+    New-RunnerFixtureFile $validMutation @{ schemaVersion=1; scenarios=@(
+        @{ name='runner-valid-reversible-mutation'; level=1; requiresMutation=$true; steps=@(
+            @{ id='launch'; type='launch_editor'; level=1 }
+            @{ id='window'; type='wait_for_window'; timeoutSeconds=45 }
+            @{ id='shot'; type='screenshot'; name='primitive-shot' }
+            @{ id='snapshot'; type='snapshot_paths'; paths=@('editor/qed/qedconfig.qsc') }
+            @{ id='restore'; type='restore_paths' }
+            @{ id='close'; type='close_editor'; force=$true }
+        ) }
+    ) }
+
+    $runnerCases = @(
+        @{ Label='unsupported orbit angle'; Path=$invalidOrbitAngle; Code=1; Keyword='angle must be one of' },
+        @{ Label='unsupported orbit distance'; Path=$invalidOrbitDistance; Code=1; Keyword='distance must be greater than 0' },
+        @{ Label='path outside D:\IGI1'; Path=$outsidePath; Code=1; Keyword='relative to the game root' },
+        @{ Label='path escaping D:\IGI1'; Path=$escapePath; Code=1; Keyword='relative to the game root' },
+        @{ Label='missing restore hashes'; Path=$missingRestoreHashes; Code=1; Keyword='no preceding snapshot_paths' },
+        @{ Label='invalid file-hash digest'; Path=$invalidAssertFileHash; Code=1; Keyword='SHA-256 digest' },
+        @{ Label='failed state-only pair'; Path=$failedStateOnly; Code=1; Keyword='screenshot/UI oracle' },
+        @{ Label='failed visual-only pair'; Path=$failedVisualOnly; Code=1; Keyword='state/data oracle' },
+        @{ Label='valid screenshot/state pair'; Path=$validPair; Code=0; Keyword='Validated' },
+        @{ Label='valid reversible mutation manifest'; Path=$validMutation; Code=0; Keyword='Validated' }
+    )
+    foreach ($case in $runnerCases) {
+        $outcome = Invoke-RunnerValidate $case.Path
+        Require ($outcome.ExitCode -eq $case.Code) "Runner contract case '$($case.Label)' exited $($outcome.ExitCode); expected $($case.Code). Output: $($outcome.Output)"
+        Assert-OutputContains $outcome.Output $case.Keyword $case.Label
+    }
+
     Write-Host 'Editor workflow manifest contract: PASS'
 } finally {
     if ($locationPushed) { Pop-Location }
     Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $decompileRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $runnerFixtureRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

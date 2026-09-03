@@ -17,7 +17,19 @@ $script:SupportedSteps = @(
     'key', 'key_hold', 'click', 'type_text', 'wait', 'screenshot',
     'assert_screenshot_region', 'assert_screenshot_color_ratio',
     'assert_screenshot_difference', 'assert_log', 'mark_log', 'assert_file',
-    'assert_path', 'assert_cursor_visible', 'assert_cursor_hidden', 'close_editor'
+    'assert_path', 'assert_cursor_visible', 'assert_cursor_hidden', 'close_editor',
+    'capture_window_state', 'orbit_camera', 'assert_file_hash',
+    'snapshot_paths', 'restore_paths', 'assert_log_count'
+)
+$script:OrbitAngles = @(
+    'front', 'back', 'left', 'right', 'top', 'bottom',
+    'front-left', 'front-right', 'back-left', 'back-right'
+)
+# Global constraint #19 (plan) and the design spec: a scenario cannot pass
+# without BOTH a screenshot/UI oracle and a state/data oracle.
+$script:StateOracleTypes = @(
+    'assert_process', 'capture_window_state', 'assert_log', 'assert_log_count',
+    'assert_file', 'assert_path', 'assert_file_hash', 'snapshot_paths', 'restore_paths'
 )
 
 function Fail([string]$Message) {
@@ -31,6 +43,19 @@ function Assert-UnderRoot([string]$Path, [string]$Root, [string]$Label) {
         Fail "$Label - $fullPath"
     }
     return $fullPath
+}
+function Assert-DeclaredPathUnderRoot([string]$Path, [string]$Root, [string]$Label) {
+    # Manifest-declared paths are relative to the game root.  Reject empty,
+    # absolute, or rooted-escape declarations before any launch.
+    if ([string]::IsNullOrWhiteSpace($Path)) { Fail "$Label requires a non-empty path." }
+    if ([IO.Path]::IsPathRooted($Path)) { Fail "$Label path must be relative to the game root (got '$Path')." }
+    $combined = Join-Path $Root $Path
+    $resolved = Get-FullPath $combined
+    $fullRoot = (Get-FullPath $Root).TrimEnd('\') + '\'
+    if (-not $resolved.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "$Label path must be relative to the game root (got '$Path')."
+    }
+    return $resolved
 }
 function Get-Property($Object, [string]$Name) {
     $property = $Object.PSObject.Properties[$Name]
@@ -46,7 +71,53 @@ function Assert-Region($Region, [string]$Name) {
     for ($i = 0; $i -lt 4; $i++) { if ([int]$Region[$i] -lt 0) { Fail "$Name contains a negative value." } }
     if ([int]$Region[2] -le 0 -or [int]$Region[3] -le 0) { Fail "$Name width and height must be positive." }
 }
-function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
+function Assert-PathArray($Paths, [string]$Name) {
+    if ($null -eq $Paths -or @($Paths).Count -eq 0) { Fail "$Name requires a non-empty paths array." }
+    foreach ($path in @($Paths)) {
+        if ($null -eq $path -or [string]::IsNullOrWhiteSpace([string]$path)) { Fail "$Name contains an empty path." }
+    }
+}
+function Assert-Sha256([string]$Value, [string]$Name) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { Fail "$Name requires sha256." }
+    if ($Value -notmatch '^[0-9a-fA-F]{64}$') { Fail "$Name sha256 must be a 64-character hexadecimal SHA-256 digest." }
+}
+function Get-UiOracle([string]$Type, $Step) {
+    if ($Type -eq 'screenshot') { return $true }
+    if ($Type -eq 'assert_screenshot_region' -or $Type -eq 'assert_screenshot_color_ratio' -or $Type -eq 'assert_screenshot_difference') { return $true }
+    if ($Type -eq 'orbit_camera') {
+        # An orbit without either a following explicit screenshot or an anchor
+        # screenshot whose region overlaps the window center is silent; see the
+        # note on Invoke-OrbitCamera. Requiring a real pixel sample before the
+        # runner proves the rendered result keeps the pair rule honest.
+        if ($null -ne (Get-Property $Step 'screenshotAfter')) { return $true }
+    }
+    return $false
+}
+function Assert-RequiresMutationPolicy($Scenario, [string]$Name) {
+    # The reversible primitives are mandatory on any mutation (Task 2 brief);
+    # they must never run inside a scenario that did not declare
+    # requiresMutation=true, which itself requires -AllowGameDataMutation at
+    # run time (mirroring the existing mutation gate).  Legacy mutating
+    # scenarios written before these primitives still set requiresMutation=true
+    # and perform their own manual reset, so no reverse requirement is imposed.
+    $steps = Get-Property $Scenario 'steps'
+    foreach ($step in @($steps)) {
+        if (@('snapshot_paths', 'restore_paths') -contains [string](Get-Property $step 'type') -and -not [bool](Get-Property $Scenario 'requiresMutation')) {
+            Fail "Scenario '$Name' uses snapshot_paths/restore_paths but does not set requiresMutation=true."
+        }
+    }
+}
+function Assert-ObserverPair($Scenario, [string]$Name) {
+    $hasUi = $false; $hasState = $false
+    foreach ($step in @(Get-Property $Scenario 'steps')) {
+        $type = [string](Get-Property $step 'type')
+        if (Get-UiOracle $type $step) { $hasUi = $true }
+        if ($script:StateOracleTypes -contains $type) { $hasState = $true }
+    }
+    if (-not $hasUi) { Fail "Scenario '$Name' has no screenshot/UI oracle; a scenario cannot pass without a screenshot/UI oracle." }
+    if (-not $hasState) { Fail "Scenario '$Name' has no state/data oracle; a scenario cannot pass without a state/data oracle." }
+}
+function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root) {
     $id = [string](Get-Property $Step 'id')
     $type = [string](Get-Property $Step 'type')
     if ([string]::IsNullOrWhiteSpace($id)) { Fail "Scenario '$ScenarioName' step $Index is missing id." }
@@ -119,9 +190,63 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
         }
         'assert_cursor_visible' { }
         'assert_cursor_hidden' { }
+        'orbit_camera' {
+            $angle = [string](Get-Property $Step 'angle')
+            if ($script:OrbitAngles -notcontains $angle) {
+                Fail "$ScenarioName/$id angle must be one of: $($script:OrbitAngles -join ', ') (got '$angle')."
+            }
+            if ($null -eq (Get-Property $Step 'distance')) { Fail "$ScenarioName/$id requires distance." }
+            if ([double](Get-Property $Step 'distance') -le 0 -or [double](Get-Property $Step 'distance') -gt 100000) { Fail "$ScenarioName/$id distance must be greater than 0 and no more than 100000." }
+            if ($null -eq (Get-Property $Step 'pixels')) { Fail "$ScenarioName/$id requires pixels." }
+            Assert-Integer (Get-Property $Step 'pixels') "$ScenarioName/$id pixels" 1 5000
+        }
+        'capture_window_state' { }
+        'assert_file_hash' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'path'))) { Fail "$ScenarioName/$id requires path." }
+            Assert-DeclaredPathUnderRoot ([string](Get-Property $Step 'path')) $Root "$ScenarioName/$id"
+            Assert-Sha256 ([string](Get-Property $Step 'sha256')) "$ScenarioName/$id"
+            if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
+        }
+        'snapshot_paths' {
+            Assert-PathArray (Get-Property $Step 'paths') "$ScenarioName/$id"
+            foreach ($path in @(Get-Property $Step 'paths')) { Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id" }
+        }
+        'restore_paths' {
+            if ($null -ne (Get-Property $Step 'paths')) {
+                Assert-PathArray (Get-Property $Step 'paths') "$ScenarioName/$id"
+                foreach ($path in @(Get-Property $Step 'paths')) { Assert-DeclaredPathUnderRoot ([string]$path) $Root "$ScenarioName/$id" }
+            }
+        }
+        'assert_log_count' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'pattern'))) { Fail "$ScenarioName/$id requires pattern." }
+            if ($null -eq (Get-Property $Step 'min')) { Fail "$ScenarioName/$id requires min." }
+            Assert-Integer (Get-Property $Step 'min') "$ScenarioName/$id min" 0 2147483647
+            if ($null -ne (Get-Property $Step 'max')) { Assert-Integer (Get-Property $Step 'max') "$ScenarioName/$id max" 0 2147483647 }
+            if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
+        }
     }
 }
-function Validate-Manifest($Manifest) {
+function Assert-RestoreHasSnapshot($Scenario, [string]$Name) {
+    # restore_paths may only restore what a preceding snapshot_paths captured;
+    # a bare restore (no snapshot earlier in the same scenario) has nothing to
+    # verify against and is rejected before launch.
+    $steps = @(Get-Property $Scenario 'steps')
+    $sawSnapshot = $false
+    foreach ($step in $steps) {
+        $type = [string](Get-Property $step 'type')
+        if ($type -eq 'snapshot_paths') { $sawSnapshot = $true }
+        if ($type -eq 'restore_paths' -and -not $sawSnapshot) {
+            Fail "Scenario '$Name' restore_paths has no preceding snapshot_paths; restoration cannot be verified."
+        }
+    }
+}
+function Validate-Scenario($Scenario, [string]$Root) {
+    $name = [string](Get-Property $Scenario 'name')
+    Assert-RequiresMutationPolicy $Scenario $name
+    Assert-ObserverPair $Scenario $name
+    Assert-RestoreHasSnapshot $Scenario $name
+}
+function Validate-Manifest($Manifest, [string]$Root) {
     if ($null -eq $Manifest) { Fail 'Manifest is empty.' }
     $scenarios = Get-Property $Manifest 'scenarios'
     if ($null -eq $scenarios -or @($scenarios).Count -eq 0) { Fail 'Manifest requires a non-empty scenarios array.' }
@@ -144,9 +269,10 @@ function Validate-Manifest($Manifest) {
             $id = [string](Get-Property $step 'id')
             if ([string]::IsNullOrWhiteSpace($id)) { Fail "Scenario '$name' step $index is missing id." }
             if (-not $stepIds.Add($id)) { Fail "Scenario '$name' has duplicate step id '$id'." }
-            Validate-Step $step $name $index
+            Validate-Step $step $name $index $Root
             $index++
         }
+        Validate-Scenario $scenario $Root
     }
     return @($scenarios)
 }
@@ -158,11 +284,14 @@ using System.Runtime.InteropServices;
 public static class EditorE2E_Native {
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
     [StructLayout(LayoutKind.Sequential)] public struct CursorInfo { public int cbSize; public uint flags; public IntPtr hCursor; public Point ptScreenPos; }
+    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out Rect lpRect);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] public static extern short VkKeyScan(char ch);
@@ -173,14 +302,42 @@ public static class EditorE2E_Native {
     public const uint RightDown = 0x0008;
     public const uint RightUp = 0x0010;
     public const uint KeyUp = 0x0002;
+    public const uint WheelScroll = 0x0800;
     public const int ShowNormal = 5;
     public static void Click(int x, int y, bool right) {
         SetCursorPos(x, y);
         mouse_event(right ? RightDown : LeftDown, 0, 0, 0, UIntPtr.Zero);
         mouse_event(right ? RightUp : LeftUp, 0, 0, 0, UIntPtr.Zero);
     }
+    public static void Drag(int x1, int y1, int x2, int y2, bool right) {
+        SetCursorPos(x1, y1);
+        mouse_event(right ? RightDown : LeftDown, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(60);
+        int steps = 12;
+        for (int i = 1; i <= steps; i++) {
+            int x = x1 + ((x2 - x1) * i) / steps;
+            int y = y1 + ((y2 - y1) * i) / steps;
+            SetCursorPos(x, y);
+            System.Threading.Thread.Sleep(16);
+        }
+        mouse_event(right ? RightUp : LeftUp, 0, 0, 0, UIntPtr.Zero);
+    }
+    public static void ScrollWheel(int notches) {
+        mouse_event(WheelScroll, 0, 0, (uint)notches, UIntPtr.Zero);
+    }
     public static void Key(byte key, bool up) { keybd_event(key, 0, up ? KeyUp : 0, UIntPtr.Zero); }
     public static bool CursorVisible() { var info = new CursorInfo(); info.cbSize = Marshal.SizeOf(typeof(CursorInfo)); return GetCursorInfo(ref info) && (info.flags & 1) != 0; }
+    public static int[] ClientRect(IntPtr hWnd) {
+        Rect r; int cx = 0; int cy = 0;
+        if (hWnd != IntPtr.Zero && GetClientRect(hWnd, out r)) {
+            Point topLeft = new Point(); topLeft.X = r.Left; topLeft.Y = r.Top;
+            ClientToScreen(hWnd, ref topLeft);
+            cx = topLeft.X + (r.Right - r.Left) / 2;
+            cy = topLeft.Y + (r.Bottom - r.Top) / 2;
+            return new int[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top, topLeft.X, topLeft.Y, cx, cy };
+        }
+        return new int[] { 0, 0, 0, 0, 0, 0, cx, cy };
+    }
 }
 '@
 }
@@ -390,15 +547,188 @@ function Close-Editor($Process, [bool]$Force) {
     Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
     return [pscustomobject]@{ exited=$false; exitCode=$null; forced=$true }
 }
+function Get-Sha256([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+function New-WorkingCopyDirectory([string]$Root) {
+    $path = Join-Path $Root ([Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    return $path
+}
+function Get-OrbitDelta([string]$Angle, [int]$Pixels) {
+    if ($Pixels -le 0) { Fail 'orbit_camera pixels must be greater than 0.' }
+    # Baseline deltas are calibrated for the default pixel budget of 12 (a
+    # 180-degree yaw/pitch turn maps to a 900px drag across a typical viewport,
+    # diagonals to half that).  The declared pixels value scales the drag so the
+    # sequence is deterministic and honors the bound.
+    $scale = $Pixels / 12.0
+    switch ($Angle) {
+        'front'  { return @{ yawPixels = 0; pitchPixels = 0 } }
+        'back'   { return @{ yawPixels = [int][Math]::Round(-900 * $scale); pitchPixels = 0 } }
+        'left'   { return @{ yawPixels = [int][Math]::Round(900 * $scale); pitchPixels = 0 } }
+        'right'  { return @{ yawPixels = [int][Math]::Round(-900 * $scale); pitchPixels = 0 } }
+        'top'    { return @{ yawPixels = 0; pitchPixels = [int][Math]::Round(900 * $scale) } }
+        'bottom' { return @{ yawPixels = 0; pitchPixels = [int][Math]::Round(-900 * $scale) } }
+        'front-left'  { return @{ yawPixels = [int][Math]::Round(450 * $scale); pitchPixels = [int][Math]::Round(450 * $scale) } }
+        'front-right' { return @{ yawPixels = [int][Math]::Round(-450 * $scale); pitchPixels = [int][Math]::Round(450 * $scale) } }
+        'back-left'   { return @{ yawPixels = [int][Math]::Round(450 * $scale); pitchPixels = [int][Math]::Round(-450 * $scale) } }
+        'back-right'  { return @{ yawPixels = [int][Math]::Round(-450 * $scale); pitchPixels = [int][Math]::Round(-450 * $scale) } }
+        default { Fail "Unsupported orbit angle '$Angle'." }
+    }
+}
+function Invoke-OrbitCamera($Process, [string]$Angle, [int]$Pixels, [double]$Distance) {
+    # Deterministic, data-driven camera sequence.  It snaps the camera to the
+    # selection (F11 -> object, SHIFT+F11 -> object at configured radius),
+    # holds ALT (the installed editor binding for camera mode), drags the mouse
+    # across the viewport by the fixed pixel delta mapped from the requested
+    # view, and then zooms toward the orbit target with ALT+SPACE wheel
+    # increments scaled from the requested distance.  The intended angle and
+    # distance are recorded verbatim in the step record; asserting the rendered
+    # pixels for each angle is a later task that composes screenshot oracles on
+    # top of this primitive.
+    Focus-Editor $process
+    Send-Key 'F11'
+    Start-Sleep -Milliseconds 350
+    $geometry = [EditorE2E_Native]::ClientRect($process.MainWindowHandle)
+    $centerX = $geometry[6]; $centerY = $geometry[7]
+    if ($centerX -le 0 -or $centerY -le 0) { Fail 'orbit_camera could not resolve a viewport center from the editor window.' }
+    [EditorE2E_Native]::Key([byte]0x12, $false)  # ALT down (CameraEnable)
+    Start-Sleep -Milliseconds 150
+    $delta = Get-OrbitDelta $Angle $Pixels
+    $targetX = $centerX + $delta.yawPixels
+    $targetY = $centerY + $delta.pitchPixels
+    [EditorE2E_Native]::Drag($centerX, $centerY, $targetX, $targetY, $false)
+    Start-Sleep -Milliseconds 120
+    # distance scale: 40 world units per notch, 120 notches max (modifier held)
+    $notches = [Math]::Max(1, [Math]::Min(120, [int][Math]::Floor($Distance / 40.0)))
+    [EditorE2E_Native]::Key([byte]0x20, $false)  # SPACE down (CameraAdjustRadius)
+    Start-Sleep -Milliseconds 120
+    for ($i = 0; $i -lt $notches; $i++) {
+        [EditorE2E_Native]::ScrollWheel(120)
+        Start-Sleep -Milliseconds 20
+    }
+    [EditorE2E_Native]::Key([byte]0x20, $true)
+    Start-Sleep -Milliseconds 80
+    [EditorE2E_Native]::Key([byte]0x12, $true)   # ALT up
+    Start-Sleep -Milliseconds 200
+    return [pscustomobject]@{ angle=$Angle; distance=$Distance; pixels=$Pixels; notches=$notches; centerX=$centerX; centerY=$centerY; sequence='F11+ALT+drag+ALT+SPACE+wheel' }
+}
+function Invoke-CaptureWindowState($Process) {
+    if ($null -eq $Process) { Fail 'capture_window_state requires a live editor process (run launch_editor first).' }
+    $current = Get-Process -Id $Process.Id -ErrorAction SilentlyContinue
+    if ($null -eq $current) { Fail 'capture_window_state requires a live editor process (run launch_editor first).' }
+    $current.Refresh()
+    $geometry = [EditorE2E_Native]::ClientRect($current.MainWindowHandle)
+    if ($null -eq $current.MainWindowHandle -or $current.MainWindowHandle -eq [IntPtr]::Zero -or $geometry[2] -le 0 -or $geometry[3] -le 0) {
+        Fail 'capture_window_state could not resolve the editor window client bounds.'
+    }
+    $state = [ordered]@{
+        pid = $current.Id
+        windowHandle = ('0x{0:X}' -f $current.MainWindowHandle.ToInt64())
+        sessionId = $current.SessionId
+        responding = $current.Responding
+        workingSetMb = [Math]::Round($current.WorkingSet64 / 1MB, 2)
+        clientBounds = [ordered]@{ left=$geometry[0]; top=$geometry[1]; width=$geometry[2]; height=$geometry[3]; screenX=$geometry[4]; screenY=$geometry[5]; centerX=$geometry[6]; centerY=$geometry[7] }
+    }
+    if ($state.sessionId -ne 1) { Fail "Editor PID $($current.Id) is not on interactive Session 1." }
+    if (-not $state.responding) { Fail "Editor PID $($current.Id) is not responding." }
+    return $state
+}
+function Get-HashWaitResult([string]$Path, [string]$ExpectedHash, [int]$TimeoutSeconds) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $actual = Get-Sha256 $Path
+            if ($actual -eq $ExpectedHash.ToLowerInvariant()) { return [pscustomobject]@{ matched=$true; hash=$actual; present=$true } }
+        }
+        Start-Sleep -Milliseconds 150
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $final = if (Test-Path -LiteralPath $Path -PathType Leaf) { Get-Sha256 $Path } else { '' }
+    return [pscustomobject]@{ matched=$false; hash=$final; present=(Test-Path -LiteralPath $Path -PathType Leaf) }
+}
+function Resolve-DeclaredPaths($Paths, [string]$Root) {
+    $resolved = @()
+    foreach ($entry in @($Paths)) {
+        $combined = Join-Path $Root ([string]$entry)
+        $resolved += (Assert-UnderRoot $combined $Root 'declared path')
+    }
+    return @($resolved)
+}
+function Get-RelativeToRoot([string]$Path, [string]$Root) {
+    $fullRoot = (Get-FullPath $Root).TrimEnd('\') + '\'
+    $fullPath = Get-FullPath $Path
+    return $fullPath.Substring($fullRoot.Length).TrimStart('\')
+}
+function Get-StagingFileName([string]$RelativePath) {
+    # Map a game-root-relative path onto a flat staging directory without
+    # basename collisions: two files named e.g. a\qedconfig.qsc and
+    # b\qedconfig.qsc must not overwrite each other.
+    return ([string]$RelativePath -replace '[\\/]', '__')
+}
+function Invoke-RestorePaths($Record, [string]$Root, [string]$ScenarioDir, [string]$StagingPath, $Process) {
+    # Restoration on any mutation: write every snapshot back from the staging
+    # copy, then prove each restored file's SHA-256 equals its snapshot hash.
+    # Failures surface as step records plus a failure screenshot when a window
+    # or screen is available.
+    $manifestPath = Join-Path $StagingPath 'snapshot.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        $restoreFailure = $null
+        try { if ($null -ne $Process) { $restoreFailure = Capture-Screenshot (Join-Path $ScenarioDir 'failure.png') $null } } catch {}
+        $failureMessage = 'restore_paths has no snapshot to restore; run snapshot_paths on the same paths first.'
+        if ($null -ne $restoreFailure) { $failureMessage += " (failure screenshot: $($restoreFailure.path))" }
+        throw [System.InvalidOperationException]::new($failureMessage)
+    }
+    $snapshotManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifestEntries = @($snapshotManifest)
+    if ($manifestEntries.Count -eq 0) { throw 'restore_paths snapshot is empty.' }
+    $records = New-Object System.Collections.Generic.List[object]
+    foreach ($snapshot in $manifestEntries) {
+        $relative = [string](Get-Property $snapshot 'path')
+        $snapshotHash = [string](Get-Property $snapshot 'sha256')
+        $dest = Assert-UnderRoot (Join-Path $Root $relative) $Root 'restore destination'
+        $copied = $false; $restoreError = $null
+        try {
+            if (-not (Test-Path -LiteralPath $dest)) {
+                $parent = Split-Path -Parent $dest
+                if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            }
+            Copy-Item -LiteralPath (Join-Path $StagingPath (Get-StagingFileName $relative)) -Destination $dest -Force
+            $copied = $true
+        } catch { $restoreError = $_.Exception.Message }
+        $actual = if ($copied -and (Test-Path -LiteralPath $dest -PathType Leaf)) { Get-Sha256 $dest } else { '' }
+        $verified = ($copied -and $actual -eq $snapshotHash)
+        $records.Add([pscustomobject]@{ path=$relative; restored=$copied; snapshotHash=$snapshotHash; restoredHash=$actual; verified=$verified; error=$restoreError })
+        if (-not $verified) {
+            $failureScreenshot = $null
+            try { if ($null -ne $Process) { $failureScreenshot = Capture-Screenshot (Join-Path $ScenarioDir 'failure.png') $null } } catch {}
+            $message = "Restore of '$relative' failed (snapshot=$snapshotHash restored=$actual)."
+            if ($null -ne $failureScreenshot) { $message += " Failure screenshot: $($failureScreenshot.path)" }
+            throw [System.InvalidOperationException]::new($message)
+        }
+    }
+    $Record.restoreRecords = @($records.ToArray())
+    $Record.restoreSummary = [ordered]@{ restored=@($records | Where-Object { $_.verified }).Count; total=$records.Count }
+}
 function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$OutputRoot) {
     $scenarioDir = Join-Path $OutputRoot ([string]$Scenario.name)
     New-Item -ItemType Directory -Path $scenarioDir -Force | Out-Null
     $logPath = Join-Path $Root 'igi1ed.log'
     $logOffset = if (Test-Path -LiteralPath $logPath) { (Get-Item -LiteralPath $logPath).Length } else { 0 }
     $process = $null; $latestScreenshot = $null; $screenshots = @{}; $steps = @()
+    # Reversible-state working copy (snapshot bytes) plus the snapshot manifest.
+    $workingCopyRoot = $null; $snapshotStaging = $null
     $scenarioStarted = [DateTime]::UtcNow.ToString('o')
     $inputScale = if ($null -ne $Scenario.inputScale) { [double]$Scenario.inputScale } else { 1.0 }
     $scenarioResult = 'PASS'; $scenarioFailure = $null
+    $needsStaging = $false
+    foreach ($step in @($Scenario.steps)) {
+        if (@('snapshot_paths', 'restore_paths') -contains [string](Get-Property $step 'type')) { $needsStaging = $true }
+    }
+    if ($needsStaging) {
+        $workingCopyRoot = New-WorkingCopyDirectory $Root
+        $snapshotStaging = Join-Path $workingCopyRoot 'snapshots'
+        New-Item -ItemType Directory -Path $snapshotStaging -Force | Out-Null
+    }
     try {
         foreach ($step in @($Scenario.steps)) {
             $stepStart = [DateTime]::UtcNow
@@ -479,6 +809,86 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         if ([EditorE2E_Native]::CursorVisible()) { Fail 'Native mouse cursor is still visible.' }
                         $record.cursorVisible = $false
                     }
+                    'orbit_camera' {
+                        if ($null -eq $process) { Fail 'orbit_camera requires a live editor process (run launch_editor first).' }
+                        $angle = [string]$step.angle; $distance = [double]$step.distance
+                        $pixels = [int]$(if ($null -ne $step.pixels) { $step.pixels } else { 12 })
+                        $orbit = Invoke-OrbitCamera $process $angle $pixels $distance
+                        $record.angle = $angle; $record.distance = $distance
+                        $record.sequence = $orbit.sequence; $record.centerX = $orbit.centerX; $record.centerY = $orbit.centerY
+                        if ($null -ne $step.screenshotAfter) {
+                            Focus-Editor $process
+                            $file = Join-Path $scenarioDir (([string]$step.screenshotAfter) + '.png')
+                            $latestScreenshot = Capture-Screenshot $file $step.region
+                            $screenshots[[string]$step.screenshotAfter] = $latestScreenshot
+                            $record.screenshot = $file
+                        }
+                    }
+                    'capture_window_state' {
+                        $state = Invoke-CaptureWindowState $process
+                        $record.pid = $state.pid; $record.sessionId = $state.sessionId
+                        $record.responding = $state.responding; $record.workingSetMb = $state.workingSetMb
+                        $record.clientBounds = $state.clientBounds
+                    }
+                    'assert_file_hash' {
+                        $filePath = Assert-UnderRoot (Join-Path $Root ([string]$step.path)) $Root 'assert_file_hash path'
+                        $expected = ([string]$step.sha256).ToLowerInvariant()
+                        $timeout = [int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 5 })
+                        $waited = Get-HashWaitResult $filePath $expected $timeout
+                        $record.path = $filePath; $record.expected = $expected; $record.actual = $waited.hash; $record.present = $waited.present
+                        if (-not $waited.matched) { Fail "File hash assertion failed for '$($step.path)' (expected $expected, actual $($waited.hash))." }
+                    }
+                    'assert_log_count' {
+                        $timeout = [int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 5 })
+                        $deadline = [DateTime]::UtcNow.AddSeconds($timeout)
+                        $count = -1
+                        do {
+                            $text = Get-AppendedLog $logPath $logOffset
+                            $count = @([regex]::Matches($text, ([string]$step.pattern))).Count
+                            if ($count -ge [int]$step.min) { break }
+                            Start-Sleep -Milliseconds 250
+                        } while ([DateTime]::UtcNow -lt $deadline)
+                        $record.count = $count
+                        if ($count -lt [int]$step.min) { Fail "Log count for '$($step.pattern)' was $count, below min $($step.min)." }
+                        if ($null -ne $step.max -and $count -gt [int]$step.max) { Fail "Log count for '$($step.pattern)' was $count, above max $($step.max)." }
+                    }
+                    'snapshot_paths' {
+                        $paths = Resolve-DeclaredPaths (Get-Property $step 'paths') $Root
+                        $snapshots = @()
+                        $missing = @()
+                        foreach ($resolved in $paths) {
+                            if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+                                $missing += $resolved
+                                continue
+                            }
+                            $sha = Get-Sha256 $resolved
+                            $relative = Get-RelativeToRoot $resolved $Root
+                            $staged = Join-Path $snapshotStaging (Get-StagingFileName $relative)
+                            Copy-Item -LiteralPath $resolved -Destination $staged -Force
+                            $snapshots += [ordered]@{ path=$relative; sha256=$sha }
+                        }
+                        if ($missing.Count -gt 0) { Fail "snapshot_paths could not hash declared file(s): $($missing -join ', ')" }
+                        if ($snapshots.Count -eq 0) { Fail 'snapshot_paths found no existing declared file to snapshot.' }
+                        @($snapshots) | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $snapshotStaging 'snapshot.json') -Encoding UTF8
+                        $record.snapshotCount = @($snapshots).Count
+                        $record.snapshots = @($snapshots)
+                    }
+                    'restore_paths' {
+                        if ($null -eq $snapshotStaging -or -not (Test-Path -LiteralPath (Join-Path $snapshotStaging 'snapshot.json') -PathType Leaf)) {
+                            Fail 'restore_paths has no snapshot to restore; run snapshot_paths on the same paths first.'
+                        }
+                        if ($null -ne $step.paths) {
+                            # Optional declared subset must match the snapshot set exactly.
+                            $declared = Resolve-DeclaredPaths (Get-Property $step 'paths') $Root
+                            $snapshotManifest = Get-Content -LiteralPath (Join-Path $snapshotStaging 'snapshot.json') -Raw | ConvertFrom-Json
+                            foreach ($snapshot in @($snapshotManifest)) {
+                                $snapshotResolved = Assert-UnderRoot (Join-Path $Root ([string]$snapshot.path)) $Root 'restore subset path'
+                                $matches = @($declared | Where-Object { $_.TrimEnd('\') -eq $snapshotResolved.TrimEnd('\') })
+                                if ($matches.Count -ne 1) { Fail "restore_paths declared subset must cover exactly the snapshot paths; '$($snapshot.path)' was not matched once." }
+                            }
+                        }
+                        Invoke-RestorePaths $record $Root $scenarioDir $snapshotStaging $process
+                    }
                     'screenshot' {
                         Focus-Editor $process
                         $file = Join-Path $scenarioDir (([string]$step.name) + '.png')
@@ -533,10 +943,36 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
         $scenarioResult='FAIL'; $scenarioFailure=$_.Exception.Message
         if ($null -ne $process) {
             try { Focus-Editor $process; $latestScreenshot = Capture-Screenshot (Join-Path $scenarioDir 'failure.png') $null } catch {}
+        } else {
+            try { $latestScreenshot = Capture-Screenshot (Join-Path $scenarioDir 'failure.png') $null } catch {}
         }
-    } finally { if (-not $KeepEditorOpen) { $discardedCloseResult = Close-Editor $process $true } }
-    $result = [ordered]@{ name=[string]$Scenario.name; level=[int]$Scenario.level; status=$scenarioResult; started=$scenarioStarted; finished=[DateTime]::UtcNow.ToString('o'); logPath=$logPath; logOffset=$logOffset; failure=$scenarioFailure; steps=$steps }
-    $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $scenarioDir 'scenario.json') -Encoding UTF8
+    } finally {
+        if (-not $KeepEditorOpen) { $discardedCloseResult = Close-Editor $process $true }
+        # Mandatory restoration: even when a later step failed, restore declared
+        # files byte-for-byte and verify each restored SHA-256 against its
+        # snapshot; a mismatch or missing snapshot is recorded on the run.
+        $restoreRan = $false; $restoreError = $null
+        if ($null -ne $snapshotStaging -and (Test-Path -LiteralPath (Join-Path $snapshotStaging 'snapshot.json') -PathType Leaf)) {
+            try {
+                $restoreRecord = [ordered]@{ id='__auto_restore'; type='restore_paths'; status='PASS'; started=[DateTime]::UtcNow.ToString('o'); restoreRecords=@() }
+                Invoke-RestorePaths $restoreRecord $Root $scenarioDir $snapshotStaging $process
+                $restoreRecord.finished=[DateTime]::UtcNow.ToString('o')
+                $steps += [pscustomobject]$restoreRecord
+                $restoreRan = $true
+            } catch {
+                $restoreError = $_.Exception.Message
+                $steps += [pscustomobject]@{ id='__auto_restore'; type='restore_paths'; status='FAIL'; error=$restoreError; started=[DateTime]::UtcNow.ToString('o'); finished=[DateTime]::UtcNow.ToString('o') }
+            }
+        }
+        if ($null -ne $workingCopyRoot) { Remove-Item -LiteralPath $workingCopyRoot -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($restoreError) {
+            $scenarioResult = 'FAIL'
+            if ($scenarioFailure) { $scenarioFailure += '; ' }
+            $scenarioFailure = [string]$scenarioFailure + "Restoration failed: $restoreError"
+        }
+    }
+    $result = [ordered]@{ name=[string]$Scenario.name; level=[int]$Scenario.level; status=$scenarioResult; started=$scenarioStarted; finished=[DateTime]::UtcNow.ToString('o'); logPath=$logPath; logOffset=$logOffset; failure=$scenarioFailure; restored=$restoreRan; steps=$steps }
+    $result | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $scenarioDir 'scenario.json') -Encoding UTF8
     return [pscustomobject]$result
 }
 try {
@@ -546,7 +982,9 @@ try {
     $ScenarioPath = Get-FullPath $ScenarioPath
     if (-not (Test-Path -LiteralPath $ScenarioPath)) { Fail "Scenario manifest not found: $ScenarioPath" }
     $manifest = Get-Content -LiteralPath $ScenarioPath -Raw | ConvertFrom-Json
-    $scenarios = Validate-Manifest $manifest
+    $GameRoot = Get-FullPath $GameRoot
+    if (-not (Test-Path -LiteralPath $GameRoot)) { Fail "Game root not found: $GameRoot" }
+    $scenarios = Validate-Manifest $manifest $GameRoot
     if ($ValidateOnly) { Write-Host "Validated $(@($scenarios).Count) editor E2E scenarios."; exit 0 }
     if (-not [string]::IsNullOrWhiteSpace($ScenarioName)) {
         $scenarios = @($scenarios | Where-Object { $_.name -like $ScenarioName })
@@ -557,8 +995,6 @@ try {
             Fail "Scenario '$($scenario.name)' requires -AllowGameDataMutation."
         }
     }
-    $GameRoot = Get-FullPath $GameRoot
-    if (-not (Test-Path -LiteralPath $GameRoot)) { Fail "Game root not found: $GameRoot" }
     if ([string]::IsNullOrWhiteSpace($EditorPath)) { $EditorPath = Join-Path $GameRoot 'igi1ed.exe' }
     $EditorPath = Assert-UnderRoot $EditorPath $GameRoot 'Editor path'
     if (-not (Test-Path -LiteralPath $EditorPath)) { Fail "Editor executable not found: $EditorPath" }
