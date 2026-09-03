@@ -177,3 +177,41 @@ $manifest = 'D:\Code\project-igi-editor\tools\e2e\scenarios\editor-regression.js
 ```
 
 Each run writes `run.json`, `run.md`, the copied manifest, one JSON record per scenario, and checkpoint/failure PNGs below `artifacts\e2e\`. Coordinates and optional `inputScale` are scenario data because display scaling is a machine/runtime property. Do not run mutating scenarios in parallel; they intentionally exercise the same installed editor state and reset their test edits through the UI where the manifest provides cleanup steps.
+
+### Corpus-wide live matrix
+
+The focused manifest is deliberately small for deep workflows, but it must not
+be mistaken for whole-corpus regression. Generate a second manifest from the
+installed data:
+
+```powershell
+Set-Location D:\IGI1
+$matrix = 'D:\Code\project-igi-editor\artifacts\e2e\corpus-matrix-manifest.json'
+& 'D:\Code\project-igi-editor\tools\e2e\New-EditorCorpusManifest.ps1' -GameRoot D:\IGI1 -OutputPath $matrix
+& 'D:\Code\project-igi-editor\tools\e2e\test-editor-corpus.ps1'
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -GameRoot D:\IGI1 -ScenarioPath $matrix -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\corpus-matrix-run'
+```
+
+This executes one visible-editor scenario for each Level 1–14 and records load
+completion, resource-file presence, weather resolution, texture-miss
+diagnostics, viewport and pause screenshots, cursor visibility, and graceful
+shutdown. It complements the focused model-import, property-edit, save/reopen,
+and pause-setting scenarios above.
+
+### Visual regression gate
+
+The focused workflows do not cover every visual failure. The separate
+`editor-visual-regressions.json` manifest exercises real input and screenshot
+assertions for the terrain `T` workflow, weather inside a selected building,
+and floor texture retention after moving away from a building. Run the serial
+gate with:
+
+```powershell
+& 'D:\Code\project-igi-editor\tools\e2e\test-editor-regression.ps1' `
+  -GameRoot D:\IGI1 -AllowGameDataMutation
+```
+
+The screenshot assertions are generic runner capabilities: color ratios test
+stable UI/material regions and difference ratios test whether a scene region
+changes between two captured frames. Each red failure retains both checkpoint
+PNGs and the JSON step record for diagnosis.

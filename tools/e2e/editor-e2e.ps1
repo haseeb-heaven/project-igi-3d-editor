@@ -14,8 +14,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:SupportedSteps = @(
     'launch_editor', 'wait_for_window', 'wait_for_log', 'assert_process',
-    'key', 'click', 'type_text', 'wait', 'screenshot',
-    'assert_screenshot_region', 'assert_log', 'mark_log', 'assert_file', 'close_editor'
+    'key', 'key_hold', 'click', 'type_text', 'wait', 'screenshot',
+    'assert_screenshot_region', 'assert_screenshot_color_ratio',
+    'assert_screenshot_difference', 'assert_log', 'mark_log', 'assert_file',
+    'assert_path', 'assert_cursor_visible', 'close_editor'
 )
 
 function Fail([string]$Message) {
@@ -54,6 +56,10 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
         'wait_for_window' { if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 } }
         'wait_for_log' { if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'pattern'))) { Fail "$ScenarioName/$id requires pattern." } }
         'key' { if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'key'))) { Fail "$ScenarioName/$id requires key." } }
+        'key_hold' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'key'))) { Fail "$ScenarioName/$id requires key." }
+            if ($null -eq (Get-Property $Step 'seconds') -or [double](Get-Property $Step 'seconds') -le 0 -or [double](Get-Property $Step 'seconds') -gt 300) { Fail "$ScenarioName/$id seconds must be greater than 0 and no more than 300." }
+        }
         'click' {
             Assert-Integer (Get-Property $Step 'x') "$ScenarioName/$id x" 0 10000
             Assert-Integer (Get-Property $Step 'y') "$ScenarioName/$id y" 0 10000
@@ -77,6 +83,24 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
             }
             if (-not $hasLimit) { Fail "$ScenarioName/$id requires an image metric." }
         }
+        'assert_screenshot_color_ratio' {
+            Assert-Region (Get-Property $Step 'region') "$ScenarioName/$id region"
+            $rgb = Get-Property $Step 'rgb'
+            if ($null -eq $rgb -or @($rgb).Count -ne 3) { Fail "$ScenarioName/$id rgb must be [r,g,b]." }
+            foreach ($channel in @($rgb)) { Assert-Integer $channel "$ScenarioName/$id rgb" 0 255 }
+            if ($null -eq (Get-Property $Step 'minRatio') -and $null -eq (Get-Property $Step 'maxRatio')) { Fail "$ScenarioName/$id requires minRatio or maxRatio." }
+            if ($null -ne (Get-Property $Step 'tolerance')) { Assert-Integer (Get-Property $Step 'tolerance') "$ScenarioName/$id tolerance" 0 255 }
+        }
+        'assert_screenshot_difference' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'from')) -or [string]::IsNullOrWhiteSpace([string](Get-Property $Step 'to'))) { Fail "$ScenarioName/$id requires from and to screenshot names." }
+            Assert-Region (Get-Property $Step 'region') "$ScenarioName/$id region"
+            $hasLimit = $false
+            foreach ($name in @('minChangedRatio','maxChangedRatio','minMeanAbsDifference','maxMeanAbsDifference')) {
+                if ($null -ne (Get-Property $Step $name)) { $hasLimit = $true }
+            }
+            if (-not $hasLimit) { Fail "$ScenarioName/$id requires an image difference metric." }
+            if ($null -ne (Get-Property $Step 'changedPixelThreshold')) { Assert-Integer (Get-Property $Step 'changedPixelThreshold') "$ScenarioName/$id changedPixelThreshold" 0 255 }
+        }
         'assert_log' {
             if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'pattern'))) { Fail "$ScenarioName/$id requires pattern." }
             if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
@@ -86,6 +110,14 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index) {
             if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'pattern'))) { Fail "$ScenarioName/$id requires pattern." }
             if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
         }
+        'assert_path' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'path'))) { Fail "$ScenarioName/$id requires path." }
+            $kind = [string]$(if ($null -ne (Get-Property $Step 'kind')) { Get-Property $Step 'kind' } else { 'file' })
+            if (@('file','directory') -notcontains $kind.ToLowerInvariant()) { Fail "$ScenarioName/$id kind must be file or directory." }
+            if ($null -ne (Get-Property $Step 'minBytes')) { Assert-Integer (Get-Property $Step 'minBytes') "$ScenarioName/$id minBytes" 0 2147483647 }
+            if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
+        }
+        'assert_cursor_visible' { }
     }
 }
 function Validate-Manifest($Manifest) {
@@ -123,6 +155,8 @@ if (-not ('EditorE2E_Native' -as [type])) {
 using System;
 using System.Runtime.InteropServices;
 public static class EditorE2E_Native {
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
+    [StructLayout(LayoutKind.Sequential)] public struct CursorInfo { public int cbSize; public uint flags; public IntPtr hCursor; public Point ptScreenPos; }
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
@@ -132,6 +166,7 @@ public static class EditorE2E_Native {
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] public static extern short VkKeyScan(char ch);
     [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint mapType);
+    [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref CursorInfo info);
     public const uint LeftDown = 0x0002;
     public const uint LeftUp = 0x0004;
     public const uint RightDown = 0x0008;
@@ -144,6 +179,7 @@ public static class EditorE2E_Native {
         mouse_event(right ? RightUp : LeftUp, 0, 0, 0, UIntPtr.Zero);
     }
     public static void Key(byte key, bool up) { keybd_event(key, 0, up ? KeyUp : 0, UIntPtr.Zero); }
+    public static bool CursorVisible() { var info = new CursorInfo(); info.cbSize = Marshal.SizeOf(typeof(CursorInfo)); return GetCursorInfo(ref info) && (info.flags & 1) != 0; }
 }
 '@
 }
@@ -172,6 +208,17 @@ function Send-Key([string]$KeyName) {
     # Keep the chord down long enough for GLUT's callback and the editor's
     # GetAsyncKeyState-based configurable binding check to observe it.
     Start-Sleep -Milliseconds 80
+    [EditorE2E_Native]::Key($key, $true)
+    for ($i = $modifiers.Length - 1; $i -ge 0; $i--) { [EditorE2E_Native]::Key($modifiers[$i], $true) }
+}
+function Send-KeyForDuration([string]$KeyName, [double]$Seconds) {
+    $parts = $KeyName.ToUpperInvariant().Split('+')
+    $modifiers = @()
+    for ($i = 0; $i -lt $parts.Length - 1; $i++) { $modifiers += Get-VirtualKey $parts[$i] }
+    $key = Get-VirtualKey $parts[$parts.Length - 1]
+    foreach ($modifier in $modifiers) { [EditorE2E_Native]::Key($modifier, $false) }
+    [EditorE2E_Native]::Key($key, $false)
+    Start-Sleep -Milliseconds ([int]($Seconds * 1000))
     [EditorE2E_Native]::Key($key, $true)
     for ($i = $modifiers.Length - 1; $i -ge 0; $i--) { [EditorE2E_Native]::Key($modifiers[$i], $true) }
 }
@@ -251,6 +298,46 @@ function Get-ImageMetrics([string]$Path, $Region) {
         return [pscustomobject]@{ samples=$samples; nonBlackRatio=$nonBlack/[double]$samples; uniqueRatio=$colors.Count/[double]$samples; meanLuma=$lumaSum/[double]$samples }
     } finally { $image.Dispose() }
 }
+function Get-ImageColorRatio([string]$Path, $Region, $Rgb, [int]$Tolerance) {
+    Add-Type -AssemblyName System.Drawing
+    $image = [System.Drawing.Bitmap]::new($Path)
+    try {
+        $x = [int]$Region[0]; $y = [int]$Region[1]; $w = [int]$Region[2]; $h = [int]$Region[3]
+        if ($x + $w -gt $image.Width -or $y + $h -gt $image.Height) { Fail "Image region exceeds screenshot bounds: $Path" }
+        $step = [Math]::Max(1, [int]([Math]::Max($w,$h) / 160))
+        $samples = 0; $matching = 0
+        for ($py = $y; $py -lt $y + $h; $py += $step) {
+            for ($px = $x; $px -lt $x + $w; $px += $step) {
+                $pixel = $image.GetPixel($px,$py); $samples++
+                if ([Math]::Abs($pixel.R - [int]$Rgb[0]) -le $Tolerance -and
+                    [Math]::Abs($pixel.G - [int]$Rgb[1]) -le $Tolerance -and
+                    [Math]::Abs($pixel.B - [int]$Rgb[2]) -le $Tolerance) { $matching++ }
+            }
+        }
+        return [pscustomobject]@{ samples=$samples; matching=$matching; ratio=$matching/[double]$samples; rgb=@([int]$Rgb[0],[int]$Rgb[1],[int]$Rgb[2]); tolerance=$Tolerance }
+    } finally { $image.Dispose() }
+}
+function Get-ImageDifferenceMetrics([string]$FromPath, [string]$ToPath, $Region, [int]$ChangedPixelThreshold) {
+    Add-Type -AssemblyName System.Drawing
+    $from = [System.Drawing.Bitmap]::new($FromPath)
+    $to = [System.Drawing.Bitmap]::new($ToPath)
+    try {
+        if ($from.Width -ne $to.Width -or $from.Height -ne $to.Height) { Fail "Compared screenshots have different dimensions: $FromPath, $ToPath" }
+        $x = [int]$Region[0]; $y = [int]$Region[1]; $w = [int]$Region[2]; $h = [int]$Region[3]
+        if ($x + $w -gt $from.Width -or $y + $h -gt $from.Height) { Fail "Image region exceeds compared screenshot bounds." }
+        $step = [Math]::Max(1, [int]([Math]::Max($w,$h) / 160))
+        $samples = 0; $changed = 0; $differenceSum = 0.0
+        for ($py = $y; $py -lt $y + $h; $py += $step) {
+            for ($px = $x; $px -lt $x + $w; $px += $step) {
+                $a = $from.GetPixel($px,$py); $b = $to.GetPixel($px,$py)
+                $difference = ([Math]::Abs($a.R-$b.R) + [Math]::Abs($a.G-$b.G) + [Math]::Abs($a.B-$b.B)) / 3.0
+                $samples++; $differenceSum += $difference
+                if ($difference -ge $ChangedPixelThreshold) { $changed++ }
+            }
+        }
+        return [pscustomobject]@{ samples=$samples; changed=$changed; changedRatio=$changed/[double]$samples; meanAbsDifference=$differenceSum/[double]$samples; threshold=$ChangedPixelThreshold }
+    } finally { $from.Dispose(); $to.Dispose() }
+}
 function Get-AppendedLog([string]$LogPath, [long]$Offset) {
     if (-not (Test-Path -LiteralPath $LogPath)) { return '' }
     for ($attempt = 0; $attempt -lt 5; $attempt++) {
@@ -292,18 +379,22 @@ function Wait-ForFilePattern([string]$Path, [string]$Pattern, [bool]$MustNotMatc
     return $false
 }
 function Close-Editor($Process, [bool]$Force) {
-    if ($null -eq $Process) { return }
+    if ($null -eq $Process) { return $null }
     $current = Get-Process -Id $Process.Id -ErrorAction SilentlyContinue
-    if ($null -eq $current) { return }
-    if (-not $Force) { [void]$current.CloseMainWindow(); if ($current.WaitForExit(5000)) { return } }
+    if ($null -eq $current) { return [pscustomobject]@{ exited=$true; exitCode=$null; forced=$Force } }
+    if (-not $Force) {
+        [void]$current.CloseMainWindow()
+        if ($current.WaitForExit(5000)) { return [pscustomobject]@{ exited=$true; exitCode=$current.ExitCode; forced=$false } }
+    }
     Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    return [pscustomobject]@{ exited=$false; exitCode=$null; forced=$true }
 }
 function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$OutputRoot) {
     $scenarioDir = Join-Path $OutputRoot ([string]$Scenario.name)
     New-Item -ItemType Directory -Path $scenarioDir -Force | Out-Null
     $logPath = Join-Path $Root 'igi1ed.log'
     $logOffset = if (Test-Path -LiteralPath $logPath) { (Get-Item -LiteralPath $logPath).Length } else { 0 }
-    $process = $null; $latestScreenshot = $null; $steps = @()
+    $process = $null; $latestScreenshot = $null; $screenshots = @{}; $steps = @()
     $scenarioStarted = [DateTime]::UtcNow.ToString('o')
     $inputScale = if ($null -ne $Scenario.inputScale) { [double]$Scenario.inputScale } else { 1.0 }
     $scenarioResult = 'PASS'; $scenarioFailure = $null
@@ -315,13 +406,13 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                 switch ([string]$step.type) {
                     'launch_editor' {
                         $level = [int]$step.level
+                        $logOffset = if (Test-Path -LiteralPath $logPath) { (Get-Item -LiteralPath $logPath).Length } else { 0 }
                         $wmi = [wmiclass]'\\.\root\cimv2:Win32_Process'
                         $command = '"' + $Editor + '" --game-path "' + $Root + '" -level ' + $level
                         $created = $wmi.Create($command, $Root)
                         if ([int]$created.ReturnValue -ne 0) { Fail "WMI launch failed with return code $($created.ReturnValue)." }
                         $process = Wait-ForEditor ([int]$created.ProcessId) 45
                         $record.pid = [int]$created.ProcessId; $record.command = $command
-                        $logOffset = if (Test-Path -LiteralPath $logPath) { (Get-Item -LiteralPath $logPath).Length } else { 0 }
                     }
                     'wait_for_window' { $process = Wait-ForEditor $process.Id ([int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 45 })) }
                     'assert_process' {
@@ -331,6 +422,7 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         if ($record.workingSetMb -lt 30) { Fail "Editor working set is only $($record.workingSetMb) MB." }
                     }
                     'key' { Focus-Editor $process; Send-Key ([string]$step.key) }
+                    'key_hold' { Focus-Editor $process; Send-KeyForDuration ([string]$step.key) ([double]$step.seconds) }
                     'click' { Focus-Editor $process; $right = ([string]$(if ($null -ne $step.button) { $step.button } else { 'left' })).ToLowerInvariant() -eq 'right'; [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale),[int]([double]$step.y * $inputScale),$right) }
                     'type_text' { Focus-Editor $process; Send-Text ([string]$step.text) }
                     'wait' { Start-Sleep -Milliseconds ([int]([double]$step.seconds * 1000)) }
@@ -361,10 +453,33 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         $timeout = [int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 5 })
                         if (-not (Wait-ForFilePattern $filePath ([string]$step.pattern) $mustNotMatch $timeout)) { Fail "File assertion failed for '$($step.path)'." }
                     }
+                    'assert_path' {
+                        $path = Assert-UnderRoot (Join-Path $Root ([string]$step.path)) $Root 'assert_path path'
+                        $kind = [string]$(if ($null -ne $step.kind) { $step.kind } else { 'file' })
+                        $minBytes = [int]$(if ($null -ne $step.minBytes) { $step.minBytes } else { 0 })
+                        $timeout = [int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 5 })
+                        $deadline = [DateTime]::UtcNow.AddSeconds($timeout); $valid = $false
+                        do {
+                            if ($kind.ToLowerInvariant() -eq 'directory') {
+                                $valid = Test-Path -LiteralPath $path -PathType Container
+                            } elseif (Test-Path -LiteralPath $path -PathType Leaf) {
+                                $valid = ((Get-Item -LiteralPath $path).Length -ge $minBytes)
+                            }
+                            if (-not $valid) { Start-Sleep -Milliseconds 100 }
+                        } while (-not $valid -and [DateTime]::UtcNow -lt $deadline)
+                        if (-not $valid) { Fail "Path assertion failed for '$($step.path)' (kind=$kind, minBytes=$minBytes)." }
+                        $record.path = $path; $record.kind = $kind; $record.bytes = if ($kind.ToLowerInvariant() -eq 'file') { (Get-Item -LiteralPath $path).Length } else { $null }
+                    }
+                    'assert_cursor_visible' {
+                        if (-not [EditorE2E_Native]::CursorVisible()) { Fail 'Mouse cursor is not visible.' }
+                        $record.cursorVisible = $true
+                    }
                     'screenshot' {
                         Focus-Editor $process
                         $file = Join-Path $scenarioDir (([string]$step.name) + '.png')
-                        $latestScreenshot = Capture-Screenshot $file $step.region; $record.screenshot = $file
+                        $latestScreenshot = Capture-Screenshot $file $step.region
+                        $screenshots[[string]$step.name] = $latestScreenshot
+                        $record.screenshot = $file
                     }
                     'assert_screenshot_region' {
                         if ($null -eq $latestScreenshot) { Fail 'Image assertion requires a preceding screenshot step.' }
@@ -374,7 +489,34 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         if ($null -ne $step.minMeanLuma -and $metrics.meanLuma -lt [double]$step.minMeanLuma) { Fail "meanLuma $($metrics.meanLuma) < $($step.minMeanLuma)." }
                         if ($null -ne $step.maxMeanLuma -and $metrics.meanLuma -gt [double]$step.maxMeanLuma) { Fail "meanLuma $($metrics.meanLuma) > $($step.maxMeanLuma)." }
                     }
-                    'close_editor' { Close-Editor $process ([bool]$(if ($null -ne $step.force) { $step.force } else { $false })); $process = $null }
+                    'assert_screenshot_color_ratio' {
+                        if ($null -eq $latestScreenshot) { Fail 'Color assertion requires a preceding screenshot step.' }
+                        $tolerance = [int]$(if ($null -ne $step.tolerance) { $step.tolerance } else { 12 })
+                        $metrics = Get-ImageColorRatio $latestScreenshot.path $step.region $step.rgb $tolerance
+                        $record.metrics = $metrics
+                        if ($null -ne $step.minRatio -and $metrics.ratio -lt [double]$step.minRatio) { Fail "color ratio $($metrics.ratio) < $($step.minRatio)." }
+                        if ($null -ne $step.maxRatio -and $metrics.ratio -gt [double]$step.maxRatio) { Fail "color ratio $($metrics.ratio) > $($step.maxRatio)." }
+                    }
+                    'assert_screenshot_difference' {
+                        $fromName = [string]$step.from; $toName = [string]$step.to
+                        if (-not $screenshots.ContainsKey($fromName) -or -not $screenshots.ContainsKey($toName)) { Fail "Difference assertion references unknown screenshots '$fromName' or '$toName'." }
+                        $threshold = [int]$(if ($null -ne $step.changedPixelThreshold) { $step.changedPixelThreshold } else { 12 })
+                        $metrics = Get-ImageDifferenceMetrics $screenshots[$fromName].path $screenshots[$toName].path $step.region $threshold
+                        $record.metrics = $metrics
+                        if ($null -ne $step.minChangedRatio -and $metrics.changedRatio -lt [double]$step.minChangedRatio) { Fail "changedRatio $($metrics.changedRatio) < $($step.minChangedRatio)." }
+                        if ($null -ne $step.maxChangedRatio -and $metrics.changedRatio -gt [double]$step.maxChangedRatio) { Fail "changedRatio $($metrics.changedRatio) > $($step.maxChangedRatio)." }
+                        if ($null -ne $step.minMeanAbsDifference -and $metrics.meanAbsDifference -lt [double]$step.minMeanAbsDifference) { Fail "meanAbsDifference $($metrics.meanAbsDifference) < $($step.minMeanAbsDifference)." }
+                        if ($null -ne $step.maxMeanAbsDifference -and $metrics.meanAbsDifference -gt [double]$step.maxMeanAbsDifference) { Fail "meanAbsDifference $($metrics.meanAbsDifference) > $($step.maxMeanAbsDifference)." }
+                    }
+                    'close_editor' {
+                        $force = [bool]$(if ($null -ne $step.force) { $step.force } else { $false })
+                        $closed = Close-Editor $process $force
+                        if ($null -ne $closed) {
+                            $record.exited = $closed.exited; $record.exitCode = $closed.exitCode; $record.forced = $closed.forced
+                            if (-not $force -and $closed.exited -and $closed.exitCode -ne 0) { Fail "Editor exited with code $($closed.exitCode) during graceful close." }
+                        }
+                        $process = $null
+                    }
                 }
             } catch {
                 $record.status='FAIL'; $record.error=$_.Exception.Message; throw
@@ -387,7 +529,7 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
         if ($null -ne $process) {
             try { Focus-Editor $process; $latestScreenshot = Capture-Screenshot (Join-Path $scenarioDir 'failure.png') $null } catch {}
         }
-    } finally { if (-not $KeepEditorOpen) { Close-Editor $process $true } }
+    } finally { if (-not $KeepEditorOpen) { $discardedCloseResult = Close-Editor $process $true } }
     $result = [ordered]@{ name=[string]$Scenario.name; level=[int]$Scenario.level; status=$scenarioResult; started=$scenarioStarted; finished=[DateTime]::UtcNow.ToString('o'); logPath=$logPath; logOffset=$logOffset; failure=$scenarioFailure; steps=$steps }
     $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $scenarioDir 'scenario.json') -Encoding UTF8
     return [pscustomobject]$result
