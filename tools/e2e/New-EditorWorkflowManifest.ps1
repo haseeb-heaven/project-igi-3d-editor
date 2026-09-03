@@ -149,9 +149,9 @@ function Get-Sha256Text([string]$Text) {
     finally { $sha.Dispose() }
 }
 function Get-RelativePath([string]$Path, [string]$Root) {
-    $rootUri = [Uri]((Full $Root).TrimEnd('\\') + '\\')
+    $rootUri = [Uri]((Full $Root).TrimEnd('\') + '\')
     $pathUri = [Uri](Full $Path)
-    return [Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString()).Replace('/', '\\')
+    return [Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString()).Replace('/', '\')
 }
 function Get-ConverterOutput([string]$Converter, [string[]]$Arguments) {
     $output = @(& $Converter @Arguments 2>&1)
@@ -227,7 +227,7 @@ try {
         if ($calls.Count -eq 0) { Fail "No Task_New instances found in $objectsQvm." }
 
         $archiveCandidates = @(
-            (Join-Path $directory.FullName ("models\\level$level.res")),
+            (Join-Path $directory.FullName ("models\level$level.res")),
             (Join-Path $locationRoot 'COMMON\models\location0.res')
         ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
         $modelLods = Get-ModelLods $converter $archiveCandidates
@@ -286,7 +286,10 @@ try {
         foreach ($entry in @($inventory | Where-Object { -not [string]::IsNullOrWhiteSpace($_.modelId) })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'model-picker' $level $entry.taskId $entry.type ([ordered]@{ modelId=$entry.modelId; lods=@($entry.lods) }) }
         foreach ($entry in @($inventory | Where-Object { @($_.textures).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'texture-resolution' $level $entry.taskId $entry.type ([ordered]@{ textures=@($entry.textures) }) }
         foreach ($entry in @($inventory | Where-Object { @($_.sounds).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'sound-resolution' $level $entry.taskId $entry.type ([ordered]@{ sounds=@($entry.sounds) }) }
-        foreach ($entry in @($inventory | Where-Object { $_.type -eq 'AIGraph' })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'graph-overlay' $level $entry.taskId $entry.type ([ordered]@{ graphs=$graphFiles }) }
+        foreach ($graphFile in $graphFiles) {
+            $graphId = [IO.Path]::GetFileNameWithoutExtension($graphFile)
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'graph-overlay' $level "graph:$graphId" 'AIGraph' ([ordered]@{ graphFile=$graphFile })
+        }
         foreach ($entry in $animationTasks) { Add-Scenario $scenarios $scenarioKeys $actionMap 'ai-animation' $level $entry.taskId $entry.type ([ordered]@{ aiFiles=$aiFiles }) }
         foreach ($entry in $weatherTasks) { Add-Scenario $scenarios $scenarioKeys $actionMap 'weather-classification' $level $entry.taskId $entry.type ([ordered]@{ weather='RainEffect' }) }
         if ($lightmapFiles.Count -gt 0) { Add-Scenario $scenarios $scenarioKeys $actionMap 'lightmap-inspection' $level $inventory[0].taskId $inventory[0].type ([ordered]@{ lightmaps=$lightmapFiles }) }
@@ -299,7 +302,7 @@ try {
                     'model-picker' { 'No Task_New instance has an authored model reference.' }
                     'texture-resolution' { 'No Task_New instance has an authored texture reference.' }
                     'sound-resolution' { 'No Task_New instance has an authored sound reference.' }
-                    'graph-overlay' { 'No AIGraph Task_New instance was discovered.' }
+                    'graph-overlay' { 'No graph files were discovered.' }
                     'ai-animation' { 'No AnimTask or HumanAI Task_New instance was discovered.' }
                     'weather-classification' { 'No RainEffect Task_New instance was discovered.' }
                     'lightmap-inspection' { 'No lightmap files were discovered.' }
