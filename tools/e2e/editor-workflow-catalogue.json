@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "actions": [
+    {
+      "name": "inspect-task",
+      "action": "select_task",
+      "applicability": "every Task_New instance",
+      "requiredSteps": ["select_task", "capture_properties"],
+      "uiOracle": "property_panel_identifies_task_type",
+      "stateOracle": "inventory_anchor_matches_decompiled_task"
+    },
+    {
+      "name": "model-picker",
+      "action": "select_model",
+      "applicability": "tasks with an authored model reference",
+      "requiredSteps": ["select_task", "open_model_picker"],
+      "uiOracle": "model_picker_shows_authored_model",
+      "stateOracle": "model_reference_is_in_inventory"
+    },
+    {
+      "name": "texture-resolution",
+      "action": "inspect_texture",
+      "applicability": "tasks with a texture reference",
+      "requiredSteps": ["select_task", "inspect_textures"],
+      "uiOracle": "texture_assignment_is_visible",
+      "stateOracle": "texture_reference_is_in_inventory"
+    },
+    {
+      "name": "sound-resolution",
+      "action": "inspect_sound",
+      "applicability": "tasks with a sound reference",
+      "requiredSteps": ["select_task", "inspect_sounds"],
+      "uiOracle": "sound_control_is_visible",
+      "stateOracle": "sound_reference_is_in_inventory"
+    },
+    {
+      "name": "graph-overlay",
+      "action": "open_graph",
+      "applicability": "levels with an AI graph",
+      "requiredSteps": ["open_graph", "select_node"],
+      "uiOracle": "graph_overlay_is_visible",
+      "stateOracle": "graph_file_is_in_inventory"
+    },
+    {
+      "name": "ai-animation",
+      "action": "inspect_animation",
+      "applicability": "animation-capable AI tasks",
+      "requiredSteps": ["select_task", "start_animation", "pause_animation"],
+      "uiOracle": "animation_frame_changes_while_playing",
+      "stateOracle": "ai_or_animation_anchor_is_in_inventory"
+    },
+    {
+      "name": "weather-classification",
+      "action": "inspect_weather",
+      "applicability": "levels with an authored RainEffect",
+      "requiredSteps": ["load_level", "inspect_weather"],
+      "uiOracle": "weather_effect_is_classified",
+      "stateOracle": "weather_anchor_is_in_inventory"
+    },
+    {
+      "name": "lightmap-inspection",
+      "action": "inspect_lightmaps",
+      "applicability": "levels with a lightmap archive",
+      "requiredSteps": ["select_task", "inspect_lightmaps"],
+      "uiOracle": "lightmap_mode_control_is_visible",
+      "stateOracle": "lightmap_archive_is_in_inventory"
+    }
+  ]
+}
