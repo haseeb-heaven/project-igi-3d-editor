@@ -245,7 +245,7 @@ try {
             $taskIds.Add($taskId)
             $type = Unquote ([string]$call.arguments[1])
             $fields = @($declarations[$type])
-            $positionField = @(Get-Field $fields '(?i)^(Position|Graph position|Start position|Holder Position)$')
+            $positionField = @(Get-Field $fields '(?i)^(Position|Position start|Graph position|Start position|Holder Position)$')
             $rotationField = @(Get-Field $fields '(?i)^Orientation$')
             $position = if ($positionField.Count -eq 1) { Convert-NumberVector $call.arguments $positionField[0].offset $positionField[0].width } else { @() }
             $rotation = if ($rotationField.Count -eq 1) { Convert-NumberVector $call.arguments $rotationField[0].offset $rotationField[0].width } else { @() }
@@ -262,15 +262,20 @@ try {
             $lodKey = $modelId -replace '(?i)\.mef$', ''
             $lodBase = if ($lodKey -match '^(.*)_[0-9]+$') { $Matches[1] } else { $lodKey }
             $lods = if ($modelLods.ContainsKey($lodBase)) { @($modelLods[$lodBase]) } else { @() }
-            # Renderable = the editor can place and view this instance: it has
-            # an authored model reference plus a resolved position and
-            # orientation.  Tasks that expose none of these (pure logic,
-            # spline-holder, graph markers) are classified non-renderable and
-            # must not receive object-orbit coverage.
+            # Renderable = the editor can place and view this instance.  That
+            # requires an authored model reference plus a resolved 3-component
+            # world position.  Orientation is recorded but not a gate: placed
+            # objects such as soldiers and cameras carry a horizontal yaw
+            # ("Gamma"/"Alpha" Angle fields) rather than a full Orientation, and
+            # the editor still centers and orbits them.  Pure logic, spline,
+            # and 1-component-position tasks (e.g. Train) are non-renderable.
+            # Position field names seen in the corpus: "Position",
+            # "Position start" (Door), "Holder Position" (SCamera), and
+            # "Graph position" / "Start position" / "Waypoint Model" holders.
             $hasModel = -not [string]::IsNullOrWhiteSpace($modelId)
             $hasPosition = @($position).Count -eq 3
             $hasRotation = @($rotation).Count -ge 1
-            $renderable = $hasModel -and $hasPosition -and $hasRotation
+            $renderable = $hasModel -and $hasPosition
             $inventory.Add([ordered]@{
                 level=$level
                 taskId=$taskId

@@ -188,7 +188,7 @@
     {
       "name": "object-visual-orbit",
       "action": "orbit_object",
-      "applicability": "renderable Task_New instances with an authored model, position, and orientation",
+      "applicability": "renderable Task_New instances with an authored model and 3-component world position",
       "requiredSteps": ["find_task_by_id", "open_properties", "orbit_front", "orbit_back", "orbit_left", "orbit_right", "orbit_top", "orbit_bottom", "orbit_diagonal_x4"],
       "uiOracle": "projected_object_pixels_nonempty_per_view",
       "stateOracle": "authored_transform_and_model_anchor_match_inventory"

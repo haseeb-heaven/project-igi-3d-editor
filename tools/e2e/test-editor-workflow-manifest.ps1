@@ -192,11 +192,12 @@ try {
 
     # ---- Object visual orbit coverage contract (Task 4) ----
     # Every renderable instance must be internally consistent (renderable iff
-    # it has an authored model, a 3-component position, and a rotation) and
-    # must carry exactly one object-visual-orbit scenario whose anchor records
-    # model/position/rotation/LODs and the ten deterministic views.  The
-    # orbit-required inventory fields stay stable so a task can never silently
-    # lose its visual anchor.
+    # it has an authored model and a 3-component position; orientation is
+    # recorded but not a gate because soldiers/cameras carry yaw-only Angle
+    # fields) and must carry exactly one object-visual-orbit scenario whose
+    # anchor records model/position/rotation/LODs and the ten deterministic
+    # views.  The orbit-required inventory fields stay stable so a task can
+    # never silently lose its visual anchor.
     $orbitAnchorsByKey = @{}
     foreach ($scenario in @($scenarios | Where-Object { $_.action -eq 'object-visual-orbit' })) {
         $orbitAnchorsByKey["$($scenario.level)|$($scenario.taskId)"] = $scenario
@@ -206,7 +207,7 @@ try {
             $hasModel = -not [string]::IsNullOrWhiteSpace([string]$entry.modelId)
             $posCount = @($entry.authoredPosition).Count
             $rotCount = @($entry.authoredRotation).Count
-            $expectedRenderable = ($hasModel -and $posCount -eq 3 -and $rotCount -ge 1)
+            $expectedRenderable = ($hasModel -and $posCount -eq 3)
             $declaredRenderable = [bool]$entry.renderable
             Require ($declaredRenderable -eq $expectedRenderable) "Level $($level.level) task $($entry.taskId) renderable flag $declaredRenderable disagrees with fields (model=$hasModel pos=$posCount rot=$rotCount)."
             Require ($null -ne $entry.hasModel -and $null -ne $entry.hasPosition -and $null -ne $entry.hasRotation) "Level $($level.level) task $($entry.taskId) is missing renderable classification fields."
