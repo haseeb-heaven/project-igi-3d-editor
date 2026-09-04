@@ -163,10 +163,20 @@ function Get-ModelLods([string]$Converter, [string[]]$Archives) {
     foreach ($archive in $Archives | Sort-Object -Unique) {
         foreach ($line in Get-ConverterOutput $Converter @('res', 'list', $archive)) {
             $match = [regex]::Match($line, '(?i)([^/\\:]+)_([0-9]+)\.mef$')
-            if (-not $match.Success) { continue }
-            $base = $match.Groups[1].Value
-            if (-not $lods.ContainsKey($base)) { $lods[$base] = New-Object System.Collections.Generic.List[int] }
-            $lods[$base].Add([int]$match.Groups[2].Value)
+            if ($match.Success) {
+                $base = $match.Groups[1].Value
+                if (-not $lods.ContainsKey($base)) { $lods[$base] = New-Object System.Collections.Generic.List[int] }
+                $lods[$base].Add([int]$match.Groups[2].Value)
+                continue
+            }
+            # Bare single-LOD meshes (switch.mef, mapcomputer.mef) carry no LOD
+            # suffix; treat them as LOD level 1 so they resolve like any mesh.
+            $bareMatch = [regex]::Match($line, '(?i)([^/\\:]+)\.mef$')
+            if ($bareMatch.Success) {
+                $base = $bareMatch.Groups[1].Value
+                if (-not $lods.ContainsKey($base)) { $lods[$base] = New-Object System.Collections.Generic.List[int] }
+                $lods[$base].Add(1)
+            }
         }
     }
     foreach ($key in @($lods.Keys)) { $lods[$key] = @($lods[$key] | Sort-Object -Unique) }
@@ -255,15 +265,18 @@ try {
             $position = if ($positionField.Count -eq 1) { Convert-NumberVector $call.arguments $positionField[0].offset $positionField[0].width } else { @() }
             $rotation = if ($rotationField.Count -eq 1) { Convert-NumberVector $call.arguments $rotationField[0].offset $rotationField[0].width } else { @() }
             $modelId = Get-FieldText $fields $call.arguments '(?i)^(Model|Holder Model|Waypoint Model)$'
-            $models = Get-FieldValues $fields $call.arguments '(?i)model'
+            # Get-FieldValues unrolls a single-element result to a scalar
+            # string; wrapping in @() keeps array indexing safe so the first
+            # fallback value is the whole model id, never its first character.
+            $models = @(Get-FieldValues $fields $call.arguments '(?i)model')
             if ([string]::IsNullOrWhiteSpace($modelId) -and $models.Count -gt 0) { $modelId = $models[0] }
             $textures = New-Object System.Collections.Generic.List[string]
-            foreach ($value in Get-FieldValues $fields $call.arguments '(?i)(texture|bitmap|sprite)') { $textures.Add($value) }
+            foreach ($value in @(Get-FieldValues $fields $call.arguments '(?i)(texture|bitmap|sprite)')) { $textures.Add($value) }
             foreach ($argument in $call.arguments) {
                 $value = Unquote ([string]$argument)
                 if ($value -match '(?i)\.(tex|tga|jpg|bmp)$') { $textures.Add($value) }
             }
-            $sounds = Get-FieldValues $fields $call.arguments '(?i)sound'
+            $sounds = @(Get-FieldValues $fields $call.arguments '(?i)sound')
             $lodKey = $modelId -replace '(?i)\.mef$', ''
             $lodBase = if ($lodKey -match '^(.*)_[0-9]+$') { $Matches[1] } else { $lodKey }
             $lods = if ($modelLods.ContainsKey($lodBase)) { @($modelLods[$lodBase]) } else { @() }

@@ -280,10 +280,12 @@ non-mesh placeholders and are recorded but never treated as corpus misses. Any
 remaining reference is a genuine corpus finding recorded in
 `discovery.unresolvedModels` per level; the contract in
 `test-editor-workflow-manifest.ps1` asserts the classification is consistent
-and every unresolved model is listed. Current corpus findings include a
-level-7 `EditRigidObj` referencing `s332_02_1` (absent from every mission
-archive) and a level-14 `Switch` referencing `s` — both candidates for the
-editor's auto-import/missing-model path.
+and every unresolved model is listed. The current corpus has one genuine
+finding: a level-7 `EditRigidObj` referencing `s332_02_1`, a model absent from
+every mission archive — a candidate for the editor's missing-model/auto-import
+path. Bare single-LOD meshes (`switch.mef`, `mapcomputer.mef`) and
+cross-level references (a level-N object referencing a model packed in a
+sibling level's archive) resolve correctly.
 
 `tests/test_res_model_set.cpp` pins the resolver contract: authored
 LOD-suffixed references resolve against archive entries exactly, base family
