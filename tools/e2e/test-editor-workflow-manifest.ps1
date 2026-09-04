@@ -157,6 +157,39 @@ try {
         }
     }
 
+    # ---- Editor control/persistence coverage contract (Task 3) ----
+    # Controls that exist on the editor for every level must have a generated
+    # scenario on every one of the 14 levels, never a silent exclusion.  The
+    # conditional controls (lightmap mode, terrain fog, level change) are
+    # allowed an explicit corpus exclusion only where the corpus lacks the
+    # feature.
+    $alwaysApplicableControls = @(
+        'editor-pause-resume', 'editor-task-tree', 'editor-terrain-shortcut',
+        'editor-font-size', 'editor-autosave', 'editor-logging',
+        'editor-music', 'editor-collision-clip', 'editor-save',
+        'editor-reset', 'editor-graceful-quit', 'editor-cursor-state'
+    )
+    foreach ($control in $alwaysApplicableControls) {
+        foreach ($level in $levels) {
+            $controlScenarios = @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq $control })
+            Require ($controlScenarios.Count -eq 1) "Level $($level.level) control '$control' must have exactly one generated scenario; found $($controlScenarios.Count)."
+        }
+    }
+    $conditionalControls = @('editor-lightmap-mode', 'editor-terrain-fog', 'editor-level-change')
+    foreach ($control in $conditionalControls) {
+        $total = @($scenarios | Where-Object { $_.action -eq $control }).Count
+        $excluded = @($exclusions | Where-Object { $_.action -eq $control }).Count
+        Require (($total + $excluded) -gt 0) "Conditional control '$control' has no scenario or exclusion anywhere."
+    }
+    $controlAnchors = @($scenarios | Where-Object { $_.taskId -eq 'editor-control' })
+    foreach ($scenario in $controlAnchors) {
+        foreach ($field in @('action', 'workflow', 'level', 'taskId', 'type', 'anchor')) {
+            Require ($null -ne $scenario.$field) "Control scenario on level $($scenario.level) is missing $field."
+        }
+        Require ($scenario.workflow -eq $scenario.action) "Control scenario '$($scenario.action)' workflow must equal its action."
+        Require ($scenario.type -eq 'EditorControl') "Control scenario '$($scenario.action)' type must be EditorControl."
+    }
+
     # ---- Runner evidence/reversible primitives contract (Task 2) ----
     # Every case below is validated by editor-e2e.ps1 -ValidateOnly BEFORE any
     # editor launch.  Each scenario is otherwise well-formed (carries both a UI

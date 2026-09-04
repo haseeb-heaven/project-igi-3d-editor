@@ -294,6 +294,34 @@ try {
         foreach ($entry in $weatherTasks) { Add-Scenario $scenarios $scenarioKeys $actionMap 'weather-classification' $level $entry.taskId $entry.type ([ordered]@{ weather='RainEffect' }) }
         if ($lightmapFiles.Count -gt 0) { Add-Scenario $scenarios $scenarioKeys $actionMap 'lightmap-inspection' $level $inventory[0].taskId $inventory[0].type ([ordered]@{ lightmaps=$lightmapFiles }) }
 
+        # ---- Per-level editor control workflows (Task 3) ----
+        # These anchor to the editor itself rather than to a task/model; each
+        # control applies to every level unless the catalogue applicability or
+        # the discovered corpus says otherwise.  Controls that cannot run on a
+        # level are recorded as explicit exclusions below, never silently
+        # skipped.
+        $terrainDirectory = Join-Path $directory.FullName 'terrain'
+        $hasTerrain = Test-Path -LiteralPath $terrainDirectory -PathType Container
+        $controlAnchor = 'editor-control'
+        $alwaysControls = @(
+            'editor-pause-resume', 'editor-task-tree', 'editor-terrain-shortcut',
+            'editor-font-size', 'editor-autosave', 'editor-logging',
+            'editor-music', 'editor-collision-clip', 'editor-save',
+            'editor-reset', 'editor-graceful-quit', 'editor-cursor-state'
+        )
+        foreach ($control in $alwaysControls) {
+            Add-Scenario $scenarios $scenarioKeys $actionMap $control $level $controlAnchor 'EditorControl' ([ordered]@{ control=$control })
+        }
+        if ($lightmapFiles.Count -gt 0) {
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'editor-lightmap-mode' $level $controlAnchor 'EditorControl' ([ordered]@{ control='editor-lightmap-mode'; lightmaps=$lightmapFiles })
+        }
+        if ($hasTerrain) {
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'editor-terrain-fog' $level $controlAnchor 'EditorControl' ([ordered]@{ control='editor-terrain-fog'; terrain='present' })
+        }
+        if ($level -lt 14) {
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'editor-level-change' $level $controlAnchor 'EditorControl' ([ordered]@{ control='editor-level-change'; nextLevel=$level + 1 })
+        }
+
         $actionPresence = @{}
         foreach ($scenario in @($scenarios | Where-Object { $_.level -eq $level })) { $actionPresence[$scenario.action] = $true }
         foreach ($actionName in @($actionMap.Keys | Sort-Object)) {
@@ -306,6 +334,9 @@ try {
                     'ai-animation' { 'No AnimTask or HumanAI Task_New instance was discovered.' }
                     'weather-classification' { 'No RainEffect Task_New instance was discovered.' }
                     'lightmap-inspection' { 'No lightmap files were discovered.' }
+                    'editor-lightmap-mode' { 'No lightmap archive was discovered in this level.' }
+                    'editor-terrain-fog' { 'No terrain directory was discovered in this level.' }
+                    'editor-level-change' { 'No higher level exists to switch to (level 14 is the last).' }
                     default { 'No applicable corpus anchor was discovered.' }
                 }
                 $exclusions.Add([ordered]@{ action=$actionName; level=$level; reason=$reason })

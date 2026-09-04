@@ -200,6 +200,40 @@ requires the terrain-edit palette in its screenshot. It complements the
 focused model-import, property-edit, save/reopen, and pause-setting scenarios
 above.
 
+### Editor control and persistence workflows
+
+The workflow catalogue (`editor-workflow-catalogue.json`) declares the
+editor-level controls, and `New-EditorWorkflowManifest.ps1` emits a generated
+scenario anchor for each control on every applicable level. The always-on
+controls (pause/resume, task tree, terrain shortcut, cursor state, font,
+autosave, logging, music, collision/clip, save, reset, graceful quit) are
+required on all 14 levels with no silent exclusions; the conditional controls
+(lightmap mode, terrain fog, level change) require an explicit corpus
+exclusion where the level lacks the feature. `test-editor-workflow-manifest.ps1`
+enforces this contract.
+
+The checked-in `tools/e2e/scenarios/editor-workflows.json` provides the
+concrete runnable per-control scenarios (pause-row coordinates computed from
+`BuildPauseMenuLayout` for the 1536x864 editor client). Validate them without
+launching:
+
+```powershell
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -ValidateOnly `
+  -ScenarioPath 'D:\Code\project-igi-editor\tools\e2e\scenarios\editor-workflows.json'
+```
+
+Config-persisting controls (font, autosave, logging, music) snapshot
+`qedconfig.qsc` and restore it; level save/reset snapshot the level
+`objects.qvm` and restore it. Run them serially with mutation allowed only
+against disposable copies or with byte-exact restoration:
+
+```powershell
+Set-Location D:\IGI1
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -GameRoot D:\IGI1 `
+  -ScenarioPath 'D:\Code\project-igi-editor\tools\e2e\scenarios\editor-workflows.json' `
+  -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\editor-workflows-run'
+```
+
 ### Visual regression gate
 
 The focused workflows do not cover every visual failure. The separate
