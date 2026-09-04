@@ -230,7 +230,12 @@ try {
             (Join-Path $directory.FullName ("models\level$level.res")),
             (Join-Path $locationRoot 'COMMON\models\location0.res')
         ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
-        $modelLods = Get-ModelLods $converter $archiveCandidates
+        # A level may reference a model physically packed in another level's
+        # archive (the editor auto-imports it into the level .res on save).
+        # Scan every level archive plus the common archive so LOD discovery
+        # and corpus resolution cover the full importable set.
+        $allModelArchives = @(Get-ChildItem -LiteralPath $locationRoot -Directory | Where-Object { $_.Name -match '^level([0-9]+)$' } | ForEach-Object { Join-Path $_.FullName ("models\" + $_.Name + '.res') } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) + $archiveCandidates
+        $modelLods = Get-ModelLods $converter $allModelArchives
         $sourceHash = (Get-FileHash -LiteralPath $objectsQvm -Algorithm SHA256).Hash.ToLowerInvariant()
         $inventory = New-Object System.Collections.Generic.List[object]
         $taskIds = New-Object System.Collections.Generic.List[string]
@@ -262,20 +267,22 @@ try {
             $lodKey = $modelId -replace '(?i)\.mef$', ''
             $lodBase = if ($lodKey -match '^(.*)_[0-9]+$') { $Matches[1] } else { $lodKey }
             $lods = if ($modelLods.ContainsKey($lodBase)) { @($modelLods[$lodBase]) } else { @() }
-            # Renderable = the editor can place and view this instance.  That
-            # requires an authored model reference plus a resolved 3-component
-            # world position.  Orientation is recorded but not a gate: placed
-            # objects such as soldiers and cameras carry a horizontal yaw
-            # ("Gamma"/"Alpha" Angle fields) rather than a full Orientation, and
-            # the editor still centers and orbits them.  Pure logic, spline,
-            # and 1-component-position tasks (e.g. Train) are non-renderable.
-            # Position field names seen in the corpus: "Position",
-            # "Position start" (Door), "Holder Position" (SCamera), and
-            # "Graph position" / "Start position" / "Waypoint Model" holders.
+            # Helper models are authored collision/logic placeholders rather
+            # than renderable meshes: waypoint (spline marker), colbox/collision
+            # boxes, joint_fixer, and bare numeric spline indices.  They are
+            # intentionally absent from the model archives and must not count
+            # as corpus misses.  A real mesh reference resolves only when at
+            # least one LOD file is discoverable in the importable archive set.
             $hasModel = -not [string]::IsNullOrWhiteSpace($modelId)
             $hasPosition = @($position).Count -eq 3
             $hasRotation = @($rotation).Count -ge 1
-            $renderable = $hasModel -and $hasPosition
+            $helperModel = $modelId -imatch '^(waypoint|colbox[0-9]*|joint_fixer[0-9]*|[0-9]+)$'
+            $modelResolved = (-not $hasModel) -or $helperModel -or (@($lods).Count -gt 0)
+            # Renderable = the editor can place AND view this instance as a
+            # mesh.  Helper models (collision boxes, spline waypoints,
+            # joint fixers) carry a position but no renderable geometry, so
+            # they are placed but not orbit-able.
+            $renderable = $hasModel -and $hasPosition -and -not $helperModel
             $inventory.Add([ordered]@{
                 level=$level
                 taskId=$taskId
@@ -291,6 +298,8 @@ try {
                 hasModel=$hasModel
                 hasPosition=$hasPosition
                 hasRotation=$hasRotation
+                helperModel=$helperModel
+                modelResolved=$modelResolved
             })
         }
 
@@ -388,6 +397,7 @@ try {
                 animationTaskIds=@($animationTasks | ForEach-Object { $_.taskId })
                 weatherTaskIds=@($weatherTasks | ForEach-Object { $_.taskId })
                 lightmaps=$lightmapFiles
+                unresolvedModels=@($inventory | Where-Object { $_.hasModel -and -not $_.helperModel -and -not $_.modelResolved } | ForEach-Object { $_.modelId } | Sort-Object -Unique)
             }
         })
     }

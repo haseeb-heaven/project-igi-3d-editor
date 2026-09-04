@@ -145,7 +145,7 @@ try {
         Require ((Compare-Object -ReferenceObject ($independentTaskIds | Sort-Object) -DifferenceObject ($taskIds | Sort-Object)).Count -eq 0) "Level $($level.level) declared task IDs do not match independently decompiled Task_New instances."
         Require ((Compare-Object -ReferenceObject ($independentTaskIds | Sort-Object) -DifferenceObject ($inventoryTaskIds | Sort-Object)).Count -eq 0) "Level $($level.level) inventory task IDs are not exhaustive against independently decompiled Task_New instances."
         foreach ($entry in $inventory) {
-            foreach ($field in @('level', 'taskId', 'type', 'modelId', 'authoredPosition', 'authoredRotation', 'textures', 'lods', 'sounds', 'sourceHash', 'renderable', 'hasModel', 'hasPosition', 'hasRotation')) {
+            foreach ($field in @('level', 'taskId', 'type', 'modelId', 'authoredPosition', 'authoredRotation', 'textures', 'lods', 'sounds', 'sourceHash', 'renderable', 'hasModel', 'hasPosition', 'hasRotation', 'helperModel', 'modelResolved')) {
                 Require ($null -ne $entry.$field) "Level $($level.level) task $($entry.taskId) is missing $field."
             }
             Require ([string]$entry.sourceHash -cmatch '^[a-f0-9]{64}$') "Level $($level.level) task $($entry.taskId) sourceHash is not a lowercase 64-character SHA-256 value."
@@ -207,7 +207,8 @@ try {
             $hasModel = -not [string]::IsNullOrWhiteSpace([string]$entry.modelId)
             $posCount = @($entry.authoredPosition).Count
             $rotCount = @($entry.authoredRotation).Count
-            $expectedRenderable = ($hasModel -and $posCount -eq 3)
+            $helperModel = [bool]$entry.helperModel
+            $expectedRenderable = ($hasModel -and $posCount -eq 3 -and -not $helperModel)
             $declaredRenderable = [bool]$entry.renderable
             Require ($declaredRenderable -eq $expectedRenderable) "Level $($level.level) task $($entry.taskId) renderable flag $declaredRenderable disagrees with fields (model=$hasModel pos=$posCount rot=$rotCount)."
             Require ($null -ne $entry.hasModel -and $null -ne $entry.hasPosition -and $null -ne $entry.hasRotation) "Level $($level.level) task $($entry.taskId) is missing renderable classification fields."
@@ -229,6 +230,38 @@ try {
     }
     $renderableCount = @($levels | ForEach-Object { @(Values $_.inventory | Where-Object { $_.renderable }) }).Count
     Require ($orbitAnchorsByKey.Count -eq $renderableCount) "Orbit anchor count $($orbitAnchorsByKey.Count) must equal renderable inventory count $renderableCount."
+
+    # ---- Asset corpus resolution contract (Task 5) ----
+    # Every model reference must be classified: a real mesh resolves to at
+    # least one discoverable LOD in the importable archive set, a helper model
+    # (waypoint/colbox/joint_fixer/numeric spline index) is an intentional
+    # non-mesh placeholder, and anything else is a genuine corpus finding that
+    # must be recorded in discovery.unresolvedModels so it can never silently
+    # vanish.  Textures and sounds are recorded per entry for the resolver
+    # workflows.
+    foreach ($level in $levels) {
+        $unresolved = @(Values $level.discovery.unresolvedModels | ForEach-Object { [string]$_ })
+        $expectedUnresolved = @($level.inventory | Where-Object { $_.hasModel -and -not $_.helperModel -and -not $_.modelResolved } | ForEach-Object { [string]$_.modelId } | Sort-Object -Unique)
+        $unresolvedDelta = Compare-Object -ReferenceObject $expectedUnresolved -DifferenceObject $unresolved
+        Require ($null -eq $unresolvedDelta -or @($unresolvedDelta).Count -eq 0) "Level $($level.level) discovery.unresolvedModels does not match the unresolved inventory records."
+        foreach ($entry in @(Values $level.inventory)) {
+            $hasModel = -not [string]::IsNullOrWhiteSpace([string]$entry.modelId)
+            if ($hasModel) {
+                $model = [string]$entry.modelId
+                $helper = [bool]$entry.helperModel
+                $resolved = [bool]$entry.modelResolved
+                $isSentinel = $model -imatch '^(waypoint|colbox[0-9]*|joint_fixer[0-9]*|[0-9]+)$'
+                Require ($helper -eq $isSentinel) "Level $($level.level) task $($entry.taskId) helperModel flag $helper disagrees with model '$model'."
+                if ($helper) {
+                    Require ($resolved) "Level $($level.level) task $($entry.taskId) helper model '$model' must be modelResolved."
+                } elseif (-not $resolved) {
+                    Require (@($unresolved) -contains $model) "Level $($level.level) unresolved model '$model' (task $($entry.taskId)) is missing from discovery.unresolvedModels."
+                }
+            } else {
+                Require (-not [bool]$entry.helperModel) "Level $($level.level) task $($entry.taskId) has no model but helperModel is true."
+            }
+        }
+    }
 
     # ---- Runner evidence/reversible primitives contract (Task 2) ----
     # Every case below is validated by editor-e2e.ps1 -ValidateOnly BEFORE any

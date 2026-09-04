@@ -268,6 +268,37 @@ Set-Location D:\IGI1
   -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\object-visual-run'
 ```
 
+### Asset corpus resolution and model workflows
+
+The workflow generator classifies every model reference. A real mesh is
+resolved when at least one LOD file is discoverable in the importable archive
+set (the level's own `.res`, every other level's `.res` — a level can reference
+a model packed in a sibling level and the editor auto-imports it — and the
+common `location0.res`). Helper models (collision boxes `colbox*`, spline
+`waypoint`, `joint_fixer`, bare numeric spline indices) are intentional
+non-mesh placeholders and are recorded but never treated as corpus misses. Any
+remaining reference is a genuine corpus finding recorded in
+`discovery.unresolvedModels` per level; the contract in
+`test-editor-workflow-manifest.ps1` asserts the classification is consistent
+and every unresolved model is listed. Current corpus findings include a
+level-7 `EditRigidObj` referencing `s332_02_1` (absent from every mission
+archive) and a level-14 `Switch` referencing `s` — both candidates for the
+editor's auto-import/missing-model path.
+
+`tests/test_res_model_set.cpp` pins the resolver contract: authored
+LOD-suffixed references resolve against archive entries exactly, base family
+names do not match, and helper/bare-numeric names never match a mesh archive.
+
+The checked-in `tools/e2e/scenarios/asset-workflows.json` batch selects one
+named-ID resolved-model object per level (SCamera, HumanSoldier, Building,
+Door, EditRigidObj families), opens its property panel, and orbits it through
+the ten views. Validate it without launching:
+
+```powershell
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -ValidateOnly `
+  -ScenarioPath 'D:\Code\project-igi-editor\tools\e2e\scenarios\asset-workflows.json'
+```
+
 ### Visual regression gate
 
 The focused workflows do not cover every visual failure. The separate
