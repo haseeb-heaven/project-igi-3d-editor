@@ -305,7 +305,7 @@ try {
         foreach ($entry in @($inventory | Where-Object { @($_.textures).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'texture-resolution' $level $entry.taskId $entry.type ([ordered]@{ textures=@($entry.textures) }) }
         foreach ($entry in @($inventory | Where-Object { @($_.sounds).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'sound-resolution' $level $entry.taskId $entry.type ([ordered]@{ sounds=@($entry.sounds) }) }
         # ---- Per-instance object visual orbit coverage (Task 4) ----
-        # Every renderable instance (model + position + orientation) gets one
+        # Every renderable instance (model + 3-component position) gets one
         # orbit anchor carrying the ten deterministic views and its discovered
         # LODs so a failure can identify level/taskId/modelId/angle/lod.
         $renderableViews = @('front','back','left','right','top','bottom','front-left','front-right','back-left','back-right')
@@ -369,7 +369,7 @@ try {
                     'editor-lightmap-mode' { 'No lightmap archive was discovered in this level.' }
                     'editor-terrain-fog' { 'No terrain directory was discovered in this level.' }
                     'editor-level-change' { 'No higher level exists to switch to (level 14 is the last).' }
-                    'object-visual-orbit' { 'No renderable Task_New instance (authored model + position + orientation) was discovered.' }
+                    'object-visual-orbit' { 'No renderable Task_New instance (authored model + 3-component position) was discovered.' }
                     default { 'No applicable corpus anchor was discovered.' }
                 }
                 $exclusions.Add([ordered]@{ action=$actionName; level=$level; reason=$reason })

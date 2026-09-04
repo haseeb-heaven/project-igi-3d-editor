@@ -237,13 +237,14 @@ Set-Location D:\IGI1
 ### Object visual orbit coverage
 
 The workflow generator classifies every decompiled `Task_New` instance as
-renderable when it carries an authored model reference, a 3-component
-position, and a rotation, and emits one `object-visual-orbit` scenario anchor
-per renderable instance. The anchor records the model ID, authored
-position/rotation, discovered LODs, and the ten deterministic views
-(front/back/left/right/top/bottom and the four diagonals), so a failure can
-identify `{level, taskId, modelId, angle, lod}`. The contract in
-`test-editor-workflow-manifest.ps1` asserts the renderable classification is
+renderable when it carries an authored model reference and a 3-component
+position (orientation is recorded but not required, since placed objects such
+as soldiers and cameras carry yaw-only angle fields), and emits one
+`object-visual-orbit` scenario anchor per renderable instance. The anchor
+records the model ID, authored position/rotation, discovered LODs, and the ten
+deterministic views (front/back/left/right/top/bottom and the four diagonals),
+so a failure can identify `{level, taskId, modelId, angle, lod}`. The contract
+in `test-editor-workflow-manifest.ps1` asserts the renderable classification is
 internally consistent and every renderable instance has exactly one orbit
 anchor carrying all ten views. Renderable instances number in the thousands
 across the corpus, so the checked-in runnable batch is a bounded subset.
