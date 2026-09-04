@@ -262,6 +262,15 @@ try {
             $lodKey = $modelId -replace '(?i)\.mef$', ''
             $lodBase = if ($lodKey -match '^(.*)_[0-9]+$') { $Matches[1] } else { $lodKey }
             $lods = if ($modelLods.ContainsKey($lodBase)) { @($modelLods[$lodBase]) } else { @() }
+            # Renderable = the editor can place and view this instance: it has
+            # an authored model reference plus a resolved position and
+            # orientation.  Tasks that expose none of these (pure logic,
+            # spline-holder, graph markers) are classified non-renderable and
+            # must not receive object-orbit coverage.
+            $hasModel = -not [string]::IsNullOrWhiteSpace($modelId)
+            $hasPosition = @($position).Count -eq 3
+            $hasRotation = @($rotation).Count -ge 1
+            $renderable = $hasModel -and $hasPosition -and $hasRotation
             $inventory.Add([ordered]@{
                 level=$level
                 taskId=$taskId
@@ -273,6 +282,10 @@ try {
                 lods=@($lods)
                 sounds=@($sounds)
                 sourceHash=$sourceHash
+                renderable=$renderable
+                hasModel=$hasModel
+                hasPosition=$hasPosition
+                hasRotation=$hasRotation
             })
         }
 
@@ -286,6 +299,20 @@ try {
         foreach ($entry in @($inventory | Where-Object { -not [string]::IsNullOrWhiteSpace($_.modelId) })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'model-picker' $level $entry.taskId $entry.type ([ordered]@{ modelId=$entry.modelId; lods=@($entry.lods) }) }
         foreach ($entry in @($inventory | Where-Object { @($_.textures).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'texture-resolution' $level $entry.taskId $entry.type ([ordered]@{ textures=@($entry.textures) }) }
         foreach ($entry in @($inventory | Where-Object { @($_.sounds).Count -gt 0 })) { Add-Scenario $scenarios $scenarioKeys $actionMap 'sound-resolution' $level $entry.taskId $entry.type ([ordered]@{ sounds=@($entry.sounds) }) }
+        # ---- Per-instance object visual orbit coverage (Task 4) ----
+        # Every renderable instance (model + position + orientation) gets one
+        # orbit anchor carrying the ten deterministic views and its discovered
+        # LODs so a failure can identify level/taskId/modelId/angle/lod.
+        $renderableViews = @('front','back','left','right','top','bottom','front-left','front-right','back-left','back-right')
+        foreach ($entry in @($inventory | Where-Object { $_.renderable })) {
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'object-visual-orbit' $level $entry.taskId $entry.type ([ordered]@{
+                modelId=$entry.modelId
+                authoredPosition=@($entry.authoredPosition)
+                authoredRotation=@($entry.authoredRotation)
+                lods=@($entry.lods)
+                views=$renderableViews
+            })
+        }
         foreach ($graphFile in $graphFiles) {
             $graphId = [IO.Path]::GetFileNameWithoutExtension($graphFile)
             Add-Scenario $scenarios $scenarioKeys $actionMap 'graph-overlay' $level "graph:$graphId" 'AIGraph' ([ordered]@{ graphFile=$graphFile })
@@ -337,6 +364,7 @@ try {
                     'editor-lightmap-mode' { 'No lightmap archive was discovered in this level.' }
                     'editor-terrain-fog' { 'No terrain directory was discovered in this level.' }
                     'editor-level-change' { 'No higher level exists to switch to (level 14 is the last).' }
+                    'object-visual-orbit' { 'No renderable Task_New instance (authored model + position + orientation) was discovered.' }
                     default { 'No applicable corpus anchor was discovered.' }
                 }
                 $exclusions.Add([ordered]@{ action=$actionName; level=$level; reason=$reason })

@@ -145,7 +145,7 @@ try {
         Require ((Compare-Object -ReferenceObject ($independentTaskIds | Sort-Object) -DifferenceObject ($taskIds | Sort-Object)).Count -eq 0) "Level $($level.level) declared task IDs do not match independently decompiled Task_New instances."
         Require ((Compare-Object -ReferenceObject ($independentTaskIds | Sort-Object) -DifferenceObject ($inventoryTaskIds | Sort-Object)).Count -eq 0) "Level $($level.level) inventory task IDs are not exhaustive against independently decompiled Task_New instances."
         foreach ($entry in $inventory) {
-            foreach ($field in @('level', 'taskId', 'type', 'modelId', 'authoredPosition', 'authoredRotation', 'textures', 'lods', 'sounds', 'sourceHash')) {
+            foreach ($field in @('level', 'taskId', 'type', 'modelId', 'authoredPosition', 'authoredRotation', 'textures', 'lods', 'sounds', 'sourceHash', 'renderable', 'hasModel', 'hasPosition', 'hasRotation')) {
                 Require ($null -ne $entry.$field) "Level $($level.level) task $($entry.taskId) is missing $field."
             }
             Require ([string]$entry.sourceHash -cmatch '^[a-f0-9]{64}$') "Level $($level.level) task $($entry.taskId) sourceHash is not a lowercase 64-character SHA-256 value."
@@ -189,6 +189,45 @@ try {
         Require ($scenario.workflow -eq $scenario.action) "Control scenario '$($scenario.action)' workflow must equal its action."
         Require ($scenario.type -eq 'EditorControl') "Control scenario '$($scenario.action)' type must be EditorControl."
     }
+
+    # ---- Object visual orbit coverage contract (Task 4) ----
+    # Every renderable instance must be internally consistent (renderable iff
+    # it has an authored model, a 3-component position, and a rotation) and
+    # must carry exactly one object-visual-orbit scenario whose anchor records
+    # model/position/rotation/LODs and the ten deterministic views.  The
+    # orbit-required inventory fields stay stable so a task can never silently
+    # lose its visual anchor.
+    $orbitAnchorsByKey = @{}
+    foreach ($scenario in @($scenarios | Where-Object { $_.action -eq 'object-visual-orbit' })) {
+        $orbitAnchorsByKey["$($scenario.level)|$($scenario.taskId)"] = $scenario
+    }
+    foreach ($level in $levels) {
+        foreach ($entry in @(Values $level.inventory)) {
+            $hasModel = -not [string]::IsNullOrWhiteSpace([string]$entry.modelId)
+            $posCount = @($entry.authoredPosition).Count
+            $rotCount = @($entry.authoredRotation).Count
+            $expectedRenderable = ($hasModel -and $posCount -eq 3 -and $rotCount -ge 1)
+            $declaredRenderable = [bool]$entry.renderable
+            Require ($declaredRenderable -eq $expectedRenderable) "Level $($level.level) task $($entry.taskId) renderable flag $declaredRenderable disagrees with fields (model=$hasModel pos=$posCount rot=$rotCount)."
+            Require ($null -ne $entry.hasModel -and $null -ne $entry.hasPosition -and $null -ne $entry.hasRotation) "Level $($level.level) task $($entry.taskId) is missing renderable classification fields."
+            if ($declaredRenderable) {
+                $orbitScenario = $orbitAnchorsByKey["$($level.level)|$($entry.taskId)"]
+                Require ($null -ne $orbitScenario) "Level $($level.level) renderable task $($entry.taskId) must have exactly one object-visual-orbit scenario; found 0."
+                $anchor = $orbitScenario.anchor
+                Require ([string]$anchor.modelId -eq [string]$entry.modelId) "Level $($level.level) task $($entry.taskId) orbit anchor modelId does not match inventory."
+                Require (@($anchor.views).Count -eq 10) "Level $($level.level) task $($entry.taskId) orbit anchor must carry ten views."
+                foreach ($view in @('front','back','left','right','top','bottom','front-left','front-right','back-left','back-right')) {
+                    Require (@($anchor.views) -contains $view) "Level $($level.level) task $($entry.taskId) orbit anchor is missing view '$view'."
+                }
+                $positionDelta = Compare-Object -ReferenceObject @($entry.authoredPosition) -DifferenceObject @($anchor.authoredPosition)
+                Require ($null -eq $positionDelta -or @($positionDelta).Count -eq 0) "Level $($level.level) task $($entry.taskId) orbit anchor position differs from inventory."
+                $lodDelta = Compare-Object -ReferenceObject @($entry.lods) -DifferenceObject @($anchor.lods)
+                Require ($null -eq $lodDelta -or @($lodDelta).Count -eq 0) "Level $($level.level) task $($entry.taskId) orbit anchor LODs differ from inventory."
+            }
+        }
+    }
+    $renderableCount = @($levels | ForEach-Object { @(Values $_.inventory | Where-Object { $_.renderable }) }).Count
+    Require ($orbitAnchorsByKey.Count -eq $renderableCount) "Orbit anchor count $($orbitAnchorsByKey.Count) must equal renderable inventory count $renderableCount."
 
     # ---- Runner evidence/reversible primitives contract (Task 2) ----
     # Every case below is validated by editor-e2e.ps1 -ValidateOnly BEFORE any

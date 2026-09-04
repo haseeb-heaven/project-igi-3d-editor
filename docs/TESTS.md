@@ -234,6 +234,39 @@ Set-Location D:\IGI1
   -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\editor-workflows-run'
 ```
 
+### Object visual orbit coverage
+
+The workflow generator classifies every decompiled `Task_New` instance as
+renderable when it carries an authored model reference, a 3-component
+position, and a rotation, and emits one `object-visual-orbit` scenario anchor
+per renderable instance. The anchor records the model ID, authored
+position/rotation, discovered LODs, and the ten deterministic views
+(front/back/left/right/top/bottom and the four diagonals), so a failure can
+identify `{level, taskId, modelId, angle, lod}`. The contract in
+`test-editor-workflow-manifest.ps1` asserts the renderable classification is
+internally consistent and every renderable instance has exactly one orbit
+anchor carrying all ten views. Renderable instances number in the thousands
+across the corpus, so the checked-in runnable batch is a bounded subset.
+
+The checked-in `tools/e2e/scenarios/object-visual-workflows.json` batch runs
+one named-ID renderable object per level where one exists, using the find bar
+to locate the task ID and the ten `orbit_camera` views with per-view
+screenshots. Validate it without launching:
+
+```powershell
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -ValidateOnly `
+  -ScenarioPath 'D:\Code\project-igi-editor\tools\e2e\scenarios\object-visual-workflows.json'
+```
+
+Live-run the bounded batch serially with:
+
+```powershell
+Set-Location D:\IGI1
+& 'D:\Code\project-igi-editor\tools\e2e\editor-e2e.ps1' -GameRoot D:\IGI1 `
+  -ScenarioPath 'D:\Code\project-igi-editor\tools\e2e\scenarios\object-visual-workflows.json' `
+  -ArtifactsRoot 'D:\Code\project-igi-editor\artifacts\e2e\object-visual-run'
+```
+
 ### Visual regression gate
 
 The focused workflows do not cover every visual failure. The separate

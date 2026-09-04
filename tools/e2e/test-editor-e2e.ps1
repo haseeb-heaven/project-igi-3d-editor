@@ -4,6 +4,7 @@ $runner = Join-Path $PSScriptRoot 'editor-e2e.ps1'
 $valid = Join-Path $PSScriptRoot 'scenarios\editor-regression.json'
 $invalid = Join-Path $PSScriptRoot 'scenarios\invalid-missing-step-id.json'
 $workflows = Join-Path $PSScriptRoot 'scenarios\editor-workflows.json'
+$objectVisual = Join-Path $PSScriptRoot 'scenarios\object-visual-workflows.json'
 
 if (-not (Test-Path -LiteralPath $runner)) {
     throw "Runner is missing: $runner"
@@ -33,6 +34,11 @@ if ($validCode -ne 0) {
 $workflowsCode = Invoke-Validation $workflows
 if ($workflowsCode -ne 0) {
     throw "Editor workflows manifest was rejected with exit code $workflowsCode."
+}
+
+$objectVisualCode = Invoke-Validation $objectVisual
+if ($objectVisualCode -ne 0) {
+    throw "Object visual workflows manifest was rejected with exit code $objectVisualCode."
 }
 
 Write-Host 'Editor E2E manifest contract: PASS'
