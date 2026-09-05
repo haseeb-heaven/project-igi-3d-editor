@@ -80,6 +80,27 @@ and test fixtures independent of generated local assets. No all-object expansion
 4. Only after pilot acceptance, expand scripts to all applicable objects/LODs
    and remaining control, asset, graph/AI, environment, and persistence workflows.
 
+## Bounded three-object trial — 2026-09-05
+
+At the user's request, ran only L1 Building task 1105 (405_01_1), L2 Car
+task 778 (622_01_1), and L3 EditRigidObj task 777 (301_01_1).
+Artifacts: `artifacts/e2e/three-object-trial/`.
+All 30 views completed (eight horizontal headings plus above/below per object).
+All 30 fresh-log checks passed authored position/orientation, required DAT
+texture successful loads with positive dimensions, and assignment counts.
+All three runs restored original QED files and verified their hashes.
+
+The four focused script test suites passed, including negative tests for
+missing texture identities and zero dimensions. The reusable
+`Invoke-SmartLiveTrial.ps1` preparation run resolved all three targets and
+exported their actual meshes successfully. Its live orchestration was not
+rerun: the completed trial used the same camera runner serially.
+
+Visual acceptance remains UNVERIFIED: the image viewer rejected the saved
+screenshots during review. Runtime logs do not prove per-draw GPU bindings,
+unoccluded surfaces, or correct-looking textures. No production renderer
+changes and no expansion to every object or all 14 levels.
+
 Recovery record: wrong_result; capture command succeeded but camera target was
 wrong; retained evidence and added explicit target rejection. No renderer fix
 was attempted. The no-mistakes CLI was previously unavailable; no pipeline

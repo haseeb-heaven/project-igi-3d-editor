@@ -24,5 +24,13 @@ function Test-SmartModelLog {
     foreach ($row in $assignment) {
         if ([int]$row.Groups[1].Value -le 0 -or [int]$row.Groups[2].Value -le 0 -or [int]$row.Groups[3].Value -ne [int]$row.Groups[1].Value) { $failures.Add('Incomplete live submesh texture assignments.') }
     }
-    [pscustomobject]@{passed=($failures.Count -eq 0);failures=@($failures.ToArray());matchingTransforms=$matching.Count;assignmentRecords=$assignment.Count;scope='loader transform and assignment counts only; not material identity or visual acceptance'}
+    $textureLoads = @()
+    foreach ($texture in @($Anchor.requiredTextures)) {
+        if ([string]::IsNullOrWhiteSpace([string]$texture)) { continue }
+        $pattern = '\[TEX\] ResCache loaded '+[regex]::Escape([string]$texture)+' ([1-9]\d*)x([1-9]\d*)(?:\s|$)'
+        $loaded = [regex]::IsMatch($Text,$pattern)
+        $textureLoads += [pscustomobject]@{texture=$texture;loaded=$loaded}
+        if (-not $loaded) { $failures.Add("Missing successful load evidence for required texture $texture.") }
+    }
+    [pscustomobject]@{passed=($failures.Count -eq 0);failures=@($failures.ToArray());matchingTransforms=$matching.Count;assignmentRecords=$assignment.Count;requiredTextureLoads=$textureLoads;scope='loader transform, required texture loads and assignment counts; not per-draw GPU bindings or visual acceptance'}
 }

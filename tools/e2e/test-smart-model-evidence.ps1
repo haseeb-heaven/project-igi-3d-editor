@@ -7,3 +7,8 @@ foreach($bad in @('',($text -replace 'assigned=19','assigned=0'),($text -replace
     if ((Test-SmartModelLog $bad $anchor).passed) { throw 'Missing, corrupt, or ambiguous evidence was accepted.' }
 }
 'PASS: correct state accepted; missing assignments, wrong transforms, and ambiguous logs rejected.'
+$anchor | Add-Member -NotePropertyName requiredTextures -NotePropertyValue @('required_1')
+if ((Test-SmartModelLog $text $anchor).passed) { throw 'Missing required texture accepted.' }
+if (-not (Test-SmartModelLog ($text+"`n[TEX] ResCache loaded required_1 128x128") $anchor).passed) { throw 'Successful required texture load rejected.' }
+if ((Test-SmartModelLog ($text+"`n[TEX] ResCache loaded required_1 0x128") $anchor).passed) { throw 'Zero-size texture accepted.' }
+'PASS: required texture identities and positive dimensions checked.'

@@ -36,6 +36,14 @@ if (@($plan.views.name | Select-Object -Unique).Count -ne 10) { throw 'Duplicate
 $ArtifactsRoot = [IO.Path]::GetFullPath($ArtifactsRoot)
 if (Test-Path $ArtifactsRoot) { throw 'Use a fresh artifact directory; recovery backups must not be overwritten.' }
 New-Item -ItemType Directory $ArtifactsRoot | Out-Null
+$converter = Join-Path $PSScriptRoot '../../assets/editor/tools/igi1conv/igi1conv.exe'
+$materialPath = Join-Path $ArtifactsRoot 'authored-materials.json'
+& $converter dat export (Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat") --filter $anchor.modelId -o $materialPath
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read authored model materials.' }
+$materials = Get-Content $materialPath -Raw | ConvertFrom-Json
+$modelMaterials = @($materials.models | Where-Object modelName -eq $anchor.modelId)
+if ($modelMaterials.Count -ne 1 -or @($modelMaterials[0].textures).Count -eq 0) { throw 'Required model texture list unavailable; do not infer a pass.' }
+$anchor | Add-Member -NotePropertyName requiredTextures -NotePropertyValue @($modelMaterials[0].textures) -Force
 $backup = Join-Path $ArtifactsRoot 'qed-backup'
 New-Item -ItemType Directory $backup | Out-Null
 $qed = Join-Path $GameRoot 'editor/qed'

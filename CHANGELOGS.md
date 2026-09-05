@@ -2,6 +2,10 @@
 
 ## Unreleased — Editor workflow E2E (`e2e-editor-harness`)
 
+- Added a bounded three-object trial (Building L1, Car L2, EditRigidObj L3),
+  ten saved-camera views each, and required DAT texture identity/load checks.
+  All 30 fresh-log transform and texture checks passed; visual acceptance
+  remains unverified. No renderer changes or all-level expansion.
 - Added DPI-aware full-client screenshots, fresh-log model transform and
   texture-assignment checks, and separately labelled terrain-hidden diagnostic
   captures. Verified ten watchtower views plus an underside diagnostic;
