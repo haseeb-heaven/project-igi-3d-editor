@@ -7,6 +7,7 @@ param(
     [ValidateRange(1,14)][int]$Level = 1,
     [string]$Category = 'All',
     [string[]]$IncludeTypes = @(),
+    [string[]]$ModelIds = @(),
     [ValidateRange(0,2147483647)][int]$MaxObjects = 0,
     [switch]$DistinctTypes,
     [switch]$DistinctCategories,
@@ -155,7 +156,21 @@ function Close-Editor($Process) {
 $ArtifactsRoot = [IO.Path]::GetFullPath($ArtifactsRoot)
 if (Test-Path -LiteralPath $ArtifactsRoot) { throw 'Use a fresh artifact directory.' }
 New-Item -ItemType Directory -Path $ArtifactsRoot -Force | Out-Null
+$InventoryPath = [IO.Path]::GetFullPath($InventoryPath)
+if (-not (Test-Path -LiteralPath $InventoryPath -PathType Leaf)) {
+    $generator = Join-Path $PSScriptRoot 'New-EditorWorkflowManifest.ps1'
+    if (-not (Test-Path -LiteralPath $generator -PathType Leaf)) { throw "Inventory generator not found: $generator" }
+    $inventoryDirectory = Split-Path -Parent $InventoryPath
+    if (-not [string]::IsNullOrWhiteSpace($inventoryDirectory)) {
+        New-Item -ItemType Directory -Path $inventoryDirectory -Force | Out-Null
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $generator -GameRoot $GameRoot -OutputPath $InventoryPath
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $InventoryPath -PathType Leaf)) {
+        throw 'Failed to generate the smart-live inventory.'
+    }
+}
 $inventory = Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json
+$inventoryHash = Get-PortableSha256 $InventoryPath
 $levelRow = @($inventory.levels | Where-Object level -eq $Level)
 if ($levelRow.Count -ne 1) { throw "Missing or ambiguous inventory entry for level $Level." }
 $levelRow = $levelRow[0]
@@ -164,11 +179,13 @@ if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Level source is missing:
 $sourceHash = Get-PortableSha256 $sourcePath
 $editorHash = Get-PortableSha256 $EditorExePath
 $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$ModelIds = @($ModelIds | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $all = @($levelRow.inventory)
 if ($Category -and $Category -ne 'All') {
     $all = @($all | Where-Object { (Get-ObjectCategory $_.type) -eq $Category })
 }
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
+if ($ModelIds.Count) { $all = @($all | Where-Object { $ModelIds -contains [string]$_.modelId }) }
 $materialPath = Join-Path $ArtifactsRoot 'authored-materials.json'
 $datPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat"
 $mtpPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.mtp"
@@ -285,7 +302,7 @@ foreach ($anchor in $candidates) {
     $plans.Add([pscustomobject]@{index=$index;taskId=$task;objectName=$objName;type=[string]$anchor.type;category=(Get-ObjectCategory $anchor.type);modelId=$model;authoredPosition=@($anchor.authoredPosition);authoredRotation=$rot;requiredTextures=$(if($textureMap.ContainsKey($model)){@($textureMap[$model])}else{@()});prefix=('obj-{0:D4}-task{1}-{2}' -f $index,(Get-SafeName $task),(Get-SafeName $model))})
 }
 $statePath = Join-Path $ArtifactsRoot 'batch.json'
-$state = [ordered]@{level=$Level;category=$Category;selectedTypes=@($IncludeTypes);sourcePath=$sourcePath;sourceSha256=$sourceHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;totalTasks=$all.Count;renderableCandidates=$candidates.Count;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);launchCount=1;closeCount=1;viewCount=$captureViews.Count;screenshotsExpected=($plans.Count*$captureViews.Count);status=$(if($PrepareOnly){'PREPARED'}else{'NOT_RUN'})}
+$state = [ordered]@{level=$Level;category=$Category;selectedTypes=@($IncludeTypes);inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;sourcePath=$sourcePath;sourceSha256=$sourceHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;totalTasks=$all.Count;renderableCandidates=$candidates.Count;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);launchCount=1;closeCount=1;viewCount=$captureViews.Count;screenshotsExpected=($plans.Count*$captureViews.Count);status=$(if($PrepareOnly){'PREPARED'}else{'NOT_RUN'})}
 $state | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $statePath -Encoding UTF8
 if ($PrepareOnly) { Write-Output "Prepared native one-session level ${Level}: $($plans.Count) objects, $($captureViews.Count) views each."; exit 0 }
 
@@ -409,7 +426,7 @@ try {
 }
 
 if ($null -ne $runFailure) {
-    $failure = [ordered]@{level=$Level;status='FAIL';failure=$runFailure;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=0;captureMethod='native direct camera requires a developer-capable editor build'}
+    $failure = [ordered]@{level=$Level;status='FAIL';failure=$runFailure;inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=0;captureMethod='native direct camera requires a developer-capable editor build'}
     $failure | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $statePath -Encoding UTF8
     throw $runFailure
 }
@@ -422,6 +439,7 @@ foreach($plan in $plans){
     $item=Test-SmartModelLog $freshLog $anchor
     $shots=@(Get-ChildItem -LiteralPath (Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)) -File -Filter '*.png' -ErrorAction SilentlyContinue)
     $item | Add-Member -NotePropertyName taskId -NotePropertyValue $plan.taskId -Force
+    $item | Add-Member -NotePropertyName objectName -NotePropertyValue $plan.objectName -Force
     $item | Add-Member -NotePropertyName type -NotePropertyValue $plan.type -Force
     $item | Add-Member -NotePropertyName category -NotePropertyValue $plan.category -Force
     $item | Add-Member -NotePropertyName modelId -NotePropertyValue $plan.modelId -Force
@@ -487,7 +505,7 @@ foreach($plan in $plans){
     $evidence += $item
 }
 $failed=@($evidence|Where-Object{-not $_.passed}).Count
-$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
+$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
 
 # Generate Self-Contained HTML5 Dashboard (skipped when called from Run-SmartTest to avoid duplicate reports)

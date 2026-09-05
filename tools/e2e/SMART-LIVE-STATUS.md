@@ -2,25 +2,26 @@
 
 ## Single-session modular runner
 
-`Invoke-SmartSingleSession.ps1` is now the default path behind
-`Run-SmartTest.ps1` and `tests_run.cmd`. Each level invocation creates one
-scenario with exactly one editor launch and one close; the scenario then loops
-over the selected model objects and captures ten orbit views per selectable
-object. Position/orientation, required DAT texture identities, live texture
-assignment records, and screenshot counts are written to `batch.json`.
+`Invoke-SmartNativeCaptureSession.ps1` is the default path behind
+`Run-SmartTest.ps1` and `e2e_live_test.cmd`. Each level invocation uses one WMI
+editor launch and one close, then captures six exterior 60-degree and four
+detail views per selected model object. Position/orientation, required DAT
+texture identities, live texture-assignment records, and screenshot counts are
+written to `batch.json`. If the inventory manifest is absent, it is generated
+once and its path and SHA-256 are recorded in the batch.
 
 Examples:
 
 ```text
-tests_run --level 5 --objects rigid --maximum 3
-tests_run --level 1-14 --objects any --all-objects
-tests_run --level 12 --object-type Building --maximum 10
+e2e_live_test --level 5 --category rigid --maximum 3
+e2e_live_test --all-levels --all-objects --prepare-only
+e2e_live_test --level 1 --model 435_01_1 --maximum 1
 ```
 
-The `-1#...` synthetic inventory records remain explicitly skipped because
-the editor find-by-ID UI accepts only named numeric task IDs. They are not
-silently accepted as visual captures. Use `--prepare-only` to inspect the
-selected/skipped inventory before a live run.
+Synthetic `-1#...` inventory records are selected by model ID and nearest
+authored position rather than being fabricated as numeric task IDs. Use
+`--prepare-only` to inspect selected and explicitly skipped records before a
+live run.
 
 Scope: testing scripts only; do not change production rendering. Complete the
 watchtower pilot before expanding to every object and workflow in the existing

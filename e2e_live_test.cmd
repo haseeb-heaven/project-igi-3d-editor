@@ -9,6 +9,7 @@ set "LEVEL=1"
 set "ALL_LEVELS="
 set "OBJECTS=All"
 set "OBJECT_TYPE="
+set "MODEL_ID="
 set "EDITOR_EXE="
 set "ARTIFACTS="
 set "MAX=3"
@@ -41,6 +42,7 @@ if /I "%~1"=="--vehicles" set "OBJECTS=Vehicles"&shift&goto parse
 if /I "%~1"=="-vehicle" set "OBJECTS=Vehicles"&shift&goto parse
 if /I "%~1"=="-vehicles" set "OBJECTS=Vehicles"&shift&goto parse
 if /I "%~1"=="--object-type" set "OBJECT_TYPE=%~2"&shift&shift&goto parse
+if /I "%~1"=="--model" set "MODEL_ID=%~2"&shift&shift&goto parse
 if /I "%~1"=="--editor-exe" set "EDITOR_EXE=%~2"&shift&shift&goto parse
 if /I "%~1"=="--artifacts" set "ARTIFACTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--maximum" set "MAX=%~2"&shift&shift&goto parse
@@ -67,6 +69,7 @@ echo   e2e_live_test --level 5 --category ai --maximum 3
 echo   e2e_live_test --level 5 --category buildings --maximum 3
 echo   e2e_live_test --level 5 --category rigid --maximum 3
 echo   e2e_live_test --level 5 --category vehicles --maximum 3
+echo   e2e_live_test --level 1 --model 435_01_1 --maximum 1
 echo   e2e_live_test --level 5 --distinct-types --maximum 3
 echo   e2e_live_test --level 5 --distinct-categories --maximum 4 --video
 echo   e2e_live_test --level 5 --video --video-seconds 5 --maximum 3
@@ -90,6 +93,7 @@ set "ARGS=-Category %OBJECTS% -MaxObjects %MAX% -ViewCount %VIEWS%"
 if defined ALL_LEVELS set "ARGS=%ARGS% -AllLevels"
 if not defined ALL_LEVELS set "ARGS=%ARGS% -Level %LEVEL%"
 if defined OBJECT_TYPE set "ARGS=%ARGS% -ObjectTypes %OBJECT_TYPE%"
+if defined MODEL_ID set "ARGS=%ARGS% -ModelIds %MODEL_ID%"
 if defined EDITOR_EXE set "ARGS=%ARGS% -EditorExePath "%EDITOR_EXE%""
 if defined ARTIFACTS set "ARGS=%ARGS% -ArtifactsRoot "%ARTIFACTS%""
 if defined VIDEO_SECONDS call :add_video_flag

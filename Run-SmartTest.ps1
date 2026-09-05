@@ -11,6 +11,7 @@
     .\Run-SmartTest.ps1 -Level 1 -Category Buildings -MaxObjects 3
     .\Run-SmartTest.ps1 -Level 1 -AllObjects
     .\Run-SmartTest.ps1 -AllLevels -Category AI -MaxObjects 1
+    .\Run-SmartTest.ps1 -Level 1 -ModelIds 435_01_1 -MaxObjects 1
     .\Run-SmartTest.ps1 -Level 1 -Category RigidObjects -Resume
 #>
 [CmdletBinding()]
@@ -19,6 +20,7 @@ param(
     [switch]$AllLevels,
     [string]$Category = 'All',
     [string[]]$ObjectTypes = @(),
+    [string[]]$ModelIds = @(),
     [int]$MaxObjects = 3,
     [switch]$AllObjects,
     [switch]$DistinctTypes,
@@ -125,6 +127,7 @@ if ($LegacySerial) {
         if ($ObjectTypes.Count) { $selectedTypes += $ObjectTypes }
         $selectedTypes = @($selectedTypes | Select-Object -Unique)
         if ($selectedTypes.Count) { $runnerArgs += @('-IncludeTypes', ($selectedTypes -join ',')) }
+        if ($ModelIds.Count) { $runnerArgs += @('-ModelIds', ($ModelIds -join ',')) }
         if ($DistinctCategories) { $runnerArgs += '-DistinctCategories' }
         if ($DistinctTypes) { $runnerArgs += '-DistinctTypes' }
         if ($PrepareOnly) { $runnerArgs += '-PrepareOnly' }
