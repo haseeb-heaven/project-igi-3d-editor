@@ -661,14 +661,14 @@ function Get-OrbitDelta([string]$Angle, [int]$Pixels) {
     switch ($Angle) {
         'front'  { return @{ yawPixels = 0; pitchPixels = 0 } }
         'back'   { return @{ yawPixels = [int][Math]::Round(-900 * $scale); pitchPixels = 0 } }
-        'left'   { return @{ yawPixels = [int][Math]::Round(900 * $scale); pitchPixels = 0 } }
-        'right'  { return @{ yawPixels = [int][Math]::Round(-900 * $scale); pitchPixels = 0 } }
+        'left'   { return @{ yawPixels = [int][Math]::Round(450 * $scale); pitchPixels = 0 } }
+        'right'  { return @{ yawPixels = [int][Math]::Round(-450 * $scale); pitchPixels = 0 } }
         'top'    { return @{ yawPixels = 0; pitchPixels = [int][Math]::Round(900 * $scale) } }
         'bottom' { return @{ yawPixels = 0; pitchPixels = [int][Math]::Round(-900 * $scale) } }
-        'front-left'  { return @{ yawPixels = [int][Math]::Round(450 * $scale); pitchPixels = [int][Math]::Round(450 * $scale) } }
-        'front-right' { return @{ yawPixels = [int][Math]::Round(-450 * $scale); pitchPixels = [int][Math]::Round(450 * $scale) } }
-        'back-left'   { return @{ yawPixels = [int][Math]::Round(450 * $scale); pitchPixels = [int][Math]::Round(-450 * $scale) } }
-        'back-right'  { return @{ yawPixels = [int][Math]::Round(-450 * $scale); pitchPixels = [int][Math]::Round(-450 * $scale) } }
+        'front-left'  { return @{ yawPixels = [int][Math]::Round(225 * $scale); pitchPixels = 0 } }
+        'front-right' { return @{ yawPixels = [int][Math]::Round(-225 * $scale); pitchPixels = 0 } }
+        'back-left'   { return @{ yawPixels = [int][Math]::Round(675 * $scale); pitchPixels = 0 } }
+        'back-right'  { return @{ yawPixels = [int][Math]::Round(-675 * $scale); pitchPixels = 0 } }
         default { Fail "Unsupported orbit angle '$Angle'." }
     }
 }

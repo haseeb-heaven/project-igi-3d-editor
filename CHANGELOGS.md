@@ -2,6 +2,10 @@
 
 ## Unreleased — Editor workflow E2E (`e2e-editor-harness`)
 
+- Added a pilot-only smart live testing generator and fail-closed evidence
+  scaffold; corrected duplicate horizontal orbit mappings with a regression
+  test. The first watchtower capture exposed an F11 graph-target mismatch and
+  is rejected; all-object expansion remains gated on pilot acceptance.
 - Added a visible Windows editor E2E runner with WMI launch, native input,
   process/log checks, screenshots, image metrics, and JSON/Markdown reports.
 - Added mutation-gated file snapshots and hash-verified restoration for
