@@ -51,6 +51,7 @@ void Renderer_Objects::InitSphereMesh() {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 }
 
@@ -352,6 +353,8 @@ void Renderer_Objects::DrawAttachedMesh(const std::string& modelId, bool isBuild
     }
 
     glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 // ─── LoadAttachmentsRecursive ────────────────────────────────────────────────
@@ -401,6 +404,7 @@ Mesh Renderer_Objects::CreateTextMesh(const std::string& text) {
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)24);
     glEnableVertexAttribArray(2);
     
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     m.vertexCount = vertices.size() / 8;
     m.textureID = 0;
@@ -534,6 +538,7 @@ Mesh Renderer_Objects::CreateCubeMesh() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 32, (void*)12); glEnableVertexAttribArray(1);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 32, (void*)24); glEnableVertexAttribArray(2);
     m.vertexCount = 36; m.textureID = 0; m.vertexData = nullptr;
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0); return m;
 }
 
@@ -563,6 +568,7 @@ void Renderer_Objects::InitSelectionBox() {
     glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 }
 
@@ -639,6 +645,7 @@ void main() {
     glDrawArrays(GL_LINES, 0, 24);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
 }
 

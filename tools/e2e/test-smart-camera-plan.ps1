@@ -1,6 +1,7 @@
 [CmdletBinding()]
-param([string]$ObjPath = (Join-Path $PSScriptRoot 'fixtures/camera-box.obj'))
+param([string]$ObjPath)
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($ObjPath)) { $ObjPath = Join-Path $PSScriptRoot 'fixtures/camera-box.obj' }
 $plan = & (Join-Path $PSScriptRoot 'New-SmartCameraPlan.ps1') -ObjPath $ObjPath -Position @(100,200,300)
 if ($plan.views.Count -ne 10) { throw 'Missing view coverage' }
 if (@($plan.views.name | Select-Object -Unique).Count -ne 10) { throw 'Duplicate view names' }

@@ -12,7 +12,9 @@ param(
     [switch]$PrepareOnly,
     [switch]$Resume,
     [switch]$AllowConfigMutation,
-    [ValidateRange(0,1)][int]$RetryCount = 1
+    [ValidateRange(0,1)][int]$RetryCount = 1,
+    [switch]$DistinctTypes,
+    [ValidateRange(1,10)][int]$ViewCount = 10
 )
 $ErrorActionPreference = 'Stop'
 if (-not $PrepareOnly -and -not $AllowConfigMutation) { throw 'Live capture requires -AllowConfigMutation.' }
@@ -81,7 +83,8 @@ foreach ($level in $Levels) {
         continue
     }
     $levelLimit = if ($MaxObjects -eq 0) { 0 } else { [Math]::Min($remaining,$candidateCount) }
-    $args = @('-ArtifactsRoot',$levelRoot,'-InventoryPath',$InventoryPath,'-GameRoot',$GameRoot,'-Level',$level,'-MaxObjects',$levelLimit,'-RetryCount',$RetryCount)
+    $args = @('-ArtifactsRoot',$levelRoot,'-InventoryPath',$InventoryPath,'-GameRoot',$GameRoot,'-Level',$level,'-MaxObjects',$levelLimit,'-RetryCount',$RetryCount,'-ViewCount',$ViewCount)
+    if ($DistinctTypes) { $args += '-DistinctTypes' }
     if ($filterTypes.Count) { $args += '-IncludeTypes'; $args += ($filterTypes -join ',') }
     if ($PrepareOnly) { $args += '-PrepareOnly' } else { $args += '-AllowConfigMutation' }
     if ($Resume -and (Test-Path -LiteralPath (Join-Path $levelRoot 'batch.json'))) { $args += '-Resume' }

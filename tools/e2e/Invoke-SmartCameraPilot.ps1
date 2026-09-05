@@ -8,6 +8,7 @@ param(
     [ValidatePattern('^(\d+|-1#\d+)$')][string]$TaskId = '1105',
     [ValidateRange(1,10)][int]$ViewCount = 1,
     [string]$ViewName = '',
+    [ValidateRange(0,60)][int]$CooldownSeconds = 5,
     [switch]$SkipObjectSelection,
     [switch]$HideTerrainDiagnostic,
     [switch]$AllowConfigMutation
@@ -15,6 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $AllowConfigMutation) { throw 'Requires -AllowConfigMutation; QED config is temporarily changed and restored.' }
 if (Get-Process igi1ed -ErrorAction SilentlyContinue) { throw 'Close the existing editor before the serial pilot.' }
+if ($CooldownSeconds -gt 0) { Start-Sleep -Seconds $CooldownSeconds }
 . (Join-Path $PSScriptRoot 'SmartModelEvidence.ps1')
 function Get-PortableSha256([string]$Path) {
     $bytes = [IO.File]::ReadAllBytes($Path)
@@ -69,7 +71,10 @@ $invariant = [Globalization.CultureInfo]::InvariantCulture
 try {
     $views = if ($ViewName) { @($plan.views | Where-Object name -eq $ViewName) } else { @($plan.views | Select-Object -First $ViewCount) }
     if ($views.Count -eq 0) { throw 'Requested camera view is absent.' }
+    $viewIndex = 0
     foreach ($view in $views) {
+        if ($viewIndex -gt 0 -and $CooldownSeconds -gt 0) { Start-Sleep -Seconds $CooldownSeconds }
+        $viewIndex++
         $text = $original
         $position = @($view.position | ForEach-Object { ([double]$_).ToString('R',$invariant) }) -join ', '
         # An all-zero orientation means "use spawn orientation" in the editor.
@@ -89,7 +94,7 @@ try {
             @{id='health';type='assert_process'},
             @{id='capture';type='screenshot';name=$view.name;client=$true},
             @{id='window';type='capture_window_state'},
-            @{id='close';type='close_editor';force=$true}
+            @{id='close';type='close_editor';force=$false}
         )
         if (-not $SkipObjectSelection) {
             $steps = @($steps[0..2] + @(
@@ -103,6 +108,7 @@ try {
         @{diagnosticTerrainHidden=[bool]$HideTerrainDiagnostic;scenarios=@(@{name=$view.name;level=$Level;requiresMutation=$false;steps=$steps})} | ConvertTo-Json -Depth 10 | Set-Content $manifest -Encoding UTF8
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'editor-e2e.ps1') -GameRoot $GameRoot -ScenarioPath $manifest -ArtifactsRoot (Join-Path $ArtifactsRoot $view.name)
         if ($LASTEXITCODE -ne 0) { throw "Capture failed for $($view.name)." }
+        Start-Sleep -Milliseconds 400
         # Retain a stable log snapshot before the next launch appends to it.
         Copy-Item (Join-Path $GameRoot 'igi1ed.log') (Join-Path $ArtifactsRoot ($view.name+'.log'))
         $run = Get-Content (Join-Path (Join-Path $ArtifactsRoot $view.name) 'run.json') -Raw | ConvertFrom-Json
@@ -116,9 +122,10 @@ try {
 } finally {
     $remaining = @(Get-Process igi1ed -ErrorAction SilentlyContinue)
     foreach ($process in $remaining) {
-        if (-not $process.WaitForExit(5000)) {
+        & taskkill.exe /PID $process.Id 2>$null | Out-Null
+        if (-not $process.WaitForExit(4000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            if (-not $process.WaitForExit(5000)) { throw "Editor still running after forced cleanup; retained recovery backup at $backup." }
+            if (-not $process.WaitForExit(3000)) { throw "Editor still running after forced cleanup; retained recovery backup at $backup." }
         }
     }
     foreach ($snapshot in $snapshots) {

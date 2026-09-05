@@ -1008,6 +1008,8 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
                     }
                 }
                 glBindVertexArray(0);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
             } else {
                 // Legacy single-texture path (e.g. old OBJ models)
                 auto mode = igi::ObjectLightmapManager::Get().GetRenderMode();

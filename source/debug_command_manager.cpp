@@ -134,7 +134,7 @@ void DebugCommandManager::GotoModel(const DebugCommand& cmd) {
     double min_dist = 1e30;
 
     for (size_t i = 0; i < objects.size(); ++i) {
-        if (!objects[i].deleted && objects[i].modelId == cmd.modelId) {
+        if (!objects[i].deleted && (objects[i].modelId == cmd.modelId || objects[i].segmentModelId == cmd.modelId)) {
             if (!cmd.has_pos) {
                 best_idx = (int)i;
                 break; // If no pos specified, pick first
@@ -173,7 +173,7 @@ void DebugCommandManager::DeleteModel(const DebugCommand& cmd) {
     double min_dist = 1e30;
 
     for (size_t i = 0; i < objects.size(); ++i) {
-        if (!objects[i].deleted && objects[i].modelId == cmd.modelId) {
+        if (!objects[i].deleted && (objects[i].modelId == cmd.modelId || objects[i].segmentModelId == cmd.modelId)) {
             if (!cmd.has_pos) {
                 best_idx = (int)i;
                 break; // If no pos specified, pick first
@@ -211,7 +211,7 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     double min_dist = 1e30;
 
     for (size_t i = 0; i < objects.size(); ++i) {
-        if (!objects[i].deleted && objects[i].modelId == cmd.modelId) {
+        if (!objects[i].deleted && (objects[i].modelId == cmd.modelId || objects[i].segmentModelId == cmd.modelId)) {
             if (!cmd.has_pos) {
                 target_idx = (int)i;
                 break; // If no pos specified, pick first
@@ -227,7 +227,10 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         }
     }
     
-    if (target_idx == -1) return;
+    if (target_idx == -1) {
+        Logger::Get().Log(LogLevel::WARNING, "[CaptureModel] Model not found in scene: " + cmd.modelId);
+        return;
+    }
 
     auto& obj = objects[target_idx];
     app_->selected_object_index_ = target_idx;

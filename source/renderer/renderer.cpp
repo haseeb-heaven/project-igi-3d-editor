@@ -229,6 +229,10 @@ void Renderer::DrawAnimSkeleton(const std::vector<glm::mat4>& boneWorldTransform
                                 const glm::mat4& objWorldMat) {
     if (boneWorldTransforms.empty()) return;
 
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
     GLint prevProg;
     glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
     glUseProgram(0);
@@ -255,6 +259,10 @@ void Renderer::DrawAnimSkeleton(const std::vector<glm::mat4>& boneWorldTransform
         glm::vec3 posInBefSpace = glm::vec3(boneWorldTransforms[i] * glm::vec4(0.f, 0.f, 0.f, 1.f));
         return objWorldMat * glm::vec4(posInBefSpace, 1.f);
     };
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
     glLineWidth(3.0f);
     glBegin(GL_LINES);
@@ -289,6 +297,11 @@ void Renderer::DrawAnimSkeleton(const std::vector<glm::mat4>& boneWorldTransform
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
 
     if (prevProg) glUseProgram((GLuint)prevProg);
 }
@@ -367,6 +380,11 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
     GLint prevProg;
     glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
     glUseProgram(0);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
 
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
@@ -459,6 +477,11 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
 
     if (prevProg) glUseProgram((GLuint)prevProg);
 }

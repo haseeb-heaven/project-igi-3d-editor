@@ -273,6 +273,9 @@ void App::DrawCustomCursor() {
 	// the 3D pass makes immediate-mode textured quads draw nothing.
 	glUseProgram(0);
 	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
 	glActiveTexture(GL_TEXTURE0);
 
@@ -322,6 +325,12 @@ void App::DrawProgressOverlay(const char* title, int pct, const char* stage) {
 
 	glViewport(0, 0, vw, vh);
 	glDisable(GL_SCISSOR_TEST); // prevent ImGui from clipping the overlay
+	glUseProgram(0);
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
 	glClearColor(0.02f, 0.06f, 0.02f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glDisable(GL_DEPTH_TEST);

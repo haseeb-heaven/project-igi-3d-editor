@@ -448,6 +448,9 @@ void Renderer::Draw(const draw_params_s &params,
   {
     glUseProgram(0);      // Disable any active shaders for fixed-function HUD
     glBindVertexArray(0); // UNBIND VAO to prevent state leak
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0); // UNBIND UBO
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -3018,6 +3021,9 @@ void Renderer::Draw(const draw_params_s &params,
             glViewport(0, 0, vw, vh);
             glUseProgram(0);
             glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+            for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
             glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, 0);
@@ -4020,6 +4026,9 @@ void Renderer::DrawGraphNodes3D(const draw_params_s& params) {
   // Switch from object shader to fixed-function for 3D graph geometry.
   glUseProgram(0);
   glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  for (int i = 0; i < 4; ++i) glDisableVertexAttribArray(i);
   glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, 0);

@@ -1164,6 +1164,8 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 }
             }
             glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         } else if (subMesh.textureID > 0) {
             glUniform3f(loc_dirlight, 0.6f, 0.6f, 0.6f);
             glUniform3f(loc_ambient,  global_ambient_.r, global_ambient_.g, global_ambient_.b);

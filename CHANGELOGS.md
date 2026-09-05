@@ -16,6 +16,12 @@
   editor process before restoring QED files. An elevated one-object retry
   passed all ten views, all ten model-evidence checks, and byte-verified QED
   restoration.
+- Added configurable five-second OpenGL teardown/startup cooldowns between
+  saved-camera cycles. The evidence checker now accepts both `[TEX] ResCache`
+  and the deployed editor's `[TEX Native] Loaded textureId` records, while
+  treating duplicate identical transforms as consistent evidence. WER recorded
+  repeated `igi1ed.exe` access violations in AMD `atioglxx.dll`; those GPU
+  driver crashes remain reported as verification failures, not model passes.
 - Added DPI-aware full-client screenshots, fresh-log model transform and
   texture-assignment checks, and separately labelled terrain-hidden diagnostic
   captures. Verified ten watchtower views plus an underside diagnostic;
@@ -962,3 +968,17 @@ Welcome to the first public release of the **Project IGI 3D Editor**! This relea
 ### Compilation
 - Successfully builds with MSVC 2022 (Visual Studio)
 - No breaking changes to existing functionality
+## 2026-09-05 — Single-session smart live verification
+
+- Added `Invoke-SmartSingleSession.ps1`, which builds one level scenario that
+  launches `igi1ed.exe` once, selects every eligible named model object, takes
+  ten deterministic orbit screenshots per object, verifies authored position /
+  orientation and live texture assignment evidence, and closes once.
+- Updated `Run-SmartTest.ps1` to use the single-session runner by default for
+  one level or levels 1–14. `-LegacySerial` retains the prior per-object matrix
+  for comparison only.
+- Added `tests_run.cmd` with compact modular arguments such as
+  `tests_run --level 5 --objects rigid --maximum 3`, plus `--all-levels`,
+  `--object-type`, `--views`, `--all-objects`, and `--prepare-only`.
+- Anonymous `-1#...` records are reported as skipped because the editor's
+  find-by-ID control cannot select them; they are never counted as visual passes.

@@ -377,8 +377,48 @@ public static class EditorE2E_Native {
         }
         return new int[] { 0, 0, 0, 0, 0, 0, cx, cy };
     }
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    public const uint WM_CLOSE = 0x0010;
+    private static IntPtr _enumFoundHwnd = IntPtr.Zero;
+    private static uint _enumTargetPid = 0;
+    private static bool EnumWindowCallback(IntPtr hWnd, IntPtr lParam) {
+        uint pid;
+        GetWindowThreadProcessId(hWnd, out pid);
+        if (pid == _enumTargetPid && IsWindowVisible(hWnd)) {
+            Rect r;
+            if (GetClientRect(hWnd, out r)) {
+                int w = r.Right - r.Left;
+                int h = r.Bottom - r.Top;
+                if (w > 100 && h > 100) {
+                    _enumFoundHwnd = hWnd;
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    public static IntPtr FindWindowForProcess(uint processId) {
+        _enumFoundHwnd = IntPtr.Zero;
+        _enumTargetPid = processId;
+        EnumWindows(EnumWindowCallback, IntPtr.Zero);
+        return _enumFoundHwnd;
+    }
 }
 '@
+}
+function Get-EditorWindowHandle($ProcessOrId) {
+    $pidToFind = if ($ProcessOrId -is [System.Diagnostics.Process]) { $ProcessOrId.Id } else { [int]$ProcessOrId }
+    $hWnd = [EditorE2E_Native]::FindWindowForProcess([uint32]$pidToFind)
+    if ($hWnd -ne [IntPtr]::Zero) { return $hWnd }
+    $p = if ($ProcessOrId -is [System.Diagnostics.Process]) { $ProcessOrId } else { Get-Process -Id $pidToFind -ErrorAction SilentlyContinue }
+    if ($null -ne $p -and $p.MainWindowHandle -ne [IntPtr]::Zero) {
+        return $p.MainWindowHandle
+    }
+    return [IntPtr]::Zero
 }
 function Get-VirtualKey([string]$Name) {
     $name = $Name.ToUpperInvariant()
@@ -444,9 +484,9 @@ function Wait-ForEditor([int]$ProcessId, [int]$TimeoutSeconds = 30) {
         $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
         if ($null -ne $process) {
             try { $process.Refresh() } catch {}
-            if ($process.MainWindowHandle -ne [IntPtr]::Zero) {
-                if ($process.SessionId -ne 1) { Fail "Editor PID $Pid is not on interactive Session 1." }
-                if ($process.Responding -eq $false) { Fail "Editor PID $Pid is not responding." }
+            $hWnd = Get-EditorWindowHandle $ProcessId
+            if ($hWnd -ne [IntPtr]::Zero) {
+                if ($process.SessionId -ne 1) { Fail "Editor PID $ProcessId is not on interactive Session 1." }
                 return $process
             }
         }
@@ -455,11 +495,14 @@ function Wait-ForEditor([int]$ProcessId, [int]$TimeoutSeconds = 30) {
     Fail "Editor PID $ProcessId did not expose a responsive window within $TimeoutSeconds seconds."
 }
 function Focus-Editor($Process) {
-    [void][EditorE2E_Native]::ShowWindow($Process.MainWindowHandle, [EditorE2E_Native]::ShowNormal)
-    [void][EditorE2E_Native]::BringWindowToTop($Process.MainWindowHandle)
-    [void][EditorE2E_Native]::SetForegroundWindow($Process.MainWindowHandle)
-    [void][EditorE2E_Native]::SetFocus($Process.MainWindowHandle)
-    Start-Sleep -Milliseconds 120
+    $hWnd = Get-EditorWindowHandle $Process
+    if ($hWnd -ne [IntPtr]::Zero) {
+        [void][EditorE2E_Native]::ShowWindow($hWnd, [EditorE2E_Native]::ShowNormal)
+        [void][EditorE2E_Native]::BringWindowToTop($hWnd)
+        [void][EditorE2E_Native]::SetForegroundWindow($hWnd)
+        [void][EditorE2E_Native]::SetFocus($hWnd)
+        Start-Sleep -Milliseconds 120
+    }
 }
 function Capture-Screenshot([string]$Path, $Region, [IntPtr]$ClientWindow = [IntPtr]::Zero) {
     Add-Type -AssemblyName System.Drawing
@@ -594,12 +637,22 @@ function Close-Editor($Process, [bool]$Force) {
     if ($null -eq $Process) { return $null }
     $current = Get-Process -Id $Process.Id -ErrorAction SilentlyContinue
     if ($null -eq $current) { return [pscustomobject]@{ exited=$true; exitCode=$null; forced=$Force } }
-    if (-not $Force) {
-        [void]$current.CloseMainWindow()
-        if ($current.WaitForExit(5000)) { return [pscustomobject]@{ exited=$true; exitCode=$current.ExitCode; forced=$false } }
+    $hWnd = Get-EditorWindowHandle $current.Id
+    if ($hWnd -ne [IntPtr]::Zero) {
+        [void][EditorE2E_Native]::PostMessage($hWnd, [EditorE2E_Native]::WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+    } else {
+        & taskkill.exe /PID $current.Id 2>$null | Out-Null
     }
-    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
-    return [pscustomobject]@{ exited=$false; exitCode=$null; forced=$true }
+    if ($current.WaitForExit(4000)) {
+        Start-Sleep -Milliseconds 400
+        return [pscustomobject]@{ exited=$true; exitCode=$current.ExitCode; forced=$false }
+    }
+    if ($Force) {
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 400
+        return [pscustomobject]@{ exited=$true; exitCode=$null; forced=$true }
+    }
+    return [pscustomobject]@{ exited=$false; exitCode=$null; forced=$false }
 }
 function Get-Sha256([string]$Path) {
     $bytes = [IO.File]::ReadAllBytes($Path)
@@ -708,7 +761,8 @@ function Invoke-OrbitCamera($Process, [string]$Angle, [int]$Pixels, [double]$Dis
     Focus-Editor $process
     Send-Key 'F11'
     Start-Sleep -Milliseconds 350
-    $geometry = [EditorE2E_Native]::ClientRect($process.MainWindowHandle)
+    $hWnd = Get-EditorWindowHandle $process
+    $geometry = [EditorE2E_Native]::ClientRect($hWnd)
     $centerX = $geometry[6]; $centerY = $geometry[7]
     if ($centerX -le 0 -or $centerY -le 0) { Fail 'orbit_camera could not resolve a viewport center from the editor window.' }
     [EditorE2E_Native]::Key([byte]0x12, $false)  # ALT down (CameraEnable)
@@ -737,13 +791,14 @@ function Invoke-CaptureWindowState($Process) {
     $current = Get-Process -Id $Process.Id -ErrorAction SilentlyContinue
     if ($null -eq $current) { Fail 'capture_window_state requires a live editor process (run launch_editor first).' }
     $current.Refresh()
-    $geometry = [EditorE2E_Native]::ClientRect($current.MainWindowHandle)
-    if ($null -eq $current.MainWindowHandle -or $current.MainWindowHandle -eq [IntPtr]::Zero -or $geometry[2] -le 0 -or $geometry[3] -le 0) {
+    $hWnd = Get-EditorWindowHandle $current
+    $geometry = [EditorE2E_Native]::ClientRect($hWnd)
+    if ($hWnd -eq [IntPtr]::Zero -or $geometry[2] -le 0 -or $geometry[3] -le 0) {
         Fail 'capture_window_state could not resolve the editor window client bounds.'
     }
     $state = [ordered]@{
         pid = $current.Id
-        windowHandle = ('0x{0:X}' -f $current.MainWindowHandle.ToInt64())
+        windowHandle = ('0x{0:X}' -f $hWnd.ToInt64())
         sessionId = $current.SessionId
         responding = $current.Responding
         workingSetMb = [Math]::Round($current.WorkingSet64 / 1MB, 2)
@@ -871,9 +926,16 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                     'wait_for_window' { $process = Wait-ForEditor $process.Id ([int]$(if ($step.timeoutSeconds) { $step.timeoutSeconds } else { 45 })) }
                     'assert_process' {
                         $process = Wait-ForEditor $process.Id 5
-                        $record.sessionId = $process.SessionId; $record.responding = $process.Responding
+                        $record.sessionId = $process.SessionId
                         $record.workingSetMb = [Math]::Round($process.WorkingSet64 / 1MB, 2)
                         if ($record.workingSetMb -lt 30) { Fail "Editor working set is only $($record.workingSetMb) MB." }
+                        for ($i = 0; $i -lt 10; $i++) {
+                            try { $process.Refresh() } catch {}
+                            if ($process.Responding) { break }
+                            Start-Sleep -Milliseconds 500
+                        }
+                        $record.responding = $process.Responding
+                        if (-not $process.Responding) { Fail "Editor PID $($process.Id) is not responding." }
                     }
                     'key' { Focus-Editor $process; Send-Key ([string]$step.key) }
                     'key_hold' { Focus-Editor $process; Send-KeyForDuration ([string]$step.key) ([double]$step.seconds) }
@@ -1039,7 +1101,7 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                     'screenshot' {
                         Focus-Editor $process
                         $file = Join-Path $scenarioDir (([string]$step.name) + '.png')
-                        $captureWindow = if ($step.client) { $process.MainWindowHandle } else { [IntPtr]::Zero }
+                        $captureWindow = if ($step.client) { Get-EditorWindowHandle $process } else { [IntPtr]::Zero }
                         $latestScreenshot = Capture-Screenshot $file $step.region $captureWindow
                         $screenshots[[string]$step.name] = $latestScreenshot
                         $record.screenshot = $file

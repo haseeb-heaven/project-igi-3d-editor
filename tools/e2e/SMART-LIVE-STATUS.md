@@ -1,5 +1,27 @@
 # Smart live testing: pilot gate
 
+## Single-session modular runner
+
+`Invoke-SmartSingleSession.ps1` is now the default path behind
+`Run-SmartTest.ps1` and `tests_run.cmd`. Each level invocation creates one
+scenario with exactly one editor launch and one close; the scenario then loops
+over the selected model objects and captures ten orbit views per selectable
+object. Position/orientation, required DAT texture identities, live texture
+assignment records, and screenshot counts are written to `batch.json`.
+
+Examples:
+
+```text
+tests_run --level 5 --objects rigid --maximum 3
+tests_run --level 1-14 --objects any --all-objects
+tests_run --level 12 --object-type Building --maximum 10
+```
+
+The `-1#...` synthetic inventory records remain explicitly skipped because
+the editor find-by-ID UI accepts only named numeric task IDs. They are not
+silently accepted as visual captures. Use `--prepare-only` to inspect the
+selected/skipped inventory before a live run.
+
 Scope: testing scripts only; do not change production rendering. Complete the
 watchtower pilot before expanding to every object and workflow in the existing
 human-workflow plan across levels 1–14.
@@ -129,3 +151,15 @@ editor after a failed capture before restoring QED files. An elevated retry of
 one synthetic Level 1 object passed all ten views and ten model-evidence files,
 with deployed QED hashes restored exactly. The all-object/all-level live
 matrix remains unclaimed pending a clean resumable run.
+
+### Runtime crash and evidence recovery — 2026-09-05
+
+Windows WER recorded repeated `igi1ed.exe` crashes in `atioglxx.dll`
+(`0xc0000005`, offset `0x007090d2`) during the Level 1 live matrix. The
+corresponding editor dump is retained under the user CrashDumps directory.
+This is an AMD OpenGL-driver failure during repeated editor startup/render
+cycles, not evidence of a valid model transform or texture pass. The smart
+pilot now waits five seconds at startup and between views; the cooldown
+pilot's first view passed screenshot, consistent transform, runtime
+texture-load, assignment, and graceful-close checks. Its ten-view run was
+interrupted before completion, so no ten-view cooldown pass is claimed yet.

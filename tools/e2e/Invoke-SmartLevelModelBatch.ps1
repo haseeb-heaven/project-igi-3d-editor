@@ -9,7 +9,10 @@ param(
     [switch]$PrepareOnly,
     [switch]$Resume,
     [switch]$AllowConfigMutation,
-    [ValidateRange(0,1)][int]$RetryCount = 1
+    [ValidateRange(0,1)][int]$RetryCount = 1,
+    [switch]$DistinctTypes,
+    [ValidateRange(1,10)][int]$ViewCount = 10,
+    [ValidateRange(0,60)][int]$CooldownSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
 if (-not $PrepareOnly -and -not $AllowConfigMutation) { throw 'Live capture requires -AllowConfigMutation.' }
@@ -34,8 +37,18 @@ $all = @($levelRows[0].inventory)
 $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
 $modelAnchors = @($all | Where-Object { $_.modelId -and $_.authoredPosition -and $_.authoredRotation })
-$renderable = @($modelAnchors | Sort-Object {[string]$_.taskId})
-if ($MaxObjects -gt 0) { $renderable = @($renderable | Select-Object -First $MaxObjects) }
+if ($DistinctTypes) {
+    $selected = [System.Collections.Generic.List[object]]::new()
+    $groups = @($modelAnchors | Group-Object type)
+    foreach ($g in $groups) {
+        if ($MaxObjects -gt 0 -and $selected.Count -ge $MaxObjects) { break }
+        $selected.Add($g.Group[0])
+    }
+    $renderable = @($selected)
+} else {
+    $renderable = @($modelAnchors | Sort-Object {[string]$_.taskId})
+    if ($MaxObjects -gt 0) { $renderable = @($renderable | Select-Object -First $MaxObjects) }
+}
 $skipped = @($all | Where-Object { -not ($_.modelId -and $_.authoredPosition -and $_.authoredRotation) } | ForEach-Object {
     $reason = if (-not $_.modelId) { 'non-renderable task' }
         elseif (-not $_.authoredPosition) { 'missing authored position' }
@@ -123,7 +136,7 @@ foreach ($anchor in $ordered) {
                 $attemptNumber = $attemptBase + $attempt
                 $attempts=$attemptNumber
                 $attemptRoot = Join-Path $objectRoot ('attempt-'+$attemptNumber)
-                $pilotArgs = @('-CameraPlan',$plan,'-ArtifactsRoot',$attemptRoot,'-InventoryPath',$InventoryPath,'-GameRoot',$GameRoot,'-Level',$Level,'-TaskId',$task,'-ViewCount',10,'-AllowConfigMutation')
+                $pilotArgs = @('-CameraPlan',$plan,'-ArtifactsRoot',$attemptRoot,'-InventoryPath',$InventoryPath,'-GameRoot',$GameRoot,'-Level',$Level,'-TaskId',$task,'-ViewCount',$ViewCount,'-CooldownSeconds',$CooldownSeconds,'-AllowConfigMutation')
                 if ($task -notmatch '^\d+$') { $pilotArgs += '-SkipObjectSelection' }
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $pilotTool @pilotArgs *> (Join-Path $objectRoot ('attempt-'+$attemptNumber+'.log'))
                 if ($LASTEXITCODE -eq 0) { $status='PASS'; break }
