@@ -14,6 +14,12 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $PrepareOnly -and -not $AllowConfigMutation) { throw 'Live capture requires -AllowConfigMutation.' }
 if (Get-Process igi1ed -ErrorAction SilentlyContinue) { throw 'Close the existing editor before the serial batch.' }
+function Get-PortableSha256([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','') }
+    finally { $sha.Dispose() }
+}
 $ArtifactsRoot = [IO.Path]::GetFullPath($ArtifactsRoot)
 $statePath = Join-Path $ArtifactsRoot 'batch.json'
 if ($Resume) {
@@ -87,7 +93,7 @@ foreach ($anchor in $ordered) {
     try {
         New-Item -ItemType Directory -Path $objectRoot -Force | Out-Null
         $sourcePath = Join-Path $GameRoot $levelRows[0].sourcePath
-        if ((Get-FileHash $sourcePath -Algorithm SHA256).Hash -ne [string]$anchor.sourceHash) { throw 'Stale object inventory.' }
+        if ((Get-PortableSha256 $sourcePath) -ne [string]$anchor.sourceHash) { throw 'Stale object inventory.' }
         if ($model -notmatch '^[A-Za-z0-9_-]+$') { throw 'Unsupported model identifier.' }
         $mesh = Join-Path $assetCache ($model+'.mef')
         $obj = Join-Path $assetCache ($model+'.obj')

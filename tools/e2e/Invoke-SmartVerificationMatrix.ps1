@@ -43,12 +43,14 @@ foreach ($category in $Categories) {
 foreach ($type in $ObjectTypes) { if (-not $filterTypes.Contains($type)) { $filterTypes.Add($type) } }
 if ($Categories -contains 'All') { $filterTypes.Clear() }
 $levelTool = Join-Path $PSScriptRoot 'Invoke-SmartLevelModelBatch.ps1'
-$matrixResults = [System.Collections.Generic.List[object]]::new()
+$matrixResults = @()
 $previousPrepareOnly = $null
+$previousMaxObjects = $null
 if ($Resume) {
     $prior = Get-Content -LiteralPath $matrixPath -Raw | ConvertFrom-Json
     if ($null -ne $prior.PSObject.Properties['prepareOnly']) { $previousPrepareOnly = [bool]$prior.prepareOnly }
-    foreach ($result in @($prior.levels)) { $matrixResults.Add($result) }
+    if ($null -ne $prior.PSObject.Properties['maxObjects']) { $previousMaxObjects = [int]$prior.maxObjects }
+    $matrixResults += @($prior.levels | Where-Object { $null -ne $_.PSObject.Properties['level'] })
 }
 
 function Save-Matrix {
@@ -59,7 +61,7 @@ function Save-Matrix {
         objectTypes=@($filterTypes.ToArray())
         maxObjects=$MaxObjects
         prepareOnly=[bool]$PrepareOnly
-        results=@($matrixResults.ToArray())
+        results=@($matrixResults)
         scope='All selected task records are enumerated. Only records with a model, authored position, and authored rotation receive 360-degree model captures; non-model selected records are reported as not applicable to this 3D check.'
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $matrixPath -Encoding UTF8
 }
@@ -68,13 +70,13 @@ Save-Matrix
 $remaining = $MaxObjects
 foreach ($level in $Levels) {
     $priorResult = @($matrixResults | Where-Object level -eq $level)
-    if ($priorResult.Count -eq 1 -and $priorResult[0].status -eq 'PASS' -and $null -ne $previousPrepareOnly -and $previousPrepareOnly -eq [bool]$PrepareOnly) { Write-Output "Level $level RESUMED-PASS"; continue }
+    if ($priorResult.Count -eq 1 -and $priorResult[0].status -eq 'PASS' -and $null -ne $previousPrepareOnly -and $previousPrepareOnly -eq [bool]$PrepareOnly -and $null -ne $previousMaxObjects -and $previousMaxObjects -eq $MaxObjects) { Write-Output "Level $level RESUMED-PASS"; continue }
     $levelRoot = Join-Path $ArtifactsRoot ('level'+$level)
     $levelRows = @($inventory.levels | Where-Object level -eq $level)[0].inventory
     if ($filterTypes.Count) { $levelRows = @($levelRows | Where-Object { $filterTypes -contains [string]$_.type }) }
     $candidateCount = @($levelRows | Where-Object { $_.modelId -and $_.authoredPosition -and $_.authoredRotation }).Count
     if ($MaxObjects -gt 0 -and $remaining -le 0) {
-        $matrixResults.Add([pscustomobject]@{level=$level;status='NOT_RUN_LIMIT_REACHED';candidateCount=$candidateCount;failure=$null})
+        $matrixResults += [pscustomobject]@{level=$level;status='NOT_RUN_LIMIT_REACHED';candidateCount=$candidateCount;failure=$null}
         Save-Matrix
         continue
     }
@@ -85,8 +87,8 @@ foreach ($level in $Levels) {
     if ($Resume -and (Test-Path -LiteralPath (Join-Path $levelRoot 'batch.json'))) { $args += '-Resume' }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $levelTool @args
     $status = if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }
-    $matrixResults = [System.Collections.Generic.List[object]]@($matrixResults | Where-Object level -ne $level)
-    $matrixResults.Add([pscustomobject]@{level=$level;status=$status;candidateCount=$candidateCount;artifactRoot=$levelRoot;failure=$(if($status -eq 'FAIL'){'Inspect level batch.json'}else{$null})})
+    $matrixResults = @($matrixResults | Where-Object level -ne $level)
+    $matrixResults += [pscustomobject]@{level=$level;status=$status;candidateCount=$candidateCount;artifactRoot=$levelRoot;failure=$(if($status -eq 'FAIL'){'Inspect level batch.json'}else{$null})}
     if ($MaxObjects -gt 0) { $remaining -= $levelLimit }
     Save-Matrix
     if ($status -eq 'FAIL') { exit 1 }
