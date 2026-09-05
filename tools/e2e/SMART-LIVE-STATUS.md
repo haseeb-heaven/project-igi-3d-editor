@@ -23,6 +23,28 @@ human-workflow plan across levels 1–14.
 
 ## Next work
 
+### Saved-camera pilot progress
+
+`New-SmartCameraPlan.ps1` now calculates eight horizontal poses and above/below
+poses from exported mesh bounds and authored placement. `Invoke-SmartCameraPilot.ps1`
+uses existing saved-camera settings, not F11, and restores QED QSC/QVM hashes.
+The first pose exposed the all-zero-orientation spawn fallback; the harness uses
+360 degrees for that equivalent explicit heading.
+
+The ten-view capture completed in `artifacts/e2e/smart-watchtower-fixed-camera-10`.
+Fresh logs confirmed all ten camera positions within 5 world units (float
+rounding at large world coordinates), and all eight horizontal headings matched.
+All original QED hashes were independently rechecked after the run. The pose
+math and horizontal orbit mapping tests pass. Initial/front, side, opposite,
+above, and below screenshots were inspected. The tower is framed in the
+horizontal views, but a neighboring roof partly occludes one side and terrain
+occludes the below view. These are capture results, not pilot acceptance.
+
+Remaining: DPI-correct full-client capture (the target appears offset in the
+current full-desktop images), pitch/pose evidence beyond settings, occlusion
+handling, live material/attachment verification, authored transform verification,
+and test fixtures independent of generated local assets. No all-object expansion.
+
 1. Use existing camera configuration/control capabilities to frame the authored
    watchtower without F11 resolving a child graph. Restore any temporary camera
    configuration byte-for-byte. Do not modify production code.

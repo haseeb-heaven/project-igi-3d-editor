@@ -6,6 +6,9 @@
   scaffold; corrected duplicate horizontal orbit mappings with a regression
   test. The first watchtower capture exposed an F11 graph-target mismatch and
   is rejected; all-object expansion remains gated on pilot acceptance.
+- Added mesh-derived saved-camera pilot captures to bypass that F11 mismatch,
+  with ten planned views and QED file backup/hash restoration. All ten captures
+  completed; occlusion and live material/transform verification remain open.
 - Added a visible Windows editor E2E runner with WMI launch, native input,
   process/log checks, screenshots, image metrics, and JSON/Markdown reports.
 - Added mutation-gated file snapshots and hash-verified restoration for
