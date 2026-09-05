@@ -1,5 +1,24 @@
 # Changelogs
 
+## Unreleased — Editor workflow E2E (`e2e-editor-harness`)
+
+- Added a visible Windows editor E2E runner with WMI launch, native input,
+  process/log checks, screenshots, image metrics, and JSON/Markdown reports.
+- Added mutation-gated file snapshots and hash-verified restoration for
+  reversible workflow tests, plus validation of scenario inputs.
+- Added corpus-derived workflow inventories and all-level editor-control,
+  terrain-shortcut, placed-object orbit, and asset/model-resolution scenarios.
+- Fixed model-ID scalar unrolling, bare-MEF LOD discovery, and a validation
+  output leak that incorrectly entered the scenario list.
+- Added draft graph metadata, node-edit assertions, and AI/animation workflow
+  coverage across levels 1–14. Input dispatch alone is not playback evidence.
+- Added a focused graph smoke manifest: one populated, named non-cutscene
+  graph per level, chosen by node count; cutscene and unknown-area graphs are
+  excluded. This checks opening/focusing graphs, not editing or save/reload.
+- Validation status: the 14-level smoke run is in progress. Graph-node
+  selection/edit/save/reload and animation/patrol live validation remain
+  incomplete; the no-mistakes CLI is unavailable locally.
+
 ## Unreleased — MCP game-data integration
 
 - Added the Win32 `igi_mcp.exe` headless MCP server with stateless
