@@ -151,10 +151,39 @@ try {
             Require ([string]$entry.sourceHash -cmatch '^[a-f0-9]{64}$') "Level $($level.level) task $($entry.taskId) sourceHash is not a lowercase 64-character SHA-256 value."
             Require ([string]$entry.sourceHash -ceq $expectedSourceHash) "Level $($level.level) task $($entry.taskId) sourceHash does not match $objectsQvm."
         }
+        # Every AIGraph task whose numeric id matches a discovered graph<id>.dat
+        # file must have exactly one graph-overlay scenario carrying node/edge
+        # counts.  A discovered graph file with no matching AIGraph task is an
+        # orphan corpus finding recorded in discovery.orphanGraphFiles, not a
+        # silent gap.
+        $graphIdToFile = @{}
         foreach ($graphFile in Values $level.discovery.graphs) {
-            $graphScenarios = @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq 'graph-overlay' -and $_.anchor.graphFile -eq $graphFile })
-            Require ($graphScenarios.Count -eq 1) "Level $($level.level) graph file '$graphFile' must have exactly one graph-overlay scenario."
+            $graphId = [IO.Path]::GetFileNameWithoutExtension($graphFile) -replace '^graph', ''
+            $graphIdToFile[[string]$graphId] = [string]$graphFile
         }
+        $matchedGraphFiles = @{}
+        foreach ($graphScenario in @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq 'graph-overlay' })) {
+            $graphAnchor = $graphScenario.anchor
+            Require ([int]$graphAnchor.nodeCount -ge 1) "Level $($level.level) graph '$($graphAnchor.graphFile)' anchor must carry nodeCount >= 1."
+            Require ($null -ne $graphAnchor.edgeCount) "Level $($level.level) graph '$($graphAnchor.graphFile)' anchor must carry edgeCount."
+            Require ($graphAnchor.graphTaskId -eq [string]$graphScenario.taskId) "Level $($level.level) graph-overlay anchor graphTaskId must equal the AIGraph taskId."
+            Require (@($graphAnchor.nodes).Count -eq [int]$graphAnchor.nodeCount) "Level $($level.level) graph '$($graphAnchor.graphFile)' must carry one metadata record per node."
+            Require (@($graphAnchor.edges).Count -eq [int]$graphAnchor.edgeCount) "Level $($level.level) graph '$($graphAnchor.graphFile)' must carry one metadata record per edge."
+            Require (@($graphAnchor.criteriaClasses).Count -gt 0) "Level $($level.level) graph '$($graphAnchor.graphFile)' must carry criterion classes."
+            Require ($null -ne $graphAnchor.criteriaCounts -and $null -ne $graphAnchor.criterionSamples) "Level $($level.level) graph '$($graphAnchor.graphFile)' must carry criterion counts and samples."
+            $matchedGraphFiles[$graphAnchor.graphFile] = $true
+        }
+        foreach ($entry in @(Values $level.inventory | Where-Object { $_.type -eq 'AIGraph' })) {
+            if ($graphIdToFile.ContainsKey([string]$entry.taskId)) {
+                $graphFile = $graphIdToFile[[string]$entry.taskId]
+                $matching = @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq 'graph-overlay' -and $_.taskId -eq $entry.taskId -and $_.anchor.graphFile -eq $graphFile })
+                Require ($matching.Count -eq 1) "Level $($level.level) AIGraph task $($entry.taskId) with file '$graphFile' must have exactly one graph-overlay scenario; found $($matching.Count)."
+            }
+        }
+        $orphanFiles = @(Values $level.discovery.orphanGraphFiles | ForEach-Object { [string]$_ })
+        $expectedOrphan = @($graphIdToFile.Keys | Where-Object { -not $matchedGraphFiles.ContainsKey([string]$graphIdToFile[[string]$_]) } | ForEach-Object { [string]$graphIdToFile[[string]$_] } | Sort-Object)
+        $orphanDelta = Compare-Object -ReferenceObject $expectedOrphan -DifferenceObject $orphanFiles
+        Require ($null -eq $orphanDelta -or @($orphanDelta).Count -eq 0) "Level $($level.level) discovery.orphanGraphFiles does not match the graph files without an AIGraph task."
     }
 
     # ---- Editor control/persistence coverage contract (Task 3) ----
@@ -261,6 +290,144 @@ try {
                 Require (-not [bool]$entry.helperModel) "Level $($level.level) task $($entry.taskId) has no model but helperModel is true."
             }
         }
+    }
+
+    # ---- Graph/AI/animation coverage contract (Task 6) ----
+    # Every graph-overlay anchor must name its real graph/task, node population,
+    # and criterion data so a scenario can select a discovered node. Every
+    # animation anchor must record its source, patrol classification, and the
+    # graph target used by the live workflow. Graph/AI features absent from a
+    # level must be explicit exclusions, never silent gaps.
+    $task6ScenarioPath = Join-Path $PSScriptRoot 'scenarios\graph-ai-animation-workflows.json'
+    Require (Test-Path -LiteralPath $task6ScenarioPath -PathType Leaf) "Task 6 scenario file is missing: $task6ScenarioPath"
+    $task6Scenarios = Values (Get-Content -LiteralPath $task6ScenarioPath -Raw | ConvertFrom-Json).scenarios
+    Require ($task6Scenarios.Count -gt 0) 'Task 6 scenario file must contain scenarios.'
+    $task6Keys = @{}
+    foreach ($scenario in $task6Scenarios) {
+        foreach ($field in @('name','action','workflow','level','taskId','type','anchor','requiredSteps','uiOracle','stateOracle','steps')) {
+            Require ($null -ne $scenario.$field) "Task 6 scenario is missing $field."
+        }
+        Require ($scenario.action -in @('graph-overlay','ai-animation')) "Task 6 scenario '$($scenario.name)' has unsupported action '$($scenario.action)'."
+        $key = "$($scenario.level)|$($scenario.taskId)|$($scenario.action)"
+        Require (-not $task6Keys.ContainsKey($key)) "Duplicate Task 6 scenario anchor: $key"
+        $task6Keys[$key] = $true
+        Require (@($scenario.steps).Count -gt 0) "Task 6 scenario '$($scenario.name)' must have runnable steps."
+        $hasUi = @($scenario.steps | Where-Object { $_.type -in @('screenshot','assert_screenshot_region','assert_screenshot_color_ratio','assert_screenshot_difference') }).Count -gt 0
+        $hasState = @($scenario.steps | Where-Object { $_.type -in @('assert_process','capture_window_state','wait_for_log','assert_log','assert_log_count','assert_file','assert_path','assert_file_hash','snapshot_paths','restore_paths','assert_graph_edit') }).Count -gt 0
+        Require $hasUi "Task 6 scenario '$($scenario.name)' has no UI oracle step."
+        Require $hasState "Task 6 scenario '$($scenario.name)' has no state oracle step."
+        $stepTypes = @($scenario.steps | ForEach-Object { [string]$_.type })
+        if ($scenario.action -eq 'graph-overlay') {
+            Require ([bool]$scenario.requiresMutation) "Graph scenario '$($scenario.name)' must declare requiresMutation=true."
+            Require (-not [string]::IsNullOrWhiteSpace([string]$scenario.anchor.graphFile)) "Graph scenario '$($scenario.name)' must carry graphFile."
+            Require ([int]$scenario.anchor.nodeCount -ge 1) "Graph scenario '$($scenario.name)' must carry nodeCount."
+            Require (@($scenario.anchor.nodes).Count -eq [int]$scenario.anchor.nodeCount) "Graph scenario '$($scenario.name)' must carry all node metadata."
+            Require (@($scenario.anchor.edges).Count -eq [int]$scenario.anchor.edgeCount) "Graph scenario '$($scenario.name)' must carry all edge metadata."
+            Require (@($scenario.anchor.criteriaClasses).Count -gt 0) "Graph scenario '$($scenario.name)' must carry criterion classes."
+            Require ($stepTypes -contains 'select_graph_node') "Graph scenario '$($scenario.name)' must select a graph node."
+            Require ($stepTypes -contains 'nudge_graph_node') "Graph scenario '$($scenario.name)' must perform a declared graph node edit."
+            Require ($stepTypes -contains 'assert_graph_edit') "Graph scenario '$($scenario.name)' must compare graph data outside the declared edit."
+            Require ($stepTypes -contains 'snapshot_paths') "Graph scenario '$($scenario.name)' must snapshot its graph file."
+            Require ($stepTypes -contains 'restore_paths') "Graph scenario '$($scenario.name)' must restore its graph file."
+        } else {
+            Require (-not [bool]$scenario.requiresMutation) "Animation scenario '$($scenario.name)' must not mutate game data."
+            Require ($null -ne $scenario.anchor.animationIds) "Animation scenario '$($scenario.name)' must carry animationIds."
+            Require (-not [string]::IsNullOrWhiteSpace([string]$scenario.anchor.animationSource)) "Animation scenario '$($scenario.name)' must carry animationSource."
+            Require ($null -ne $scenario.anchor.patrol) "Animation scenario '$($scenario.name)' must carry patrol classification."
+            Require ($stepTypes -contains 'start_animation') "Animation scenario '$($scenario.name)' must start playback."
+            Require ($stepTypes -contains 'pause_animation') "Animation scenario '$($scenario.name)' must pause playback."
+            Require ($stepTypes -contains 'assert_screenshot_difference') "Animation scenario '$($scenario.name)' must compare playing frames."
+            Require (@($scenario.steps | Where-Object { $_.type -eq 'assert_screenshot_difference' -and $_.maxChangedRatio -eq 0 }).Count -gt 0) "Animation scenario '$($scenario.name)' must assert stable paused frames."
+        }
+    }
+    foreach ($level in $levels) {
+        $levelScenarios = @($scenarios | Where-Object { $_.level -eq $level.level })
+        $levelTask6Scenarios = @($task6Scenarios | Where-Object { $_.level -eq $level.level })
+        $levelGraphFiles = @(Values $level.discovery.graphs | ForEach-Object { [string]$_ })
+        $levelGraphTaskScenarios = @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq 'graph-overlay' })
+        $levelGraphTaskKeys = @{}
+        foreach ($scenario in $levelGraphTaskScenarios) {
+            $anchor = $scenario.anchor
+            Require (-not [string]::IsNullOrWhiteSpace([string]$anchor.graphFile)) "Level $($level.level) graph scenario '$($scenario.taskId)' is missing graphFile."
+            Require ($levelGraphFiles -contains [string]$anchor.graphFile) "Level $($level.level) graph scenario '$($scenario.taskId)' names an undiscovered graph file '$($anchor.graphFile)'."
+            Require ([int]$anchor.nodeCount -ge 1) "Level $($level.level) graph '$($anchor.graphFile)' must carry nodeCount >= 1."
+            Require ([int]$anchor.edgeCount -ge 0) "Level $($level.level) graph '$($anchor.graphFile)' must carry edgeCount >= 0."
+            Require ($null -ne $anchor.graphTaskId -and [string]$anchor.graphTaskId -eq [string]$scenario.taskId) "Level $($level.level) graph '$($anchor.graphFile)' graphTaskId must equal its AIGraph taskId."
+            Require (@($anchor.nodes).Count -eq [int]$anchor.nodeCount) "Level $($level.level) graph '$($anchor.graphFile)' must carry one real metadata record per graph node."
+            Require (@($anchor.edges).Count -eq [int]$anchor.edgeCount) "Level $($level.level) graph '$($anchor.graphFile)' must carry one real metadata record per graph edge."
+            Require (@($anchor.criteriaClasses).Count -gt 0) "Level $($level.level) graph '$($anchor.graphFile)' must carry node criterion classes."
+            Require ($null -ne $anchor.criteriaCounts) "Level $($level.level) graph '$($anchor.graphFile)' must carry node criterion counts."
+            foreach ($criterionClass in @($anchor.criteriaClasses)) {
+                $criterionSample = @($anchor.criterionSamples | Where-Object { $_.class -eq $criterionClass })
+                Require ($criterionSample.Count -eq 1) "Level $($level.level) graph '$($anchor.graphFile)' criterion class '$criterionClass' must carry exactly one discovered node sample."
+                Require (@($anchor.nodes | Where-Object { [string]$_.id -eq [string]$criterionSample[0].nodeId -and $_.class -eq $criterionClass }).Count -eq 1) "Level $($level.level) graph '$($anchor.graphFile)' criterion sample '$criterionClass' must name a real node metadata record."
+            }
+            Require ($null -ne $anchor.sampleNodeId) "Level $($level.level) graph '$($anchor.graphFile)' must carry a sampleNodeId."
+            Require ($null -ne $anchor.sampleNodeCriteria) "Level $($level.level) graph '$($anchor.graphFile)' must carry sampleNodeCriteria."
+            Require ($null -ne $anchor.sampleNodeClass) "Level $($level.level) graph '$($anchor.graphFile)' must carry sampleNodeClass."
+            $levelGraphTaskKeys[[string]$anchor.graphFile] = $true
+        }
+        foreach ($graphFile in $levelGraphFiles) {
+            $graphTask = @($level.inventory | Where-Object { $_.type -eq 'AIGraph' -and [string]$graphFile -match ('\\graphs\\graph' + [regex]::Escape([string]$_.taskId) + '\\.dat$') })
+            if ($graphTask.Count -eq 1) {
+                Require ($levelGraphTaskKeys.ContainsKey($graphFile)) "Level $($level.level) graph '$graphFile' has no graph-overlay scenario."
+            }
+        }
+        $aiAnimationScenarios = @($scenarios | Where-Object { $_.level -eq $level.level -and $_.action -eq 'ai-animation' })
+        foreach ($scenario in $aiAnimationScenarios) {
+            Require ($null -ne $scenario.anchor.animationClass) "Level $($level.level) ai-animation anchor for $($scenario.taskId) must carry animationClass."
+            Require ($scenario.anchor.animationClass -in @('AnimTask', 'HumanAI')) "Level $($level.level) ai-animation anchor for $($scenario.taskId) has unknown animationClass '$($scenario.anchor.animationClass)'."
+            Require ($null -ne $scenario.anchor.animationIds) "Level $($level.level) ai-animation anchor for $($scenario.taskId) must carry animationIds."
+            Require ($null -ne $scenario.anchor.animationSource) "Level $($level.level) ai-animation anchor for $($scenario.taskId) must carry animationSource."
+            Require ($null -ne $scenario.anchor.graphTaskId) "Level $($level.level) ai-animation anchor for $($scenario.taskId) must carry graphTaskId (or -1)."
+            Require ($null -ne $scenario.anchor.patrol) "Level $($level.level) ai-animation anchor for $($scenario.taskId) must carry patrol classification."
+            $patrol = $scenario.anchor.patrol
+            Require ($patrol.status -in @('authored','none','not-applicable')) "Level $($level.level) ai-animation anchor for $($scenario.taskId) has invalid patrol status '$($patrol.status)'."
+            if ($scenario.anchor.animationClass -eq 'HumanAI') {
+                Require (-not [string]::IsNullOrWhiteSpace([string]$patrol.scriptPath)) "Level $($level.level) HumanAI $($scenario.taskId) must carry its AI script path."
+                if ($patrol.status -eq 'authored') {
+                    Require (@($patrol.pathIds).Count -gt 0) "Level $($level.level) HumanAI $($scenario.taskId) authored patrol must carry path IDs."
+                } elseif ($patrol.status -eq 'none') {
+                    Require (-not [string]::IsNullOrWhiteSpace([string]$patrol.exclusionReason)) "Level $($level.level) HumanAI $($scenario.taskId) without patrol must carry an exclusion reason."
+                    $noPatrol = @($exclusions | Where-Object { $_.action -eq 'ai-patrol' -and $_.level -eq $level.level -and [string]$_.taskId -eq [string]$scenario.taskId })
+                    Require ($noPatrol.Count -eq 1) "Level $($level.level) HumanAI $($scenario.taskId) without patrol must have one explicit ai-patrol exclusion."
+                }
+            }
+        }
+    }
+
+    $task6GraphKeys = @{}
+    $task6AnimationClasses = @{}
+    $task6PatrolStatuses = @{}
+    foreach ($scenario in $task6Scenarios) {
+        $key = "$($scenario.level)|$($scenario.taskId)|$($scenario.action)"
+        if ($scenario.action -eq 'graph-overlay') {
+            $matching = @($scenarios | Where-Object { $_.level -eq $scenario.level -and $_.action -eq 'graph-overlay' -and [string]$_.taskId -eq [string]$scenario.taskId -and [string]$_.anchor.graphFile -eq [string]$scenario.anchor.graphFile })
+            Require ($matching.Count -eq 1) "Task 6 graph scenario '$($scenario.name)' does not match exactly one generated graph anchor."
+            $task6GraphKeys[[string]$scenario.anchor.graphFile] = $true
+        } else {
+            $matching = @($scenarios | Where-Object { $_.level -eq $scenario.level -and $_.action -eq 'ai-animation' -and [string]$_.taskId -eq [string]$scenario.taskId })
+            Require ($matching.Count -eq 1) "Task 6 animation scenario '$($scenario.name)' does not match exactly one generated animation anchor."
+            $task6AnimationClasses[[string]$scenario.anchor.animationClass] = $true
+            if ([string]$scenario.anchor.animationClass -eq 'HumanAI') {
+                $task6PatrolStatuses[[string]$scenario.anchor.patrol.status] = $true
+            }
+        }
+    }
+    foreach ($level in $levels) {
+        foreach ($graphFile in @(Values $level.discovery.graphs)) {
+            $graphTask = @($level.inventory | Where-Object { $_.type -eq 'AIGraph' -and [string]$graphFile -match ('\\graphs\\graph' + [regex]::Escape([string]$_.taskId) + '\\.dat$') })
+            if ($graphTask.Count -eq 1) {
+                Require ($task6GraphKeys.ContainsKey([string]$graphFile)) "Task 6 checked-in graph batch has no scenario for '$graphFile'."
+            }
+        }
+    }
+    $generatedAnimationScenarios = @($scenarios | Where-Object { $_.action -eq 'ai-animation' })
+    foreach ($class in @($generatedAnimationScenarios | ForEach-Object { [string]$_.anchor.animationClass } | Sort-Object -Unique)) {
+        Require ($task6AnimationClasses.ContainsKey($class)) "Task 6 checked-in animation batch has no representative for class '$class'."
+    }
+    foreach ($status in @($generatedAnimationScenarios | Where-Object { $_.anchor.animationClass -eq 'HumanAI' } | ForEach-Object { [string]$_.anchor.patrol.status } | Sort-Object -Unique)) {
+        Require ($task6PatrolStatuses.ContainsKey($status)) "Task 6 checked-in animation batch has no HumanAI patrol representative for status '$status'."
     }
 
     # ---- Runner evidence/reversible primitives contract (Task 2) ----

@@ -132,6 +132,15 @@ function Get-FieldText([object[]]$Fields, [object[]]$Arguments, [string]$Pattern
     if ($field.Count -ne 1 -or $field[0].offset -ge $Arguments.Count) { return '' }
     return Unquote ([string]$Arguments[$field[0].offset])
 }
+function Get-FieldNumber([object[]]$Fields, [object[]]$Arguments, [string]$Pattern, [int]$Default = -1) {
+    $field = @(Get-Field $Fields $Pattern)
+    if ($field.Count -ne 1 -or $field[0].offset -ge $Arguments.Count) { return $Default }
+    $value = $Default
+    if ([int]::TryParse((Unquote ([string]$Arguments[$field[0].offset])), [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$value)) {
+        return $value
+    }
+    return $Default
+}
 function Get-FieldValues([object[]]$Fields, [object[]]$Arguments, [string]$Pattern) {
     $values = New-Object System.Collections.Generic.List[string]
     foreach ($field in @($Fields | Where-Object { $_.name -match $Pattern })) {
@@ -181,6 +190,67 @@ function Get-ModelLods([string]$Converter, [string[]]$Archives) {
     }
     foreach ($key in @($lods.Keys)) { $lods[$key] = @($lods[$key] | Sort-Object -Unique) }
     return $lods
+}
+function Get-GraphMetadata([string]$Converter, [string]$GraphPath, [string]$ScratchRoot) {
+    $jsonPath = Join-Path $ScratchRoot ('graph-' + [guid]::NewGuid().ToString('N') + '.json')
+    try {
+        Get-ConverterOutput $Converter @('graph', 'export', $GraphPath, '-o', $jsonPath) | Out-Null
+        RequireFile $jsonPath
+        $document = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json
+        $nodes = @($document.nodes | ForEach-Object {
+            $criteria = [string]$_.criteria
+            $class = if ($criteria -match '(?i)DOOR') { 'Door' }
+                elseif ($criteria -match '(?i)STAIR') { 'Stair' }
+                elseif ($criteria -match '(?i)VIEW') { 'View' }
+                else { 'Default' }
+            [ordered]@{
+                id=[int]$_.id; x=[double]$_.x; y=[double]$_.y; z=[double]$_.z
+                gamma=[double]$_.gamma; radius=[double]$_.radius; material=[int]$_.material
+                criteria=$criteria; class=$class; link1=[int]$_.link1; link2=[int]$_.link2
+            }
+        })
+        $edges = @($document.edges | ForEach-Object {
+            [ordered]@{ from=[int]$_.from; to=[int]$_.to; linkType=[int]$_.link_type }
+        })
+        if ($nodes.Count -eq 0) { Fail "Graph export reported no nodes for $GraphPath." }
+        if ([int]$document.node_count -ne $nodes.Count -or [int]$document.edge_count -ne $edges.Count) {
+            Fail "Graph export counts do not match records for $GraphPath."
+        }
+        $criteriaClasses = @($nodes | ForEach-Object { $_.class } | Sort-Object -Unique)
+        $criteriaCounts = [ordered]@{}
+        $criterionSamples = @()
+        foreach ($class in $criteriaClasses) {
+            $matching = @($nodes | Where-Object { $_.class -eq $class })
+            $criteriaCounts[$class] = $matching.Count
+            $criterionSamples += [ordered]@{
+                class=$class; nodeId=[int]$matching[0].id; criteria=[string]$matching[0].criteria
+            }
+        }
+        return [pscustomobject]@{
+            nodeCount=$nodes.Count; edgeCount=$edges.Count; nodes=$nodes; edges=$edges
+            criteriaClasses=$criteriaClasses; criteriaCounts=$criteriaCounts
+            criterionSamples=$criterionSamples
+            sampleNodeId=[int]$nodes[0].id; sampleNodeCriteria=[string]$nodes[0].criteria
+            sampleNodeClass=[string]$nodes[0].class
+        }
+    } finally {
+        Remove-Item -LiteralPath $jsonPath -Force -ErrorAction SilentlyContinue
+    }
+}
+function Get-AiScriptMetadata([string]$Converter, [string]$AiPath, [string]$ScratchRoot) {
+    $qscPath = Join-Path $ScratchRoot ('ai-' + [guid]::NewGuid().ToString('N') + '.qsc')
+    try {
+        Get-ConverterOutput $Converter @('qvm', 'decompile', $AiPath, '-o', $qscPath) | Out-Null
+        RequireFile $qscPath
+        $source = Get-Content -LiteralPath $qscPath -Raw
+        $animationIds = @([regex]::Matches($source, 'AIAction_PlayAnimation\s*\(\s*(-?[0-9]+)') |
+            ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
+        $patrolMatch = [regex]::Match($source, 'AIAction_Patrol\s*\(\s*(-?[0-9]+)')
+        $patrolPathId = if ($patrolMatch.Success) { [int]$patrolMatch.Groups[1].Value } else { -1 }
+        return [pscustomobject]@{ animationIds=$animationIds; patrolPathId=$patrolPathId }
+    } finally {
+        Remove-Item -LiteralPath $qscPath -Force -ErrorAction SilentlyContinue
+    }
 }
 function Add-Scenario($Scenarios, $ScenarioKeys, $ActionMap, [string]$Action, [int]$Level, [string]$TaskId, [string]$Type, $Anchor) {
     $key = "$Level|$TaskId|$Action"
@@ -249,6 +319,7 @@ try {
         $sourceHash = (Get-FileHash -LiteralPath $objectsQvm -Algorithm SHA256).Hash.ToLowerInvariant()
         $inventory = New-Object System.Collections.Generic.List[object]
         $taskIds = New-Object System.Collections.Generic.List[string]
+        $taskCallData = @{}
         $knownTaskIds = @{}
         $anonymous = 0
         foreach ($call in $calls) {
@@ -260,6 +331,7 @@ try {
             $taskIds.Add($taskId)
             $type = Unquote ([string]$call.arguments[1])
             $fields = @($declarations[$type])
+            $taskCallData[$taskId] = [pscustomobject]@{ fields=$fields; arguments=@($call.arguments) }
             $positionField = @(Get-Field $fields '(?i)^(Position|Position start|Graph position|Start position|Holder Position)$')
             $rotationField = @(Get-Field $fields '(?i)^Orientation$')
             $position = if ($positionField.Count -eq 1) { Convert-NumberVector $call.arguments $positionField[0].offset $positionField[0].width } else { @() }
@@ -340,11 +412,92 @@ try {
                 views=$renderableViews
             })
         }
+        # The graph overlay opens only for a selected AIGraph task, whose
+        # numeric taskId names its file graph<taskId>.dat.  Anchor each
+        # graph-overlay scenario to the real AIGraph task so a runner can
+        # select it, and carry the parsed node/edge population.
+        $graphIdToFile = @{}
         foreach ($graphFile in $graphFiles) {
-            $graphId = [IO.Path]::GetFileNameWithoutExtension($graphFile)
-            Add-Scenario $scenarios $scenarioKeys $actionMap 'graph-overlay' $level "graph:$graphId" 'AIGraph' ([ordered]@{ graphFile=$graphFile })
+            $graphId = [IO.Path]::GetFileNameWithoutExtension($graphFile) -replace '^graph', ''
+            $graphIdToFile[$graphId] = $graphFile
         }
-        foreach ($entry in $animationTasks) { Add-Scenario $scenarios $scenarioKeys $actionMap 'ai-animation' $level $entry.taskId $entry.type ([ordered]@{ aiFiles=$aiFiles }) }
+        $graphTasks = @($inventory | Where-Object { $_.type -eq 'AIGraph' -and $graphIdToFile.ContainsKey([string]$_.taskId) })
+        $matchedGraphIds = @{}
+        foreach ($entry in $graphTasks) {
+            $graphFile = $graphIdToFile[[string]$entry.taskId]
+            $graphMetadata = Get-GraphMetadata $converter (Join-Path $GameRoot $graphFile) $disposableRoot
+            $matchedGraphIds[[string]$entry.taskId] = $true
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'graph-overlay' $level $entry.taskId $entry.type ([ordered]@{
+                graphFile=$graphFile
+                nodeCount=$graphMetadata.nodeCount
+                edgeCount=$graphMetadata.edgeCount
+                graphTaskId=$entry.taskId
+                nodes=$graphMetadata.nodes
+                edges=$graphMetadata.edges
+                criteriaClasses=$graphMetadata.criteriaClasses
+                criteriaCounts=$graphMetadata.criteriaCounts
+                criterionSamples=$graphMetadata.criterionSamples
+                sampleNodeId=$graphMetadata.sampleNodeId
+                sampleNodeCriteria=$graphMetadata.sampleNodeCriteria
+                sampleNodeClass=$graphMetadata.sampleNodeClass
+            })
+        }
+        # Discovered graph files with no matching AIGraph task are recorded as
+        # orphan corpus files (nothing selects them) so they never silently
+        # vanish from coverage accounting.
+        $orphanGraphFiles = @($graphIdToFile.Keys | Where-Object { -not $matchedGraphIds.ContainsKey([string]$_) } | ForEach-Object { $graphIdToFile[[string]$_] } | Sort-Object)
+        # Graph files with no matching AIGraph task stay discovered corpus
+        # files but get no scenario (nothing selects them).  The generic
+        # action-presence loop below records the exclusion when no AIGraph
+        # task has a matching file.
+        foreach ($entry in $animationTasks) {
+            $callData = $taskCallData[[string]$entry.taskId]
+            $animationIds = @()
+            $animationSource = ''
+            $graphTaskId = -1
+            $patrol = [ordered]@{ status='not-applicable'; scriptPath=''; pathIds=@(); exclusionReason='' }
+            if ($entry.type -eq 'HumanAI') {
+                $graphTaskId = Get-FieldNumber $callData.fields $callData.arguments '^Graph ID$' -1
+                $aiRelative = "MISSIONS\location0\level$level\ai\$($entry.taskId).qvm"
+                $aiPath = Join-Path $GameRoot $aiRelative
+                $animationSource = $aiRelative
+                $patrol = [ordered]@{
+                    status='none'; scriptPath=$aiRelative; pathIds=@(); exclusionReason='AI script contains no statically resolvable AIAction_Patrol path.'
+                }
+                if (Test-Path -LiteralPath $aiPath -PathType Leaf) {
+                    $aiMetadata = Get-AiScriptMetadata $converter $aiPath $disposableRoot
+                    $animationIds = @($aiMetadata.animationIds)
+                    if ($aiMetadata.patrolPathId -ge 0) {
+                        $patrol.status = 'authored'
+                        $patrol.pathIds = @([int]$aiMetadata.patrolPathId)
+                        $patrol.exclusionReason = ''
+                    }
+                } else {
+                    $patrol.exclusionReason = 'Referenced HumanAI QVM is absent from the installed level corpus.'
+                }
+            } else {
+                $animationSource = "objects.qsc:AnimData($($entry.taskId))"
+                $animField = @(Get-Field $callData.fields '^AnimData$')
+                if ($animField.Count -eq 1) {
+                    # AnimData is an opaque authored blob. Preserve its literal
+                    # integer records as evidence without claiming a schema the
+                    # editor does not expose in the QSC declaration.
+                    $animationIds = @($callData.arguments | Select-Object -Skip $animField[0].offset |
+                        ForEach-Object { $number=0; if ([int]::TryParse((Unquote ([string]$_)), [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]$number)) { $number } } |
+                        Where-Object { $_ -ge -1 -and $_ -le 4096 } | Select-Object -Unique)
+                }
+            }
+            Add-Scenario $scenarios $scenarioKeys $actionMap 'ai-animation' $level $entry.taskId $entry.type ([ordered]@{
+                aiFiles=$aiFiles; animationClass=$entry.type; animationIds=$animationIds
+                animationSource=$animationSource; graphTaskId=$graphTaskId; patrol=$patrol
+            })
+            if ($entry.type -eq 'HumanAI' -and $patrol.status -eq 'none') {
+                $exclusions.Add([ordered]@{
+                    action='ai-patrol'; level=$level; taskId=$entry.taskId
+                    reason=$patrol.exclusionReason
+                })
+            }
+        }
         foreach ($entry in $weatherTasks) { Add-Scenario $scenarios $scenarioKeys $actionMap 'weather-classification' $level $entry.taskId $entry.type ([ordered]@{ weather='RainEffect' }) }
         if ($lightmapFiles.Count -gt 0) { Add-Scenario $scenarios $scenarioKeys $actionMap 'lightmap-inspection' $level $inventory[0].taskId $inventory[0].type ([ordered]@{ lightmaps=$lightmapFiles }) }
 
@@ -384,7 +537,7 @@ try {
                     'model-picker' { 'No Task_New instance has an authored model reference.' }
                     'texture-resolution' { 'No Task_New instance has an authored texture reference.' }
                     'sound-resolution' { 'No Task_New instance has an authored sound reference.' }
-                    'graph-overlay' { 'No graph files were discovered.' }
+                    'graph-overlay' { 'No AIGraph task has a matching graph<taskId>.dat file.' }
                     'ai-animation' { 'No AnimTask or HumanAI Task_New instance was discovered.' }
                     'weather-classification' { 'No RainEffect Task_New instance was discovered.' }
                     'lightmap-inspection' { 'No lightmap files were discovered.' }
@@ -406,6 +559,7 @@ try {
             inventory=$inventory.ToArray()
             discovery=[ordered]@{
                 graphs=$graphFiles
+                orphanGraphFiles=$orphanGraphFiles
                 ai=$aiFiles
                 animationTaskIds=@($animationTasks | ForEach-Object { $_.taskId })
                 weatherTaskIds=@($weatherTasks | ForEach-Object { $_.taskId })

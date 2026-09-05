@@ -19,7 +19,8 @@ $script:SupportedSteps = @(
     'assert_screenshot_difference', 'assert_log', 'mark_log', 'assert_file',
     'assert_path', 'assert_cursor_visible', 'assert_cursor_hidden', 'close_editor',
     'capture_window_state', 'orbit_camera', 'assert_file_hash',
-    'snapshot_paths', 'restore_paths', 'assert_log_count'
+    'snapshot_paths', 'restore_paths', 'assert_log_count',
+    'select_graph_node', 'nudge_graph_node', 'assert_graph_edit', 'start_animation', 'pause_animation'
 )
 $script:OrbitAngles = @(
     'front', 'back', 'left', 'right', 'top', 'bottom',
@@ -29,7 +30,8 @@ $script:OrbitAngles = @(
 # without BOTH a screenshot/UI oracle and a state/data oracle.
 $script:StateOracleTypes = @(
     'assert_process', 'capture_window_state', 'assert_log', 'assert_log_count',
-    'assert_file', 'assert_path', 'assert_file_hash', 'snapshot_paths', 'restore_paths'
+    'assert_file', 'assert_path', 'assert_file_hash', 'snapshot_paths', 'restore_paths',
+    'assert_graph_edit'
 )
 
 function Fail([string]$Message) {
@@ -137,6 +139,28 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root)
             $button = [string]$(if ($null -ne (Get-Property $Step 'button')) { Get-Property $Step 'button' } else { 'left' })
             if (@('left','right') -notcontains $button.ToLowerInvariant()) { Fail "$ScenarioName/$id button must be left or right." }
         }
+        'select_graph_node' {
+            Assert-Integer (Get-Property $Step 'x') "$ScenarioName/$id x" 0 10000
+            Assert-Integer (Get-Property $Step 'y') "$ScenarioName/$id y" 0 10000
+            if ($null -eq (Get-Property $Step 'nodeId')) { Fail "$ScenarioName/$id requires nodeId." }
+            Assert-Integer (Get-Property $Step 'nodeId') "$ScenarioName/$id nodeId" -2147483648 2147483647
+        }
+        'nudge_graph_node' {
+            Assert-Integer (Get-Property $Step 'x') "$ScenarioName/$id x" 0 10000
+            Assert-Integer (Get-Property $Step 'y') "$ScenarioName/$id y" 0 10000
+            Assert-Integer (Get-Property $Step 'nodeId') "$ScenarioName/$id nodeId" -2147483648 2147483647
+            if ([string](Get-Property $Step 'field') -notin @('x','y','z')) { Fail "$ScenarioName/$id field must be x, y, or z." }
+            if ($null -eq (Get-Property $Step 'delta')) { Fail "$ScenarioName/$id requires delta." }
+        }
+        'start_animation' {
+            Assert-Integer (Get-Property $Step 'x') "$ScenarioName/$id x" 0 10000
+            Assert-Integer (Get-Property $Step 'y') "$ScenarioName/$id y" 0 10000
+            if ($null -ne (Get-Property $Step 'animationId')) { Assert-Integer (Get-Property $Step 'animationId') "$ScenarioName/$id animationId" -1 100000 }
+        }
+        'pause_animation' {
+            Assert-Integer (Get-Property $Step 'x') "$ScenarioName/$id x" 0 10000
+            Assert-Integer (Get-Property $Step 'y') "$ScenarioName/$id y" 0 10000
+        }
         'type_text' { if ($null -eq (Get-Property $Step 'text')) { Fail "$ScenarioName/$id requires text." } }
         'wait' {
             if ($null -eq (Get-Property $Step 'seconds')) { Fail "$ScenarioName/$id requires seconds." }
@@ -223,6 +247,15 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root)
             Assert-Integer (Get-Property $Step 'min') "$ScenarioName/$id min" 0 2147483647
             if ($null -ne (Get-Property $Step 'max')) { Assert-Integer (Get-Property $Step 'max') "$ScenarioName/$id max" 0 2147483647 }
             if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 }
+        }
+        'assert_graph_edit' {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'path'))) { Fail "$ScenarioName/$id requires path." }
+            [void](Assert-DeclaredPathUnderRoot ([string](Get-Property $Step 'path')) $Root "$ScenarioName/$id")
+            if ($null -eq (Get-Property $Step 'nodeId')) { Fail "$ScenarioName/$id requires nodeId." }
+            Assert-Integer (Get-Property $Step 'nodeId') "$ScenarioName/$id nodeId" -2147483648 2147483647
+            $field = [string](Get-Property $Step 'field')
+            if (@('x','y','z','gamma','radius','material','criteria') -notcontains $field) { Fail "$ScenarioName/$id field must be x, y, z, gamma, radius, material, or criteria." }
+            if ($field -ne 'criteria' -and $null -eq (Get-Property $Step 'delta')) { Fail "$ScenarioName/$id numeric graph edit requires delta." }
         }
     }
 }
@@ -347,7 +380,8 @@ function Get-VirtualKey([string]$Name) {
         'ESC' = 0x1B; 'ENTER' = 0x0D; 'TAB' = 0x09; 'SPACE' = 0x20; 'BACKSPACE' = 0x08
         'DELETE' = 0x2E; 'UP' = 0x26; 'DOWN' = 0x28; 'LEFT' = 0x25; 'RIGHT' = 0x27
         'PAGEUP' = 0x21; 'PAGEDOWN' = 0x22; 'F2' = 0x71; 'F3' = 0x72; 'F4' = 0x73
-        'F8' = 0x77; 'F11' = 0x7A; 'CTRL' = 0x11; 'ALT' = 0x12; 'SHIFT' = 0x10
+        'F5' = 0x74; 'F6' = 0x75; 'F7' = 0x76; 'F8' = 0x77; 'F11' = 0x7A
+        'CTRL' = 0x11; 'ALT' = 0x12; 'SHIFT' = 0x10
     }
     if ($named.ContainsKey($name)) { return [byte]$named[$name] }
     if ($name.Length -eq 1) {
@@ -550,8 +584,70 @@ function Close-Editor($Process, [bool]$Force) {
 function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
+function Get-GraphExport($Path, [string]$ScratchRoot) {
+    $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSCommandPath))
+    $converter = Join-Path $repoRoot 'assets\editor\tools\igi1conv\igi1conv.exe'
+    if (-not (Test-Path -LiteralPath $converter -PathType Leaf)) { Fail "Graph assertion converter is missing: $converter" }
+    $jsonPath = Join-Path $ScratchRoot ('graph-' + [guid]::NewGuid().ToString('N') + '.json')
+    try {
+        $output = @(& $converter graph export $Path -o $jsonPath 2>&1)
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $jsonPath -PathType Leaf)) {
+            Fail "igi1conv graph export failed for '$Path': $($output -join [Environment]::NewLine)"
+        }
+        return (Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json)
+    } finally {
+        Remove-Item -LiteralPath $jsonPath -Force -ErrorAction SilentlyContinue
+    }
+}
+function Assert-GraphEdit($Step, [string]$Root, [string]$SnapshotStaging, $Record) {
+    if ([string]::IsNullOrWhiteSpace($SnapshotStaging)) { Fail 'assert_graph_edit requires a preceding snapshot_paths step.' }
+    $manifestPath = Join-Path $SnapshotStaging 'snapshot.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { Fail 'assert_graph_edit could not find the graph snapshot manifest.' }
+    $relative = [string]$Step.path
+    $snapshot = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json | Where-Object { [string]$_.path -eq $relative })
+    if ($snapshot.Count -ne 1) { Fail "assert_graph_edit path '$relative' was not captured by snapshot_paths." }
+    $baselinePath = Join-Path $SnapshotStaging (Get-StagingFileName $relative)
+    $currentPath = Assert-UnderRoot (Join-Path $Root $relative) $Root 'assert_graph_edit path'
+    $scratch = Join-Path $SnapshotStaging ('graph-assert-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+    try {
+        $before = Get-GraphExport $baselinePath $scratch
+        $after = Get-GraphExport $currentPath $scratch
+        $beforeNodes = @($before.nodes); $afterNodes = @($after.nodes)
+        if ($beforeNodes.Count -ne $afterNodes.Count -or [int]$before.edge_count -ne [int]$after.edge_count) { Fail 'Graph edit changed graph topology counts.' }
+        $targetId = [int]$Step.nodeId
+        $beforeTarget = @($beforeNodes | Where-Object { [int]$_.id -eq $targetId })
+        $afterTarget = @($afterNodes | Where-Object { [int]$_.id -eq $targetId })
+        if ($beforeTarget.Count -ne 1 -or $afterTarget.Count -ne 1) { Fail "Graph edit node $targetId was not present exactly once before and after the edit." }
+        foreach ($node in $beforeNodes) {
+            $other = @($afterNodes | Where-Object { [int]$_.id -eq [int]$node.id })
+            if ($other.Count -ne 1) { Fail "Graph edit removed or duplicated node $($node.id)." }
+            $fields = @('x','y','z','gamma','radius','material','criteria','link1','link2')
+            foreach ($field in $fields) {
+                if ([int]$node.id -eq $targetId -and $field -eq [string]$Step.field) { continue }
+                if ([string]$node.$field -ne [string]$other[0].$field) { Fail "Graph edit changed node $($node.id) field '$field' outside the declared edit." }
+            }
+        }
+        $beforeEdges = @($before.edges | ForEach-Object { "$($_.from)|$($_.to)|$($_.link_type)" } | Sort-Object)
+        $afterEdges = @($after.edges | ForEach-Object { "$($_.from)|$($_.to)|$($_.link_type)" } | Sort-Object)
+        if (($beforeEdges -join "`n") -ne ($afterEdges -join "`n")) { Fail 'Graph edit changed edge data outside the declared node edit.' }
+        $beforeValue = $beforeTarget[0].([string]$Step.field)
+        $afterValue = $afterTarget[0].([string]$Step.field)
+        if ([string]$beforeValue -eq [string]$afterValue) { Fail "Graph edit did not change node $targetId field '$($Step.field)'." }
+        if ($null -ne $Step.delta -and $Step.field -ne 'criteria') {
+            $actualDelta = [double]$afterValue - [double]$beforeValue
+            if ([Math]::Abs($actualDelta - [double]$Step.delta) -gt 0.001) { Fail "Graph edit delta for node $targetId field '$($Step.field)' was $actualDelta, expected $($Step.delta)." }
+        }
+        $Record.nodeId = $targetId; $Record.field = [string]$Step.field; $Record.before = $beforeValue; $Record.after = $afterValue
+    } finally {
+        Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 function New-WorkingCopyDirectory([string]$Root) {
-    $path = Join-Path $Root ([Guid]::NewGuid().ToString('N'))
+    # The deployed retail root may allow file replacement but deny creating
+    # sibling directories. Keep snapshot bytes in the user's temp directory;
+    # only the declared game files are ever written back during restoration.
+    $path = Join-Path ([System.IO.Path]::GetTempPath()) ('igi-editor-e2e-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $path -Force | Out-Null
     return $path
 }
@@ -758,6 +854,27 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                     'key' { Focus-Editor $process; Send-Key ([string]$step.key) }
                     'key_hold' { Focus-Editor $process; Send-KeyForDuration ([string]$step.key) ([double]$step.seconds) }
                     'click' { Focus-Editor $process; $right = ([string]$(if ($null -ne $step.button) { $step.button } else { 'left' })).ToLowerInvariant() -eq 'right'; [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale),[int]([double]$step.y * $inputScale),$right) }
+                    'select_graph_node' {
+                        Focus-Editor $process
+                        [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale), [int]([double]$step.y * $inputScale), $false)
+                        $record.nodeId = [int]$step.nodeId; $record.x = [int]$step.x; $record.y = [int]$step.y
+                    }
+                    'nudge_graph_node' {
+                        Focus-Editor $process
+                        [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale), [int]([double]$step.y * $inputScale), $false)
+                        $record.nodeId = [int]$step.nodeId; $record.field = [string]$step.field; $record.delta = [double]$step.delta
+                    }
+                    'start_animation' {
+                        Focus-Editor $process
+                        [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale), [int]([double]$step.y * $inputScale), $false)
+                        $record.animationId = if ($null -ne $step.animationId) { [int]$step.animationId } else { $null }
+                        $record.x = [int]$step.x; $record.y = [int]$step.y
+                    }
+                    'pause_animation' {
+                        Focus-Editor $process
+                        [EditorE2E_Native]::Click([int]([double]$step.x * $inputScale), [int]([double]$step.y * $inputScale), $false)
+                        $record.x = [int]$step.x; $record.y = [int]$step.y
+                    }
                     'type_text' { Focus-Editor $process; Send-Text ([string]$step.text) }
                     'wait' { Start-Sleep -Milliseconds ([int]([double]$step.seconds * 1000)) }
                     'wait_for_log' {
@@ -854,6 +971,9 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         $record.count = $count
                         if ($count -lt [int]$step.min) { Fail "Log count for '$($step.pattern)' was $count, below min $($step.min)." }
                         if ($null -ne $step.max -and $count -gt [int]$step.max) { Fail "Log count for '$($step.pattern)' was $count, above max $($step.max)." }
+                    }
+                    'assert_graph_edit' {
+                        Assert-GraphEdit $step $Root $snapshotStaging $record
                     }
                     'snapshot_paths' {
                         $paths = Resolve-DeclaredPaths (Get-Property $step 'paths') $Root
