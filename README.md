@@ -245,7 +245,7 @@ For the full test reference — suites, filters, fixture descriptions, and build
 
 ## 🧪 Live End-to-End (E2E) Native Testing
 
-The project includes an interactive, GPU-validated end-to-end verification harness driven by [`tests_run.cmd`](tests_run.cmd) and [`Run-SmartTest.ps1`](Run-SmartTest.ps1). It executes the editor natively on the interactive desktop (Session 1), capturing 10 multi-angle camera views per object while verifying transform logs, DAT material caching, and submesh texture bindings with zero crashes.
+The project includes an interactive, GPU-validated end-to-end verification harness driven by [`e2e_live_test.cmd`](e2e_live_test.cmd) and [`Run-SmartTest.ps1`](Run-SmartTest.ps1). It executes the editor natively on the interactive desktop (Session 1), capturing 10 multi-angle camera views per object while verifying transform logs, DAT material caching, and submesh texture bindings with zero crashes.
 
 👉 **[Complete Live E2E Testing Guide (All Categories & Levels)](docs/LIVE_E2E_TESTING.md)**
 
@@ -253,22 +253,22 @@ The project includes an interactive, GPU-validated end-to-end verification harne
 
 ```cmd
 # AI Units (Soldiers, Players, AI scripts)
-tests_run --level 5 --ai --maximum 1
+e2e_live_test --level 5 --ai --maximum 1
 
 # Vehicles (Helicopters, Cars, Trains)
-tests_run --level 5 --vehicle --maximum 1
+e2e_live_test --level 5 --vehicle --maximum 1
 
 # Buildings & Facilities (Barracks, Doors, Terminals, Switches)
-tests_run --level 5 --building --maximum 1
+e2e_live_test --level 5 --building --maximum 1
 
 # Rigid Objects (Props, Radars, Searchlights, Pickups)
-tests_run --level 5 --rigid --maximum 1
+e2e_live_test --level 5 --rigid --maximum 1
 
 # Sample 1 Object from EACH Distinct Category in a single session
-tests_run --level 5 --distinct-categories --maximum 4
+e2e_live_test --level 5 --distinct-categories --maximum 4
 
 # Dry-run plan preview (verifies candidates without opening game window)
-tests_run --level 5 --distinct-categories --maximum 4 --prepare-only
+e2e_live_test --level 5 --distinct-categories --maximum 4 --prepare-only
 ```
 
 ---

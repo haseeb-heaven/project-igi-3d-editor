@@ -7,7 +7,7 @@
   - Root cause: in AMD `atioglxx.dll`, issuing fixed-function immediate-mode primitives (`glBegin(GL_TRIANGLES)`, `glBegin(GL_QUADS)`, `glVertex4f`, `glVertex2i`) while `GL_ARRAY_BUFFER` remained bound caused the driver to assume vertex attributes were in a buffer object rather than client memory, dereferencing a null pointer at offset `0x444`.
   - Resolution: systematically enforced unbinding of VAO (`glBindVertexArray(0)`), VBO (`glBindBuffer(GL_ARRAY_BUFFER, 0)`), EBO (`glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)`), and vertex attribute arrays (`glDisableVertexAttribArray(0..3)`) across all skinned mesh pipelines (`DrawSkinnedMesh`, `DrawAnimSkeleton`), geometry visualizers (`InitSphereMesh`, `AddCrossMesh`, `AddCubeMesh`, `InitSelectionBox`, `DrawSelectionBox`, `DrawAttachedMesh`), submesh drawing (`renderModel`, `BuildMeshFromGeometry`), 3D graph/HUD overlays, custom cursor, and loading progress overlays.
 - **Added Full Object Category System (`AI`, `Buildings`, `RigidObjects`, `Vehicles`)**:
-  - Implemented discrete object categorization across `tests_run.cmd`, `Run-SmartTest.ps1`, and `Invoke-SmartNativeCaptureSession.ps1`.
+  - Implemented discrete object categorization across `e2e_live_test.cmd` (and `tests_run.cmd`), `Run-SmartTest.ps1`, and `Invoke-SmartNativeCaptureSession.ps1`.
   - Added dedicated CLI flags: `--ai` (`-ai`), `--building` (`--buildings`), `--rigid` (`--rigidobjects`), `--vehicle` (`--vehicles`), and `--category <name>`.
   - Added `--distinct-categories` sampling to automatically select 1 object from each distinct category present in the level, validating all 4 categories in a single interactive session.
   - Added `--distinct-types` sampling to guarantee every selected object has a unique type.

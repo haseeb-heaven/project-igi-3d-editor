@@ -17,23 +17,23 @@ The Project IGI Editor test harness verifies real runtime 3D scene rendering, mo
 
 ## 🚀 Quick Start Commands
 
-The harness is driven by [`tests_run.cmd`](../tests_run.cmd) (or PowerShell [`Run-SmartTest.ps1`](../Run-SmartTest.ps1)) in the repository root:
+The harness is driven by [`e2e_live_test.cmd`](../e2e_live_test.cmd) (or PowerShell [`Run-SmartTest.ps1`](../Run-SmartTest.ps1)) in the repository root:
 
 ```cmd
 :: Quick test: 1 AI object on Level 5
-tests_run --level 5 --ai --maximum 1
+e2e_live_test --level 5 --ai --maximum 1
 
 :: Quick test: 1 Vehicle on Level 5
-tests_run --level 5 --vehicle --maximum 1
+e2e_live_test --level 5 --vehicle --maximum 1
 
 :: Quick test: 1 Building on Level 5
-tests_run --level 5 --building --maximum 1
+e2e_live_test --level 5 --building --maximum 1
 
 :: Quick test: 1 Rigid Object on Level 5
-tests_run --level 5 --rigid --maximum 1
+e2e_live_test --level 5 --rigid --maximum 1
 
 :: Cross-category trial: 1 object from EACH category (4 objects, 40 screenshots)
-tests_run --level 5 --distinct-categories --maximum 4
+e2e_live_test --level 5 --distinct-categories --maximum 4
 ```
 
 ---
@@ -51,16 +51,16 @@ Covers enemy soldiers, patrol units, and player avatars:
 **Commands:**
 ```cmd
 :: Test 1 AI soldier on Level 5
-tests_run --level 5 --ai --maximum 1
+e2e_live_test --level 5 --ai --maximum 1
 
 :: Test 3 distinct AI models on Level 5
-tests_run --level 5 --category ai --distinct-types --maximum 3
+e2e_live_test --level 5 --category ai --distinct-types --maximum 3
 
 :: Test AI on Level 1 (Trainyard)
-tests_run --level 1 --ai --maximum 1
+e2e_live_test --level 1 --ai --maximum 1
 
 :: Dry-run plan for AI on Level 12
-tests_run --level 12 --ai --maximum 2 --prepare-only
+e2e_live_test --level 12 --ai --maximum 2 --prepare-only
 ```
 
 ---
@@ -73,16 +73,16 @@ Covers architectural models, compound doors, operational switches, and terminals
 **Commands:**
 ```cmd
 :: Test 1 building object on Level 5
-tests_run --level 5 --building --maximum 1
+e2e_live_test --level 5 --building --maximum 1
 
 :: Test 3 distinct building types (e.g. Door, Switch, Building) on Level 5
-tests_run --level 5 --category buildings --distinct-types --maximum 3
+e2e_live_test --level 5 --category buildings --distinct-types --maximum 3
 
 :: Test doors and switches on Level 1
-tests_run --level 1 --category buildings --maximum 2
+e2e_live_test --level 1 --category buildings --maximum 2
 
 :: Dry-run verify building candidates on Level 8
-tests_run --level 8 --category buildings --maximum 3 --prepare-only
+e2e_live_test --level 8 --category buildings --maximum 3 --prepare-only
 ```
 
 ---
@@ -95,16 +95,16 @@ Covers props, military hardware, explosive containers, rotating machinery, and b
 **Commands:**
 ```cmd
 :: Test 1 rigid object on Level 5
-tests_run --level 5 --rigid --maximum 1
+e2e_live_test --level 5 --rigid --maximum 1
 
 :: Test 3 distinct rigid object types on Level 5
-tests_run --level 5 --category rigid --distinct-types --maximum 3
+e2e_live_test --level 5 --category rigid --distinct-types --maximum 3
 
 :: Test Level 1 rigid objects
-tests_run --level 1 --category rigid --maximum 2
+e2e_live_test --level 1 --category rigid --maximum 2
 
 :: Dry-run plan for Level 3 rigid objects
-tests_run --level 3 --category rigid --maximum 3 --prepare-only
+e2e_live_test --level 3 --category rigid --maximum 3 --prepare-only
 ```
 
 ---
@@ -117,16 +117,16 @@ Covers operational and static vehicles in the game:
 **Commands:**
 ```cmd
 :: Test Helicopter on Level 5 (Radar Base)
-tests_run --level 5 --vehicle --maximum 1
+e2e_live_test --level 5 --vehicle --maximum 1
 
 :: Test Vehicles on Level 2 (SAM Base)
-tests_run --level 2 --category vehicles --maximum 1
+e2e_live_test --level 2 --category vehicles --maximum 1
 
 :: Test Train / Rail Vehicles on Level 1 (Trainyard)
-tests_run --level 1 --category vehicles --maximum 1
+e2e_live_test --level 1 --category vehicles --maximum 1
 
 :: Dry-run plan for Vehicles on Level 6
-tests_run --level 6 --category vehicles --maximum 1 --prepare-only
+e2e_live_test --level 6 --category vehicles --maximum 1 --prepare-only
 ```
 
 ---
@@ -137,30 +137,30 @@ tests_run --level 6 --category vehicles --maximum 1 --prepare-only
 Ensures a balanced test suite that checks AI, Buildings, Vehicles, and Rigid Objects in a single session:
 ```cmd
 :: Test 1 AI + 1 Building + 1 Rigid + 1 Vehicle on Level 5
-tests_run --level 5 --distinct-categories --maximum 4
+e2e_live_test --level 5 --distinct-categories --maximum 4
 
 :: Test distinct categories on Level 1
-tests_run --level 1 --distinct-categories --maximum 3
+e2e_live_test --level 1 --distinct-categories --maximum 3
 ```
 
 ### Sampling by Distinct Types (`--distinct-types`)
 Guarantees no two tested objects share the exact same object type:
 ```cmd
 :: Test 3 completely different types on Level 5 (e.g. Door, EditRigidObj, RotatingObject)
-tests_run --level 5 --distinct-types --maximum 3
+e2e_live_test --level 5 --distinct-types --maximum 3
 
 :: Test 3 distinct types on Level 1
-tests_run --level 1 --distinct-types --maximum 3
+e2e_live_test --level 1 --distinct-types --maximum 3
 ```
 
 ### Adjusting Camera Angles per Object (`--views`)
 Default is 10 views (6 exterior orbit views at 60° increments + 4 interior views). You can specify fewer for rapid checks:
 ```cmd
 :: Rapid 4-angle check per object
-tests_run --level 5 --ai --maximum 1 --views 4
+e2e_live_test --level 5 --ai --maximum 1 --views 4
 
 :: Standard 10-angle inspection
-tests_run --level 5 --vehicle --maximum 1 --views 10
+e2e_live_test --level 5 --vehicle --maximum 1 --views 10
 ```
 
 ---
@@ -172,56 +172,56 @@ Project IGI features 14 distinct levels with varying terrain profiles, asset den
 ### 1. Infiltration & Train Facilities (Levels 1 & 2)
 - **Level 1 (Trainyard)**: Splines, tracks, rail containers, soldiers, alarm systems.
   ```cmd
-  tests_run --level 1 --category buildings --maximum 2
-  tests_run --level 1 --distinct-categories --maximum 3
+  e2e_live_test --level 1 --category buildings --maximum 2
+  e2e_live_test --level 1 --distinct-categories --maximum 3
   ```
 - **Level 2 (SAM Base)**: Surface-to-air missile pads, military trucks, perimeter fences.
   ```cmd
-  tests_run --level 2 --distinct-categories --maximum 3
+  e2e_live_test --level 2 --distinct-categories --maximum 3
   ```
 
 ### 2. Mountain & Border Compounds (Levels 3 & 4)
 - **Level 3 (Military Airbase)**: Hangars, fighter jets, security cameras, generators.
   ```cmd
-  tests_run --level 3 --category rigid --maximum 2
+  e2e_live_test --level 3 --category rigid --maximum 2
   ```
 - **Level 4 (GOD Compound)**: Guard towers, high fences, floodlights.
   ```cmd
-  tests_run --level 4 --distinct-types --maximum 3
+  e2e_live_test --level 4 --distinct-types --maximum 3
   ```
 
 ### 3. Radar & Heavy Industrial Installations (Levels 5, 8 & 10)
 - **Level 5 (Radar Base)**: Helicopters (`709_01_1`), large radar dishes (`303_01_1`), power generators, elevator systems.
   ```cmd
-  tests_run --level 5 --distinct-categories --maximum 4
+  e2e_live_test --level 5 --distinct-categories --maximum 4
   ```
 - **Level 8 (Re-supply)**: Dense warehouse buildings, switchgear, interior doors.
   ```cmd
-  tests_run --level 8 --category buildings --maximum 2
+  e2e_live_test --level 8 --category buildings --maximum 2
   ```
 - **Level 10 (Get Priboi)**: High-density compound, offices, security terminals.
   ```cmd
-  tests_run --level 10 --category buildings --maximum 2
+  e2e_live_test --level 10 --category buildings --maximum 2
   ```
 
 ### 4. High-Altitude & Train Chase Maps (Levels 12, 13 & 14)
 - **Level 12 (Train Ambush)**: Moving train cars, heavy terrain height variances.
   ```cmd
-  tests_run --level 12 --distinct-types --maximum 2
+  e2e_live_test --level 12 --distinct-types --maximum 2
   ```
 - **Level 13 (Nuclear Base)**: Heavily guarded subterranean and surface structures.
   ```cmd
-  tests_run --level 13 --category ai --maximum 2
+  e2e_live_test --level 13 --category ai --maximum 2
   ```
 - **Level 14 (The Bomb)**: Complex facility corridors, countdown triggers, terminal nodes.
   ```cmd
-  tests_run --level 14 --distinct-categories --maximum 3
+  e2e_live_test --level 14 --distinct-categories --maximum 3
   ```
 
 ### 5. Multi-Level Full Campaign Verification
 Run a light sampling across all 14 levels sequentially:
 ```cmd
-tests_run --all-levels --category rigid --maximum 1
+e2e_live_test --all-levels --category rigid --maximum 1
 ```
 
 ---
@@ -232,13 +232,13 @@ When validating candidate manifests or checking rotation and texture bindings wi
 
 ```cmd
 :: Dry-run Level 5 AI
-tests_run --level 5 --ai --maximum 1 --prepare-only
+e2e_live_test --level 5 --ai --maximum 1 --prepare-only
 
 :: Dry-run Level 5 all categories
-tests_run --level 5 --distinct-categories --maximum 4 --prepare-only
+e2e_live_test --level 5 --distinct-categories --maximum 4 --prepare-only
 
 :: Dry-run all 14 levels
-tests_run --all-levels --distinct-categories --maximum 4 --prepare-only
+e2e_live_test --all-levels --distinct-categories --maximum 4 --prepare-only
 ```
 
 The tool output will confirm candidate resolution instantly:
