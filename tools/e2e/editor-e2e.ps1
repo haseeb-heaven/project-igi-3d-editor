@@ -602,7 +602,10 @@ function Close-Editor($Process, [bool]$Force) {
     return [pscustomobject]@{ exited=$false; exitCode=$null; forced=$true }
 }
 function Get-Sha256([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
 }
 function Get-GraphExport($Path, [string]$ScratchRoot) {
     $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSCommandPath))

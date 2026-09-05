@@ -6,6 +6,12 @@
   ten saved-camera views each, and required DAT texture identity/load checks.
   All 30 fresh-log transform and texture checks passed; visual acceptance
   remains unverified. No renderer changes or all-level expansion.
+- Added modular `Invoke-SmartVerificationMatrix.ps1` and resumable
+  `Invoke-SmartLevelModelBatch.ps1`: select one or more levels or all 14,
+  select all tasks or Buildings/RigidObjects/Vehicles/AI categories, limit
+  object count, prepare-only, resume, and bounded retry. Level 1 preflight
+  prepared 474/474 renderable instances; live verification is running from
+  those plans.
 - Added DPI-aware full-client screenshots, fresh-log model transform and
   texture-assignment checks, and separately labelled terrain-hidden diagnostic
   captures. Verified ten watchtower views plus an underside diagnostic;

@@ -105,3 +105,23 @@ Recovery record: wrong_result; capture command succeeded but camera target was
 wrong; retained evidence and added explicit target rejection. No renderer fix
 was attempted. The no-mistakes CLI was previously unavailable; no pipeline
 success is claimed.
+
+## Modular matrix runner — 2026-09-05
+
+`Invoke-SmartVerificationMatrix.ps1` accepts `-Levels`, `-AllLevels`,
+`-AllObjects`, `-Categories Buildings,RigidObjects,Vehicles,AI`,
+`-ObjectTypes`, `-MaxObjects`, `-PrepareOnly`, `-Resume`, and
+`-AllowConfigMutation`. The per-level runner keeps one recovery directory per
+object, reuses verified mesh-derived plans on resume, and uses the
+location-common model archive when a referenced model is not in the level
+archive.
+
+Selected tasks without a model, authored position, or authored rotation remain
+enumerated as not applicable to this 3D model check. Synthetic `-1#...` model
+instances use direct saved-camera capture and never receive fabricated task
+IDs. One synthetic pilot passed all ten views.
+
+Level 1 preparation completed 474/474 renderable instances and recorded 886
+non-model tasks. The full live Level 1 matrix is running resumably in
+`artifacts/e2e/level1-all-models-prepare-01`; its final pass/fail state is not
+yet claimed.

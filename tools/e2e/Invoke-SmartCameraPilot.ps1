@@ -5,9 +5,10 @@ param(
     [string]$InventoryPath = 'artifacts/task6-metadata-manifest.json',
     [string]$GameRoot = 'D:\IGI1',
     [ValidateRange(1,14)][int]$Level = 1,
-    [ValidatePattern('^\d+$')][string]$TaskId = '1105',
+    [ValidatePattern('^(\d+|-1#\d+)$')][string]$TaskId = '1105',
     [ValidateRange(1,10)][int]$ViewCount = 1,
     [string]$ViewName = '',
+    [switch]$SkipObjectSelection,
     [switch]$HideTerrainDiagnostic,
     [switch]$AllowConfigMutation
 )
@@ -15,6 +16,12 @@ $ErrorActionPreference = 'Stop'
 if (-not $AllowConfigMutation) { throw 'Requires -AllowConfigMutation; QED config is temporarily changed and restored.' }
 if (Get-Process igi1ed -ErrorAction SilentlyContinue) { throw 'Close the existing editor before the serial pilot.' }
 . (Join-Path $PSScriptRoot 'SmartModelEvidence.ps1')
+function Get-PortableSha256([string]$Path) {
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','') }
+    finally { $sha.Dispose() }
+}
 $inventory = Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json
 $levelInventory = @($inventory.levels | Where-Object level -eq $Level)
 if ($levelInventory.Count -ne 1) { throw 'Missing or ambiguous level inventory.' }
@@ -22,7 +29,7 @@ $anchors = @($levelInventory[0].inventory | Where-Object taskId -eq $TaskId)
 if ($anchors.Count -ne 1) { throw 'Missing or ambiguous object anchor.' }
 $anchor = $anchors[0]
 $sourcePath = Join-Path $GameRoot $levelInventory[0].sourcePath
-if ((Get-FileHash $sourcePath -Algorithm SHA256).Hash -ne $anchor.sourceHash) { throw 'Stale object inventory.' }
+if ((Get-PortableSha256 $sourcePath) -ne $anchor.sourceHash) { throw 'Stale object inventory.' }
 $plan = Get-Content -LiteralPath $CameraPlan -Raw | ConvertFrom-Json
 if (@($plan.views).Count -ne 10) { throw 'Expected ten planned camera views.' }
 foreach ($view in $plan.views) {
@@ -53,7 +60,7 @@ foreach ($file in @($files | Where-Object Extension -eq '.qsc')) {
 }
 $snapshots = @(foreach ($file in $files) {
     Copy-Item -LiteralPath $file.FullName -Destination $backup
-    [pscustomobject]@{name=$file.Name;sha256=(Get-FileHash $file.FullName -Algorithm SHA256).Hash}
+    [pscustomobject]@{name=$file.Name;sha256=(Get-PortableSha256 $file.FullName)}
 })
 $snapshots | ConvertTo-Json | Set-Content (Join-Path $backup 'hashes.json') -Encoding UTF8
 $config = Join-Path $qed 'qedconfig.qsc'
@@ -80,14 +87,18 @@ try {
             @{id='launch';type='launch_editor';level=$Level;drawParts=$(if($HideTerrainDiagnostic){-2}else{-1})},
             @{id='loaded';type='wait_for_log';pattern="\[App\] LoadLevel\(\) COMPLETE for level $Level";timeoutSeconds=120},
             @{id='health';type='assert_process'},
-            @{id='find';type='key';key='CTRL+SHIFT+I'},
-            @{id='id';type='type_text';text=$TaskId},
-            @{id='select';type='key';key='ENTER'},
-            @{id='settle';type='wait';seconds=2},
             @{id='capture';type='screenshot';name=$view.name;client=$true},
             @{id='window';type='capture_window_state'},
             @{id='close';type='close_editor';force=$true}
         )
+        if (-not $SkipObjectSelection) {
+            $steps = @($steps[0..2] + @(
+                @{id='find';type='key';key='CTRL+SHIFT+I'},
+                @{id='id';type='type_text';text=$TaskId},
+                @{id='select';type='key';key='ENTER'},
+                @{id='settle';type='wait';seconds=2}
+            ) + $steps[3..($steps.Count-1)])
+        }
         $manifest = Join-Path $ArtifactsRoot ($view.name+'.json')
         @{diagnosticTerrainHidden=[bool]$HideTerrainDiagnostic;scenarios=@(@{name=$view.name;level=$Level;requiresMutation=$false;steps=$steps})} | ConvertTo-Json -Depth 10 | Set-Content $manifest -Encoding UTF8
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'editor-e2e.ps1') -GameRoot $GameRoot -ScenarioPath $manifest -ArtifactsRoot (Join-Path $ArtifactsRoot $view.name)
@@ -108,8 +119,8 @@ try {
     foreach ($snapshot in $snapshots) {
         $dest = Join-Path $qed $snapshot.name
         Copy-Item (Join-Path $backup $snapshot.name) $dest -Force
-        if ((Get-FileHash $dest -Algorithm SHA256).Hash -ne $snapshot.sha256) { throw "Restore mismatch: $dest; backup retained at $backup" }
+        if ((Get-PortableSha256 $dest) -ne $snapshot.sha256) { throw "Restore mismatch: $dest; backup retained at $backup" }
     }
     'Original QED files restored and hashes verified.'
-    if ((Get-FileHash $sourcePath -Algorithm SHA256).Hash -ne $anchor.sourceHash) { throw 'Level source changed during capture; investigate before further runs.' }
+    if ((Get-PortableSha256 $sourcePath) -ne $anchor.sourceHash) { throw 'Level source changed during capture; investigate before further runs.' }
 }
