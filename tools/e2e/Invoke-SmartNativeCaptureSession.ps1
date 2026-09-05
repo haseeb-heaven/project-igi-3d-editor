@@ -5,9 +5,11 @@ param(
     [string]$GameRoot = 'D:\IGI1',
     [string]$EditorExePath = '',
     [ValidateRange(1,14)][int]$Level = 1,
+    [string]$Category = 'All',
     [string[]]$IncludeTypes = @(),
     [ValidateRange(0,2147483647)][int]$MaxObjects = 0,
     [switch]$DistinctTypes,
+    [switch]$DistinctCategories,
     [ValidateRange(1,10)][int]$ViewCount = 10,
     [switch]$PrepareOnly
 )
@@ -57,6 +59,12 @@ function Read-SharedBytes([string]$Path, [Int64]$Offset = 0) {
     } finally { $stream.Dispose() }
 }
 function Get-SafeName([string]$Value) { return ($Value -replace '[^A-Za-z0-9_-]', '_') }
+function Get-ObjectCategory([string]$Type) {
+    if ($Type -in @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanPlayer','HumanAI','AISquad','PatrolPath','PatrolPathCommand')) { return 'AI' }
+    if ($Type -in @('Car','Heli','Train','Plane','CarAI')) { return 'Vehicles' }
+    if ($Type -in @('Building','Door','Terminal','Switch','AlarmControl','Elevator','Fence','Cabinet')) { return 'Buildings' }
+    return 'RigidObjects'
+}
 function Get-RequiredTextureMap([string]$DatPath, [string]$OutputPath) {
     $converter = Join-Path $PSScriptRoot '../../assets/editor/tools/igi1conv/igi1conv.exe'
     if (-not (Test-Path -LiteralPath $converter)) { throw "Converter not found: $converter" }
@@ -135,35 +143,44 @@ $textureMap = Get-RequiredTextureMap (Join-Path $GameRoot "MISSIONS/location0/le
 $candidates = @($all | Where-Object {
     $_.modelId -and
     @($_.authoredPosition).Count -eq 3 -and
-    @($_.authoredRotation).Count -eq 3 -and
+    (@($_.authoredRotation).Count -eq 3 -or (Get-ObjectCategory $_.type) -eq 'AI') -and
     $textureMap.ContainsKey([string]$_.modelId) -and
     @($textureMap[[string]$_.modelId]).Count -gt 0
 })
-if ($DistinctTypes) { $candidates = @($candidates | Group-Object type | ForEach-Object { $_.Group | Select-Object -First 1 }) }
+if ($DistinctCategories) {
+    $groupedByCat = $candidates | Group-Object { Get-ObjectCategory $_.type }
+    $candidates = @($groupedByCat | ForEach-Object { $_.Group | Select-Object -First 1 })
+} elseif ($DistinctTypes) {
+    $candidates = @($candidates | Group-Object type | ForEach-Object { $_.Group | Select-Object -First 1 })
+}
 $candidates = @($candidates | Sort-Object {[string]$_.taskId}, {[string]$_.modelId})
 $notSelected = @()
 if ($MaxObjects -gt 0 -and $candidates.Count -gt $MaxObjects) {
-    $notSelected = @($candidates | Select-Object -Skip $MaxObjects | ForEach-Object { [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;modelId=[string]$_.modelId;status='NOT_SELECTED';reason="maximum object limit $MaxObjects reached"} })
+    $notSelected = @($candidates | Select-Object -Skip $MaxObjects | ForEach-Object { [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;category=(Get-ObjectCategory $_.type);modelId=[string]$_.modelId;status='NOT_SELECTED';reason="maximum object limit $MaxObjects reached"} })
     $candidates = @($candidates | Select-Object -First $MaxObjects)
 }
 $skipped = @($all | Where-Object {
-    -not ($_.modelId -and @($_.authoredPosition).Count -eq 3 -and @($_.authoredRotation).Count -eq 3 -and $textureMap.ContainsKey([string]$_.modelId) -and @($textureMap[[string]$_.modelId]).Count -gt 0)
+    -not ($_.modelId -and @($_.authoredPosition).Count -eq 3 -and (@($_.authoredRotation).Count -eq 3 -or (Get-ObjectCategory $_.type) -eq 'AI') -and $textureMap.ContainsKey([string]$_.modelId) -and @($textureMap[[string]$_.modelId]).Count -gt 0)
 } | ForEach-Object {
     $reason = if (-not $_.modelId) { 'non-renderable task' }
         elseif (@($_.authoredPosition).Count -ne 3) { 'missing authored position' }
-        elseif (@($_.authoredRotation).Count -ne 3) { 'missing authored rotation' }
+        elseif (@($_.authoredRotation).Count -ne 3 -and (Get-ObjectCategory $_.type) -ne 'AI') { 'missing authored rotation' }
         else { 'no authored textures in level DAT' }
-    [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;modelId=$_.modelId;status='SKIPPED';reason=$reason}
+    [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;category=(Get-ObjectCategory $_.type);modelId=$_.modelId;status='SKIPPED';reason=$reason}
 }) + $notSelected
 $plans = [Collections.Generic.List[object]]::new()
 $index = 0
 foreach ($anchor in $candidates) {
     $index++
     $model = [string]$anchor.modelId; $task = [string]$anchor.taskId
-    $plans.Add([pscustomobject]@{index=$index;taskId=$task;type=[string]$anchor.type;modelId=$model;authoredPosition=@($anchor.authoredPosition);authoredRotation=@($anchor.authoredRotation);requiredTextures=$(if($textureMap.ContainsKey($model)){@($textureMap[$model])}else{@()});prefix=('obj-{0:D4}-task{1}-{2}' -f $index,(Get-SafeName $task),(Get-SafeName $model))})
+    $rot = @($anchor.authoredRotation)
+    if ($rot.Count -lt 3 -and (Get-ObjectCategory $anchor.type) -eq 'AI') {
+        $rot = @(0.0, 0.0, 6.28318)
+    }
+    $plans.Add([pscustomobject]@{index=$index;taskId=$task;type=[string]$anchor.type;category=(Get-ObjectCategory $anchor.type);modelId=$model;authoredPosition=@($anchor.authoredPosition);authoredRotation=$rot;requiredTextures=$(if($textureMap.ContainsKey($model)){@($textureMap[$model])}else{@()});prefix=('obj-{0:D4}-task{1}-{2}' -f $index,(Get-SafeName $task),(Get-SafeName $model))})
 }
 $statePath = Join-Path $ArtifactsRoot 'batch.json'
-$state = [ordered]@{level=$Level;selectedTypes=@($IncludeTypes);sourcePath=$sourcePath;sourceSha256=$sourceHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;totalTasks=$all.Count;renderableCandidates=$candidates.Count;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);launchCount=1;closeCount=1;viewCount=$captureViews.Count;screenshotsExpected=($plans.Count*$captureViews.Count);status=$(if($PrepareOnly){'PREPARED'}else{'NOT_RUN'})}
+$state = [ordered]@{level=$Level;category=$Category;selectedTypes=@($IncludeTypes);sourcePath=$sourcePath;sourceSha256=$sourceHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;totalTasks=$all.Count;renderableCandidates=$candidates.Count;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);launchCount=1;closeCount=1;viewCount=$captureViews.Count;screenshotsExpected=($plans.Count*$captureViews.Count);status=$(if($PrepareOnly){'PREPARED'}else{'NOT_RUN'})}
 $state | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $statePath -Encoding UTF8
 if ($PrepareOnly) { Write-Output "Prepared native one-session level ${Level}: $($plans.Count) objects, $($captureViews.Count) views each."; exit 0 }
 
@@ -237,6 +254,7 @@ foreach($plan in $plans){
     $shots=@(Get-ChildItem -LiteralPath (Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)) -File -Filter '*.png' -ErrorAction SilentlyContinue)
     $item | Add-Member -NotePropertyName taskId -NotePropertyValue $plan.taskId -Force
     $item | Add-Member -NotePropertyName type -NotePropertyValue $plan.type -Force
+    $item | Add-Member -NotePropertyName category -NotePropertyValue $plan.category -Force
     $item | Add-Member -NotePropertyName modelId -NotePropertyValue $plan.modelId -Force
     $item | Add-Member -NotePropertyName screenshotCount -NotePropertyValue $shots.Count -Force
     if($shots.Count -ne $captureViews.Count){$item.passed=$false;$item.failures=@($item.failures+"Expected $($captureViews.Count) screenshots, found $($shots.Count).")}
@@ -244,7 +262,7 @@ foreach($plan in $plans){
     $evidence+=$item
 }
 $failed=@($evidence|Where-Object{-not $_.passed}).Count
-$final=[ordered]@{level=$Level;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
+$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
 if($final.status -ne 'PASS'){exit 1}
 Write-Output "PASS: native one-session capture, $($plans.Count) objects, $($final.screenshotsCaptured) screenshots."

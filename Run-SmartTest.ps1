@@ -17,11 +17,12 @@
 param(
     [ValidateRange(1, 14)][int[]]$Level = @(1),
     [switch]$AllLevels,
-    [ValidateSet('All', 'Buildings', 'RigidObjects', 'Vehicles', 'AI')][string]$Category = 'All',
+    [string]$Category = 'All',
     [string[]]$ObjectTypes = @(),
     [int]$MaxObjects = 3,
     [switch]$AllObjects,
     [switch]$DistinctTypes,
+    [switch]$DistinctCategories,
     [ValidateRange(1, 10)][int]$ViewCount = 10,
     [switch]$PrepareOnly,
     [switch]$Resume,
@@ -73,12 +74,23 @@ Write-Host "MaxObjects : $(if ($MaxObjects -eq 0) { 'ALL objects' } else { $MaxO
 Write-Host "Artifacts  : $ArtifactsRoot"
 Write-Host "--------------------------------------------------------"
 
+switch ($Category.ToLowerInvariant()) {
+    'ai' { $Category = 'AI' }
+    'buildings' { $Category = 'Buildings' }
+    'building' { $Category = 'Buildings' }
+    'vehicles' { $Category = 'Vehicles' }
+    'vehicle' { $Category = 'Vehicles' }
+    'rigidobjects' { $Category = 'RigidObjects' }
+    'rigid' { $Category = 'RigidObjects' }
+    default { $Category = 'All' }
+}
+
 $categoryTypes = @{
     All = @()
-    Buildings = @('Building','Door','Terminal','Switch','AlarmControl')
-    RigidObjects = @('EditRigidObj','Static','Dynamic','SplineObj','SplineObjWaypoint','ExplodeObject')
-    Vehicles = @('Car','Heli','Train')
-    AI = @('HumanAI','HumanSoldier','AISquad','AIGraph','PatrolPath','PatrolPathCommand')
+    Buildings = @('Building','Door','Terminal','Switch','AlarmControl','Elevator','Fence','Cabinet')
+    RigidObjects = @('EditRigidObj','Static','Dynamic','ExplodeObject','RotatingObject','StationaryGun','SCamera','AlarmLight','Siren','Generator','GenericPickup','GenericTBA','Radio','Wire')
+    Vehicles = @('Car','Heli','Train','Plane','CarAI')
+    AI = @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanPlayer','HumanAI')
 }
 
 if ($LegacySerial) {
@@ -90,6 +102,7 @@ if ($LegacySerial) {
     if ($PrepareOnly) { $runnerArgs += '-PrepareOnly' }
     if ($Resume) { $runnerArgs += '-Resume' }
     if ($DistinctTypes) { $runnerArgs += '-DistinctTypes' }
+    if ($DistinctCategories) { $runnerArgs += '-DistinctCategories' }
     if ($ViewCount -ne 10) { $runnerArgs += @('-ViewCount', $ViewCount) }
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $toolPath @runnerArgs
     $exitCode = $LASTEXITCODE
@@ -101,7 +114,7 @@ if ($LegacySerial) {
     $exitCode = 0
     foreach ($levelNumber in $levels) {
         $levelRoot = Join-Path $ArtifactsRoot ('level' + $levelNumber)
-        $runnerArgs = @('-ArtifactsRoot', $levelRoot, '-GameRoot', 'D:\IGI1', '-Level', $levelNumber, '-ViewCount', $ViewCount)
+        $runnerArgs = @('-ArtifactsRoot', $levelRoot, '-GameRoot', 'D:\IGI1', '-Level', $levelNumber, '-Category', $Category, '-ViewCount', $ViewCount)
         if (-not [string]::IsNullOrWhiteSpace($EditorExePath)) { $runnerArgs += @('-EditorExePath', $EditorExePath) }
         if ($MaxObjects -gt 0) { $runnerArgs += @('-MaxObjects', $MaxObjects) }
         $selectedTypes = @()
@@ -109,6 +122,7 @@ if ($LegacySerial) {
         if ($ObjectTypes.Count) { $selectedTypes += $ObjectTypes }
         $selectedTypes = @($selectedTypes | Select-Object -Unique)
         if ($selectedTypes.Count) { $runnerArgs += @('-IncludeTypes', ($selectedTypes -join ',')) }
+        if ($DistinctCategories) { $runnerArgs += '-DistinctCategories' }
         if ($DistinctTypes) { $runnerArgs += '-DistinctTypes' }
         if ($PrepareOnly) { $runnerArgs += '-PrepareOnly' }
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $toolPath @runnerArgs
@@ -125,7 +139,8 @@ if ($LegacySerial) {
     Write-Host "[Results Summary]" -ForegroundColor Cyan
     foreach ($res in $results) {
         $color = if ($res.status -eq 'PASS' -or $res.status -eq 'PREPARED') { 'Green' } else { 'Red' }
-        Write-Host ("  Level {0}: Status={1}, Objects={2}, Launches={3}, Closes={4}" -f $res.level,$res.status,$res.selectableObjects,$res.launchCount,$res.closeCount) -ForegroundColor $color
+        $objCount = if ($res.objects) { @($res.objects).Count } elseif ($res.selectableObjects) { $res.selectableObjects } else { 0 }
+        Write-Host ("  Level {0}: Category={1}, Status={2}, Objects={3}, Launches={4}, Closes={5}" -f $res.level,$(if($res.category){$res.category}else{$Category}),$res.status,$objCount,$res.launchCount,$res.closeCount) -ForegroundColor $color
     }
 }
 

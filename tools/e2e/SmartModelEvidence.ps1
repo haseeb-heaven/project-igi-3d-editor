@@ -7,6 +7,7 @@ function Test-SmartModelLog {
     $rows = [regex]::Matches($Text, ('\[LevelLoader\] Object Loaded: ModelID='+$model+', Type=([^,]+), Name=(.*?), Pos=\(([^)]+)\), Ori=\(([^)]+)\),'))
     $matching = @()
     $matchingKeys = @()
+    $isAI = ($Anchor.category -eq 'AI' -or $Anchor.type -in @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanPlayer','HumanAI','AISquad','PatrolPath','PatrolPathCommand'))
     foreach ($row in $rows) {
         $pos = @($row.Groups[3].Value.Split(',') | ForEach-Object { [double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture) })
         $ori = @($row.Groups[4].Value.Split(',') | ForEach-Object { [double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture) })
@@ -16,7 +17,8 @@ function Test-SmartModelLog {
             foreach ($value in @($pos[$axis],$ori[$axis],[double]$Anchor.authoredPosition[$axis],[double]$Anchor.authoredRotation[$axis])) {
                 if ([double]::IsNaN($value) -or [double]::IsInfinity($value)) { $same=$false }
             }
-            if ([Math]::Abs($pos[$axis]-[double]$Anchor.authoredPosition[$axis]) -gt 32 -or [Math]::Abs($ori[$axis]-[double]$Anchor.authoredRotation[$axis]) -gt 0.00001) { $same=$false }
+            if ([Math]::Abs($pos[$axis]-[double]$Anchor.authoredPosition[$axis]) -gt 32) { $same=$false }
+            if (-not $isAI -and [Math]::Abs($ori[$axis]-[double]$Anchor.authoredRotation[$axis]) -gt 0.00001) { $same=$false }
         }
         if ($same) {
             $matching += $row.Value
