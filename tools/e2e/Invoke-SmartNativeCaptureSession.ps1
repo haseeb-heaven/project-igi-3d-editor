@@ -164,6 +164,9 @@ $sourceHash = Get-PortableSha256 $sourcePath
 $editorHash = Get-PortableSha256 $EditorExePath
 $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $all = @($levelRow.inventory)
+if ($Category -and $Category -ne 'All') {
+    $all = @($all | Where-Object { (Get-ObjectCategory $_.type) -eq $Category })
+}
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
 $materialPath = Join-Path $ArtifactsRoot 'authored-materials.json'
 $datPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat"
@@ -188,8 +191,15 @@ if ($DistinctCategories) {
     $candidates = @($groupedByCat | ForEach-Object { $_.Group | Select-Object -First 1 })
 } elseif ($DistinctTypes) {
     $candidates = @($candidates | Group-Object type | ForEach-Object { $_.Group | Select-Object -First 1 })
+} else {
+    # Prioritize distinct models so verification tests unique models rather than repeating the same modelId
+    $groupedByModel = $candidates | Group-Object modelId
+    $distinct = @($groupedByModel | ForEach-Object { $_.Group | Sort-Object {[string]$_.taskId} | Select-Object -First 1 } | Sort-Object {[string]$_.modelId}, {[string]$_.taskId})
+    $distinctKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($d in $distinct) { [void]$distinctKeys.Add([string]$d.modelId + '_' + [string]$d.taskId) }
+    $remaining = @($candidates | Where-Object { -not $distinctKeys.Contains([string]$_.modelId + '_' + [string]$_.taskId) } | Sort-Object {[string]$_.taskId})
+    $candidates = @($distinct + $remaining)
 }
-$candidates = @($candidates | Sort-Object {[string]$_.taskId}, {[string]$_.modelId})
 $notSelected = @()
 if ($MaxObjects -gt 0 -and $candidates.Count -gt $MaxObjects) {
     $notSelected = @($candidates | Select-Object -Skip $MaxObjects | ForEach-Object { [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;category=(Get-ObjectCategory $_.type);modelId=[string]$_.modelId;status='NOT_SELECTED';reason="maximum object limit $MaxObjects reached"} })
