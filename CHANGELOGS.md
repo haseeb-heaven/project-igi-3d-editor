@@ -2,6 +2,25 @@
 
 ## Unreleased — Editor workflow E2E (`e2e-editor-harness`)
 
+- **Fixed AMD OpenGL Driver Crash (`0x6ED690D2` / `0x444` Access Violation)**:
+  - Resolved `igi1ed.exe - Application Error: The instruction at 0x000000006ED690D2 referenced memory at 0x0000000000000444. The memory could not be read.`
+  - Root cause: in AMD `atioglxx.dll`, issuing fixed-function immediate-mode primitives (`glBegin(GL_TRIANGLES)`, `glBegin(GL_QUADS)`, `glVertex4f`, `glVertex2i`) while `GL_ARRAY_BUFFER` remained bound caused the driver to assume vertex attributes were in a buffer object rather than client memory, dereferencing a null pointer at offset `0x444`.
+  - Resolution: systematically enforced unbinding of VAO (`glBindVertexArray(0)`), VBO (`glBindBuffer(GL_ARRAY_BUFFER, 0)`), EBO (`glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)`), and vertex attribute arrays (`glDisableVertexAttribArray(0..3)`) across all skinned mesh pipelines (`DrawSkinnedMesh`, `DrawAnimSkeleton`), geometry visualizers (`InitSphereMesh`, `AddCrossMesh`, `AddCubeMesh`, `InitSelectionBox`, `DrawSelectionBox`, `DrawAttachedMesh`), submesh drawing (`renderModel`, `BuildMeshFromGeometry`), 3D graph/HUD overlays, custom cursor, and loading progress overlays.
+- **Added Full Object Category System (`AI`, `Buildings`, `RigidObjects`, `Vehicles`)**:
+  - Implemented discrete object categorization across `tests_run.cmd`, `Run-SmartTest.ps1`, and `Invoke-SmartNativeCaptureSession.ps1`.
+  - Added dedicated CLI flags: `--ai` (`-ai`), `--building` (`--buildings`), `--rigid` (`--rigidobjects`), `--vehicle` (`--vehicles`), and `--category <name>`.
+  - Added `--distinct-categories` sampling to automatically select 1 object from each distinct category present in the level, validating all 4 categories in a single interactive session.
+  - Added `--distinct-types` sampling to guarantee every selected object has a unique type.
+- **Resolved AI Model Rotation Schema & Transform Evidence**:
+  - Supported single-axis yaw/gamma authored rotations (`HumanSoldier`, `HumanPlayer`) in candidate enumeration, preventing them from being falsely skipped.
+  - Updated `SmartModelEvidence.ps1` to handle dynamic horizontal-only rotation overrides for AI types while preserving strict position, model ID, and multi-texture verification.
+- **Interactive WMI Session 1 Automation & Process Hardening**:
+  - Standardized on WMI `Win32_Process.Create` to reliably spawn visible editor windows in the user's interactive desktop (Session 1).
+  - Replaced legacy external process termination with native PowerShell `Stop-Process -Force -ErrorAction SilentlyContinue`, eliminating `NativeCommandError` exceptions.
+  - Standardized 4 GB Large Address Aware (VAS) flag on Release binaries (`0x0122`).
+- **Comprehensive E2E Testing Documentation**:
+  - Created [`docs/LIVE_E2E_TESTING.md`](docs/LIVE_E2E_TESTING.md) documenting full CLI usage, category specifications, level archetypes, dry-run plans, and evidence artifact inspection.
+
 - Added a bounded three-object trial (Building L1, Car L2, EditRigidObj L3),
   ten saved-camera views each, and required DAT texture identity/load checks.
   All 30 fresh-log transform and texture checks passed; visual acceptance

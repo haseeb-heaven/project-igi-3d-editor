@@ -243,27 +243,33 @@ For the full test reference — suites, filters, fixture descriptions, and build
 
 ---
 
-## 🛠️ Future Roadmap
+## 🧪 Live End-to-End (E2E) Native Testing
 
-With the successful release of **Version 2.0.0**, core features like the **Native MEF Parser**, **Asset Extractor**, **QVM Toolchain**, **Task Tree Editor**, **Train & Spline Engine**, **Click-to-Select Map View**, and **Headless CLI** have been fully realized. Future milestones include:
-- **Native Game Converter tool**: `igi1conv` — a standalone Project IGI 1 asset converter developed in its own repo at [project-igi-conv](https://github.com/heaven-hm/project-igi-conv). It ships as a **Qt application** with both a GUI mode and a headless CLI mode; the editor uses only the CLI. The full prebuilt package (exe + Qt runtime DLLs) is bundled at `editor/tools/igi1conv/`.
-- **Upgraded compatibility**: A better upgraded version to support the Neo Remastered mod.
-- **Visual 3D Graph Editor (Completed)**: Full-featured interactive 3D Graph Editor displaying interactive nodes and visuals to seamlessly construct game logic, path routes, and area connections. See [docs/graph_editor.md](docs/graph_editor.md).
-- **Weapon & Item Configurator**: Rich telemetry overlays and visual UI for modifying active gun parameters, ammunition slots, and dropping custom inventory directly onto the battlefield.
-- **Full 14 Levels campaign run**: Complete, verified playthroughs of all custom compiled maps to guarantee total end-to-end stability.
+The project includes an interactive, GPU-validated end-to-end verification harness driven by [`tests_run.cmd`](tests_run.cmd) and [`Run-SmartTest.ps1`](Run-SmartTest.ps1). It executes the editor natively on the interactive desktop (Session 1), capturing 10 multi-angle camera views per object while verifying transform logs, DAT material caching, and submesh texture bindings with zero crashes.
 
----
+👉 **[Complete Live E2E Testing Guide (All Categories & Levels)](docs/LIVE_E2E_TESTING.md)**
 
-## 🏆 Credits and Contributors
+### Quick Category Commands
 
-Credits and contributions of the people in this project:
+```cmd
+# AI Units (Soldiers, Players, AI scripts)
+tests_run --level 5 --ai --maximum 1
 
-- **[Artiom](https://github.com/NEWME0)** 👑 - **Game file formats** (*models, textures, animations*) and his **game conversion tools**. (**Huge Help!** )
+# Vehicles (Helicopters, Cars, Trains)
+tests_run --level 5 --vehicle --maximum 1
 
-- **[GM123](https://www.youtube.com/@gm1233)** 👑 - **Game Models & Animations** (*MEF / IFF formats*) and **development tools**. (**Huge Help!**)
+# Buildings & Facilities (Barracks, Doors, Terminals, Switches)
+tests_run --level 5 --building --maximum 1
 
-For the full test reference — suites, filters, fixture descriptions, and build/deploy instructions — see:
-👉 **[Test Suite Documentation](docs/TESTS.md)**
+# Rigid Objects (Props, Radars, Searchlights, Pickups)
+tests_run --level 5 --rigid --maximum 1
+
+# Sample 1 Object from EACH Distinct Category in a single session
+tests_run --level 5 --distinct-categories --maximum 4
+
+# Dry-run plan preview (verifies candidates without opening game window)
+tests_run --level 5 --distinct-categories --maximum 4 --prepare-only
+```
 
 ---
 
@@ -316,7 +322,11 @@ Project IGI Editor and Converter feature full **Model Context Protocol (MCP)** s
 
 ## 📋 [Changelogs](CHANGELOGS.md)
 
-See the [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs.
+See [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs, including:
+- **AMD OpenGL Driver Crash Fix (`0x6ED690D2` / `0x444` VBO State Resolution)**: Protected all immediate-mode pipelines (`glBegin`/`glEnd`) with systematic VAO, VBO, and attribute array unbinding.
+- **Categorized E2E Testing Engine (`AI`, `Buildings`, `RigidObjects`, `Vehicles`)**: Added dedicated shortcut flags and category filtering across the native test suite.
+- **4 GB Large Address Aware (VAS)**: Enforced 4 GB virtual address space allocation on Release binaries.
+- **Multi-Angle Interactive WMI Automation**: Session 1 interactive desktop lifecycle and evidence validation.
 
 ---
 
