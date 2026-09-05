@@ -4,7 +4,7 @@ Generate self-contained HTML5 verification dashboard from e2e batch.json artifac
 Two evidence layers: source manifest (authored data) + render evidence (JSONL from C++).
 Uses Pillow for contact sheets and GIF previews when available.
 """
-import sys, os, json, argparse, math, base64
+import sys, os, json, argparse, math, base64, re
 from pathlib import Path
 
 try:
@@ -12,6 +12,64 @@ try:
     HAS_PILLOW = True
 except ImportError:
     HAS_PILLOW = False
+
+SPECIAL_NAMES = {
+    'colbox': 'Collision Box',
+    'colbox2': 'Collision Box 2',
+    'colbox3': 'Collision Box 3',
+    'colbox4': 'Collision Box 4',
+    'colbox66': 'Collision Box 66',
+    'switch': 'Control Switch',
+    '200_01_1': 'Elevator Carriage',
+    '202_01_1': 'Alarm Switch',
+    '309_01_1': 'Alarm Siren',
+    '320_01_1': 'Barbed Wire Fence',
+    '500_01_1': 'Metal Sliding Door',
+    '502_01_1': 'Compound Security Door',
+    '503_01_1': 'Security Gate Door',
+    '504_01_1': 'Double Metal Door',
+    '507_01_1': 'Office Wooden Door',
+}
+
+REPLACEMENTS = {
+    'Watertower': 'WaterTower',
+    'Lighttower': 'LightTower',
+    'Watchtower': 'WatchTower',
+    'Aitype': 'AI',
+    'Ai': 'AI',
+    'Rpg': 'RPG',
+    'Ak': 'AK47',
+    'Ak47': 'AK47',
+    'Uzi': 'Uzi',
+    'M16': 'M16',
+    'Mp5': 'MP5',
+    'Svd': 'SVD',
+    'G11': 'G11',
+    'Spas12': 'SPAS-12',
+    'Minimi': 'Minimi',
+    'Colt': 'Colt',
+    'Jackhammer': 'Jackhammer',
+    'Apc': 'APC',
+    'T80': 'T-80',
+    'Sam': 'SAM',
+    'Hq': 'HQ',
+    'Su27': 'Su-27',
+    'Jsf': 'JSF',
+    'Emp': 'EMP',
+}
+
+TYPO_FIXES = {
+    'Officebuilding': 'Office Building',
+    'Powergenerator': 'Power Generator',
+    'Securitybuilding': 'Security Building',
+    'Largefuelcontainer': 'Large Fuel Container',
+    'Smallfuelcontainer': 'Small Fuel Container',
+    'Winchhouse': 'Winch House',
+    'Radardome': 'Radar Dome',
+    'Corssing': 'Crossing',
+    'Antena': 'Antenna',
+    'Forklifter': 'Forklift',
+}
 
 def load_model_names():
     names = {}
@@ -51,13 +109,21 @@ def load_model_names():
 MODEL_NAMES = load_model_names()
 
 def get_display_name(model_id, fallback_type=None, explicit_name=None):
+    if model_id in SPECIAL_NAMES:
+        return SPECIAL_NAMES[model_id]
     raw = explicit_name or MODEL_NAMES.get(model_id) or fallback_type or model_id
-    if raw.isupper() or '_' in raw:
-        words = raw.split('_')
-        clean = ' '.join(w.capitalize() for w in words)
-        if clean.lower() == 'watertower':
-            return 'WaterTower'
+    if raw.isupper() or '_' in raw or '-' in raw:
+        words = re.split(r'[_\s]+', raw)
+        clean = ' '.join(w.capitalize() for w in words if w)
+        for k, v in REPLACEMENTS.items():
+            clean = re.sub(rf'\b{k}\b', v, clean, flags=re.IGNORECASE)
+        for k, v in TYPO_FIXES.items():
+            clean = re.sub(rf'\b{k}\b', v, clean, flags=re.IGNORECASE)
         return clean
+    for k, v in REPLACEMENTS.items():
+        raw = re.sub(rf'\b{k}\b', v, raw, flags=re.IGNORECASE)
+    for k, v in TYPO_FIXES.items():
+        raw = re.sub(rf'\b{k}\b', v, raw, flags=re.IGNORECASE)
     return raw
 
 # ---------------------------------------------------------------------------
@@ -357,8 +423,8 @@ def build_report(data_sources, output_path, artifact_root):
 <div class="card" data-search="{search_data}" data-cat="{category}" data-status="{status_txt}">
   <div class="card-header">
     <span class="badge {status_cls}">{status_icon} {status_txt}</span>
-    <span style="color:var(--cyan);font-size:13px">L{lvl} · {disp_name} ({model_id})</span>
-    <span style="color:var(--muted);font-size:11px">{obj_type} · {category}</span>
+    <span style="color:var(--cyan);font-size:13px">L{lvl} &middot; {disp_name} ({model_id})</span>
+    <span style="color:var(--muted);font-size:11px">{obj_type} &middot; {category}</span>
     <span style="color:var(--muted);font-size:11px;margin-left:auto">task {task_id}</span>
   </div>
   {fail_html}

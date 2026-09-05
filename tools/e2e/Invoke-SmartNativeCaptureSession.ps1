@@ -214,7 +214,63 @@ $skipped = @($all | Where-Object {
         elseif (@($_.authoredRotation).Count -ne 3 -and (Get-ObjectCategory $_.type) -ne 'AI') { 'missing authored rotation' }
         else { 'no authored textures in level DAT' }
     [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;category=(Get-ObjectCategory $_.type);modelId=$_.modelId;status='SKIPPED';reason=$reason}
-}) + $notSelected
+$modelNameMap = @{}
+foreach ($catalogRel in @('../../assets/editor/tools/IGIModels.json', '../../assets/misc/IGIModels.json')) {
+    $catalogPath = Join-Path $PSScriptRoot $catalogRel
+    if (Test-Path -LiteralPath $catalogPath) {
+        try {
+            foreach ($item in (Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json)) {
+                $mid = [string]($item.ModelId)
+                if (-not $mid) { $mid = [string]($item.'Model ID') }
+                $mname = [string]($item.ModelName)
+                if (-not $mname) { $mname = [string]($item.Name) }
+                if ($mid -and $mname -and -not $modelNameMap.ContainsKey($mid)) { $modelNameMap[$mid] = $mname }
+            }
+        } catch {}
+    }
+}
+$allLevelsJson = Join-Path $PSScriptRoot '../../assets/misc/IGIModelsAllLevel.json'
+if (Test-Path -LiteralPath $allLevelsJson) {
+    try {
+        $allData = Get-Content -LiteralPath $allLevelsJson -Raw | ConvertFrom-Json
+        foreach ($prop in $allData.PSObject.Properties) {
+            $catObj = $prop.Value
+            if ($catObj) {
+                foreach ($cProp in $catObj.PSObject.Properties) {
+                    $arr = $cProp.Value
+                    if ($arr -is [System.Collections.IEnumerable]) {
+                        foreach ($it in $arr) {
+                            $mid = [string]($it.'Model ID')
+                            $mname = [string]($it.Name)
+                            if (-not $mname) { $mname = [string]($it.Type) }
+                            if ($mid -and $mname -and -not $modelNameMap.ContainsKey($mid)) { $modelNameMap[$mid] = $mname }
+                        }
+                    }
+                }
+            }
+        }
+    } catch {}
+}
+$specialModelNames = @{
+    'colbox'   = 'Collision Box'
+    'colbox2'  = 'Collision Box 2'
+    'colbox3'  = 'Collision Box 3'
+    'colbox4'  = 'Collision Box 4'
+    'colbox66' = 'Collision Box 66'
+    'switch'   = 'Control Switch'
+    '200_01_1' = 'Elevator Carriage'
+    '202_01_1' = 'Alarm Switch'
+    '309_01_1' = 'Alarm Siren'
+    '320_01_1' = 'Barbed Wire Fence'
+    '500_01_1' = 'Metal Sliding Door'
+    '502_01_1' = 'Compound Security Door'
+    '503_01_1' = 'Security Gate Door'
+    '504_01_1' = 'Double Metal Door'
+    '507_01_1' = 'Office Wooden Door'
+}
+foreach ($k in $specialModelNames.Keys) {
+    $modelNameMap[$k] = $specialModelNames[$k]
+}
 $plans = [Collections.Generic.List[object]]::new()
 $index = 0
 foreach ($anchor in $candidates) {
@@ -224,7 +280,8 @@ foreach ($anchor in $candidates) {
     if ($rot.Count -lt 3 -and (Get-ObjectCategory $anchor.type) -eq 'AI') {
         $rot = @(0.0, 0.0, 6.28318)
     }
-    $plans.Add([pscustomobject]@{index=$index;taskId=$task;type=[string]$anchor.type;category=(Get-ObjectCategory $anchor.type);modelId=$model;authoredPosition=@($anchor.authoredPosition);authoredRotation=$rot;requiredTextures=$(if($textureMap.ContainsKey($model)){@($textureMap[$model])}else{@()});prefix=('obj-{0:D4}-task{1}-{2}' -f $index,(Get-SafeName $task),(Get-SafeName $model))})
+    $objName = if ($modelNameMap.ContainsKey($model)) { $modelNameMap[$model] } elseif ($anchor.name) { [string]$anchor.name } else { [string]$anchor.type }
+    $plans.Add([pscustomobject]@{index=$index;taskId=$task;objectName=$objName;type=[string]$anchor.type;category=(Get-ObjectCategory $anchor.type);modelId=$model;authoredPosition=@($anchor.authoredPosition);authoredRotation=$rot;requiredTextures=$(if($textureMap.ContainsKey($model)){@($textureMap[$model])}else{@()});prefix=('obj-{0:D4}-task{1}-{2}' -f $index,(Get-SafeName $task),(Get-SafeName $model))})
 }
 $statePath = Join-Path $ArtifactsRoot 'batch.json'
 $state = [ordered]@{level=$Level;category=$Category;selectedTypes=@($IncludeTypes);sourcePath=$sourcePath;sourceSha256=$sourceHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;totalTasks=$all.Count;renderableCandidates=$candidates.Count;selectableObjects=$plans.Count;objects=@($plans);skippedTasks=@($skipped);launchCount=1;closeCount=1;viewCount=$captureViews.Count;screenshotsExpected=($plans.Count*$captureViews.Count);status=$(if($PrepareOnly){'PREPARED'}else{'NOT_RUN'})}
