@@ -15,9 +15,11 @@
 - Added a focused graph smoke manifest: one populated, named non-cutscene
   graph per level, chosen by node count; cutscene and unknown-area graphs are
   excluded. This checks opening/focusing graphs, not editing or save/reload.
-- Validation status: the 14-level smoke run is in progress. Graph-node
-  selection/edit/save/reload and animation/patrol live validation remain
-  incomplete; the no-mistakes CLI is unavailable locally.
+- Validation: all 14 non-cutscene graph smoke runs completed on 2026-09-05,
+  with per-scenario graph-load logs and screenshots. Level 1's F11 camera
+  appeared beneath terrain; smoke success does not establish usable editing.
+  Graph-node selection/edit/save/reload and animation/patrol live validation
+  remain incomplete; the no-mistakes CLI is unavailable locally.
 
 ## Unreleased — MCP game-data integration
 
