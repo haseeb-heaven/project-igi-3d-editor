@@ -115,7 +115,12 @@ try {
     }
 } finally {
     $remaining = @(Get-Process igi1ed -ErrorAction SilentlyContinue)
-    foreach ($process in $remaining) { if (-not $process.WaitForExit(5000)) { throw "Editor still running; retained recovery backup at $backup. Close it before restoring." } }
+    foreach ($process in $remaining) {
+        if (-not $process.WaitForExit(5000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            if (-not $process.WaitForExit(5000)) { throw "Editor still running after forced cleanup; retained recovery backup at $backup." }
+        }
+    }
     foreach ($snapshot in $snapshots) {
         $dest = Join-Path $qed $snapshot.name
         Copy-Item (Join-Path $backup $snapshot.name) $dest -Force

@@ -122,6 +122,10 @@ instances use direct saved-camera capture and never receive fabricated task
 IDs. One synthetic pilot passed all ten views.
 
 Level 1 preparation completed 474/474 renderable instances and recorded 886
-non-model tasks. The full live Level 1 matrix is running resumably in
-`artifacts/e2e/level1-all-models-prepare-01`; its final pass/fail state is not
-yet claimed.
+non-model tasks. The first full live Level 1 attempt exposed a serial-editor
+cleanup failure and finished with 17 passes plus 457 lifecycle failures; it is
+not accepted as a full-level result. The pilot now force-closes a lingering
+editor after a failed capture before restoring QED files. An elevated retry of
+one synthetic Level 1 object passed all ten views and ten model-evidence files,
+with deployed QED hashes restored exactly. The all-object/all-level live
+matrix remains unclaimed pending a clean resumable run.

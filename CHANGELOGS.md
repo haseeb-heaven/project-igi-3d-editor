@@ -10,8 +10,12 @@
   `Invoke-SmartLevelModelBatch.ps1`: select one or more levels or all 14,
   select all tasks or Buildings/RigidObjects/Vehicles/AI categories, limit
   object count, prepare-only, resume, and bounded retry. Level 1 preflight
-  prepared 474/474 renderable instances; live verification is running from
-  those plans.
+  prepared 474/474 renderable instances; the full live run exposed an editor
+  cleanup failure and is not claimed as complete.
+- Hardened pilot recovery so a failed capture force-closes its own lingering
+  editor process before restoring QED files. An elevated one-object retry
+  passed all ten views, all ten model-evidence checks, and byte-verified QED
+  restoration.
 - Added DPI-aware full-client screenshots, fresh-log model transform and
   texture-assignment checks, and separately labelled terrain-hidden diagnostic
   captures. Verified ten watchtower views plus an underside diagnostic;
