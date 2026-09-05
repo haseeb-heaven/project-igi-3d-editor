@@ -52,6 +52,12 @@ if /I "%~1"=="--distinct-types" set "FLAGS=%FLAGS% -DistinctTypes"&shift&goto pa
 if /I "%~1"=="-distinct-types" set "FLAGS=%FLAGS% -DistinctTypes"&shift&goto parse
 if /I "%~1"=="--distinct-categories" set "FLAGS=%FLAGS% -DistinctCategories"&shift&goto parse
 if /I "%~1"=="-distinct-categories" set "FLAGS=%FLAGS% -DistinctCategories"&shift&goto parse
+if /I "%~1"=="--video" set "FLAGS=%FLAGS% -Video"&shift&goto parse
+if /I "%~1"=="-video" set "FLAGS=%FLAGS% -Video"&shift&goto parse
+if /I "%~1"=="--video-seconds" set "VIDEO_SECONDS=%~2"&shift&shift&goto parse
+if /I "%~1"=="-video-seconds" set "VIDEO_SECONDS=%~2"&shift&shift&goto parse
+if /I "%~1"=="--video-fps" set "VIDEO_FPS=%~2"&shift&shift&goto parse
+if /I "%~1"=="-video-fps" set "VIDEO_FPS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--prepare-only" set "FLAGS=%FLAGS% -PrepareOnly"&shift&goto parse
 if /I "%~1"=="--legacy-serial" set "FLAGS=%FLAGS% -LegacySerial"&shift&goto parse
 echo Unknown option: %~1
@@ -62,7 +68,8 @@ echo   e2e_live_test --level 5 --category buildings --maximum 3
 echo   e2e_live_test --level 5 --category rigid --maximum 3
 echo   e2e_live_test --level 5 --category vehicles --maximum 3
 echo   e2e_live_test --level 5 --distinct-types --maximum 3
-echo   e2e_live_test --level 5 --distinct-categories --maximum 4
+echo   e2e_live_test --level 5 --distinct-categories --maximum 4 --video
+echo   e2e_live_test --level 5 --video --video-seconds 5 --maximum 3
 echo   e2e_live_test --all-levels --category ai --maximum 1
 exit /b 2
 
@@ -85,6 +92,14 @@ if not defined ALL_LEVELS set "ARGS=%ARGS% -Level %LEVEL%"
 if defined OBJECT_TYPE set "ARGS=%ARGS% -ObjectTypes %OBJECT_TYPE%"
 if defined EDITOR_EXE set "ARGS=%ARGS% -EditorExePath "%EDITOR_EXE%""
 if defined ARTIFACTS set "ARGS=%ARGS% -ArtifactsRoot "%ARTIFACTS%""
+if defined VIDEO_SECONDS call :add_video_flag
+if defined VIDEO_SECONDS set "ARGS=%ARGS% -VideoSeconds %VIDEO_SECONDS%"
+if defined VIDEO_FPS set "ARGS=%ARGS% -VideoFps %VIDEO_FPS%"
+goto :after_video_flag
+:add_video_flag
+echo %FLAGS% | findstr /I /C:"-Video" >nul || set "FLAGS=%FLAGS% -Video"
+goto :eof
+:after_video_flag
 
 echo Smart live test: level=%LEVEL% objects=%OBJECTS% max=%MAX% views=%VIEWS%
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%Run-SmartTest.ps1" %ARGS% %FLAGS%

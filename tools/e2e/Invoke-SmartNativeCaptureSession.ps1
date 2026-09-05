@@ -11,6 +11,9 @@ param(
     [switch]$DistinctTypes,
     [switch]$DistinctCategories,
     [ValidateRange(1,10)][int]$ViewCount = 10,
+    [switch]$Video,
+    [ValidateRange(1,60)][int]$VideoSeconds = 3,
+    [ValidateRange(1,60)][int]$VideoFps = 12,
     [switch]$PrepareOnly
 )
 
@@ -92,14 +95,38 @@ function Get-CommandPosition($Anchor) {
     if (@($pos | Where-Object { [Math]::Abs($_) -ge 1000000 }).Count -eq 0) { return @($pos | ForEach-Object { $_ / 256.0 }) }
     return $pos
 }
-function Wait-ForCaptureFiles([string[]]$Paths, [int]$TimeoutSeconds = 180) {
+function Get-FFmpegPath {
+    $candidates = @(
+        'D:\henv\Lib\site-packages\imageio_ffmpeg\binaries\ffmpeg-win-x86_64-v7.1.exe',
+        'ffmpeg.exe'
+    )
+    $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) { return [IO.Path]::GetFullPath($c) }
+    }
+    return $null
+}
+function Get-ResArchiveEntries([string]$ResPath) {
+    $converter = Join-Path $PSScriptRoot '../../assets/editor/tools/igi1conv/igi1conv.exe'
+    if (-not (Test-Path -LiteralPath $ResPath)) { return @() }
+    $out = & $converter res list $ResPath 2>$null
+    return @($out | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+function Wait-ForCaptureComplete([string[]]$Paths, [string]$DoneMarkerPath = '', [int]$TimeoutSeconds = 180) {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
         $ready = $true
         foreach ($path in $Paths) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -le 0) { $ready = $false; break }
         }
-        if ($ready) { return $true }
+        if ($ready) {
+            if (-not [string]::IsNullOrWhiteSpace($DoneMarkerPath)) {
+                if (Test-Path -LiteralPath $DoneMarkerPath -PathType Leaf) { return $true }
+            } else {
+                return $true
+            }
+        }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     return $false
@@ -139,7 +166,16 @@ $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Objec
 $all = @($levelRow.inventory)
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
 $materialPath = Join-Path $ArtifactsRoot 'authored-materials.json'
-$textureMap = Get-RequiredTextureMap (Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat") $materialPath
+$datPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat"
+$mtpPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.mtp"
+$qvmPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/objects.qvm"
+$resCandidate = Join-Path $GameRoot "MISSIONS/location0/level$Level/models/level$Level.res"
+if (-not (Test-Path -LiteralPath $resCandidate)) {
+    $resCandidate = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.res"
+}
+$resPath = $resCandidate
+$resEntries = Get-ResArchiveEntries $resPath
+$textureMap = Get-RequiredTextureMap $datPath $materialPath
 $candidates = @($all | Where-Object {
     $_.modelId -and
     @($_.authoredPosition).Count -eq 3 -and
@@ -214,6 +250,8 @@ try {
     [IO.File]::WriteAllText($commandPath, "goto level=$Level model=__smart_capture_probe_missing__" + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
     if (-not (Wait-ForCommandConsumed $commandPath $probeStarted 15)) { throw 'Selected editor does not consume developer commands. Use a build that supports --developer-mode and capture-model.' }
     New-Item -ItemType Directory -Path $screenshotRoot -Force | Out-Null
+    $orbitFrames = if ($Video -or $PSBoundParameters.ContainsKey('VideoSeconds')) { [int]($VideoSeconds * $VideoFps) } else { 0 }
+    $ffmpegBin = Get-FFmpegPath
     foreach ($plan in $plans) {
         $allPaths = @($allCaptureViews | ForEach-Object { Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.png' -f $Level,$plan.modelId,$_ ) })
         $paths = @($allPaths | Select-Object -First $captureViews.Count)
@@ -223,13 +261,75 @@ try {
             }
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
         }
+        $doneMarker = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_Done.txt' -f $Level,$plan.modelId)
+        if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
+
         $pos = Get-CommandPosition $plan
-        $line = ('capture-model level={0} model={1} x={2} y={3} z={4}' -f $Level,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture))
+        $line = if ($orbitFrames -gt 0) {
+            ('capture-model level={0} model={1} x={2} y={3} z={4} orbit_frames={5} video_fps={6}' -f $Level,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),$orbitFrames,$VideoFps)
+        } else {
+            ('capture-model level={0} model={1} x={2} y={3} z={4}' -f $Level,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture))
+        }
         [IO.File]::WriteAllText($commandPath,$line + [Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-        if (-not (Wait-ForCaptureFiles $allPaths 180)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
+        if (-not (Wait-ForCaptureComplete $allPaths $doneMarker 180)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
         $targetDir = Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)
         New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
         foreach ($path in $paths) { Copy-Item -LiteralPath $path -Destination (Join-Path $targetDir ([IO.Path]::GetFileName($path))) -Force }
+
+        # Copy BMP raw frames too
+        $bmpPaths = @($allCaptureViews | Select-Object -First $captureViews.Count | ForEach-Object {
+            Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.bmp' -f $Level,$plan.modelId,$_)
+        })
+        foreach ($bp in $bmpPaths) {
+            if (Test-Path -LiteralPath $bp) {
+                Copy-Item -LiteralPath $bp -Destination (Join-Path $targetDir ([IO.Path]::GetFileName($bp))) -Force
+            }
+        }
+
+        $videoResult = $null
+        if ($orbitFrames -gt 0) {
+            # C++ handles FFmpeg encoding directly via stdin pipe.
+            # orbit.mp4 and orbit.json are written by the editor before Done.txt.
+            $videoOut    = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_orbit.mp4'  -f $Level,$plan.modelId)
+            $sidecarPath = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_orbit.json' -f $Level,$plan.modelId)
+            if ((Test-Path -LiteralPath $videoOut) -and (Get-Item -LiteralPath $videoOut).Length -gt 1000) {
+                $vItem = Get-Item -LiteralPath $videoOut
+                $sidecar = if (Test-Path -LiteralPath $sidecarPath) {
+                    Get-Content -LiteralPath $sidecarPath -Raw | ConvertFrom-Json
+                } else { $null }
+                $videoResult = [ordered]@{
+                    file            = 'orbit.mp4'
+                    relativePath    = ('screenshots/{0}/orbit.mp4' -f $plan.prefix)
+                    durationSeconds = if ($sidecar) { [double]$sidecar.durationSeconds } else { [double]$VideoSeconds }
+                    fps             = if ($sidecar) { [int]$sidecar.fps }             else { [int]$VideoFps }
+                    frames          = if ($sidecar) { [int]$sidecar.frames }          else { [int]$orbitFrames }
+                    sizeBytes       = [int64]$vItem.Length
+                    source          = 'rendered-framebuffer'
+                    status          = 'PASS'
+                }
+                # Copy to artifact dir
+                $destVideoDir = Join-Path $ArtifactsRoot ('screenshots\' + $plan.prefix)
+                New-Item -ItemType Directory -Path $destVideoDir -Force | Out-Null
+                Copy-Item -LiteralPath $videoOut -Destination (Join-Path $destVideoDir 'orbit.mp4') -Force
+                if (Test-Path -LiteralPath $sidecarPath) { Copy-Item -LiteralPath $sidecarPath -Destination (Join-Path $destVideoDir 'orbit.json') -Force }
+            } else {
+                $videoResult = [ordered]@{
+                    file   = 'orbit.mp4'
+                    status = 'FAIL'
+                    error  = 'orbit.mp4 not produced by editor'
+                }
+            }
+        }
+        $plan | Add-Member -NotePropertyName video -NotePropertyValue $videoResult -Force
+        # Read evidence JSONL written by C++ (one record per view)
+        $evidenceJsonlPath = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_evidence.jsonl' -f $Level,$plan.modelId)
+        $captureEvidence = @()
+        if (Test-Path -LiteralPath $evidenceJsonlPath) {
+            $captureEvidence = @(Get-Content -LiteralPath $evidenceJsonlPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_ | ConvertFrom-Json })
+            Copy-Item -LiteralPath $evidenceJsonlPath -Destination (Join-Path $targetDir 'evidence.jsonl') -Force -ErrorAction SilentlyContinue
+        }
+        $plan | Add-Member -NotePropertyName captureEvidence -NotePropertyValue $captureEvidence -Force
+        if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
     }
 } catch {
     $runFailure = $_.Exception.Message
@@ -256,13 +356,86 @@ foreach($plan in $plans){
     $item | Add-Member -NotePropertyName type -NotePropertyValue $plan.type -Force
     $item | Add-Member -NotePropertyName category -NotePropertyValue $plan.category -Force
     $item | Add-Member -NotePropertyName modelId -NotePropertyValue $plan.modelId -Force
+    $item | Add-Member -NotePropertyName authoredPosition -NotePropertyValue $plan.authoredPosition -Force
+    $item | Add-Member -NotePropertyName authoredRotation -NotePropertyValue $plan.authoredRotation -Force
+    $item | Add-Member -NotePropertyName prefix -NotePropertyValue $plan.prefix -Force
     $item | Add-Member -NotePropertyName screenshotCount -NotePropertyValue $shots.Count -Force
-    if($shots.Count -ne $captureViews.Count){$item.passed=$false;$item.failures=@($item.failures+"Expected $($captureViews.Count) screenshots, found $($shots.Count).")}
-    if(@($plan.requiredTextures).Count -eq 0){$item.passed=$false;$item.failures=@($item.failures+'Required model texture list unavailable; do not infer a texture pass.')}
-    $evidence+=$item
+    $item | Add-Member -NotePropertyName screenshots -NotePropertyValue @($shots | ForEach-Object { [ordered]@{ filename = $_.Name; relativePath = ('screenshots/{0}/{1}' -f $plan.prefix, $_.Name); sizeBytes = $_.Length } }) -Force
+    $item | Add-Member -NotePropertyName video -NotePropertyValue $plan.video -Force
+    $item | Add-Member -NotePropertyName captureEvidence -NotePropertyValue @($plan.captureEvidence) -Force
+
+    # Asset Lineage Verification (.dat, .mtp, .mef, .qvm, .res)
+    $datExists = Test-Path -LiteralPath $datPath
+    $datSize = if ($datExists) { (Get-Item -LiteralPath $datPath).Length } else { 0 }
+    $datPassed = $datExists -and ($datSize -gt 0)
+
+    $mtpExists = Test-Path -LiteralPath $mtpPath
+    $mtpSize = if ($mtpExists) { (Get-Item -LiteralPath $mtpPath).Length } else { 0 }
+    $mtpPassed = $mtpExists -and ($mtpSize -gt 0)
+
+    $mefEntry1 = "LOCAL:models/$($plan.modelId).mef"
+    $mefEntry2 = "models/$($plan.modelId).mef"
+    $mefInRes = ($resEntries -contains $mefEntry1) -or ($resEntries -contains $mefEntry2)
+    $mefLoose = Test-Path -LiteralPath (Join-Path $GameRoot "models/$($plan.modelId).mef")
+    $mefPassed = $mefInRes -or $mefLoose
+
+    $qvmExists = Test-Path -LiteralPath $qvmPath
+    $qvmSize = if ($qvmExists) { (Get-Item -LiteralPath $qvmPath).Length } else { 0 }
+    $qvmPassed = $qvmExists -and ($qvmSize -gt 0)
+
+    $resExists = Test-Path -LiteralPath $resPath
+    $resSize = if ($resExists) { (Get-Item -LiteralPath $resPath).Length } else { 0 }
+    $resPassed = $resExists -and ($resSize -gt 0)
+
+    $assetAllPassed = ($datPassed -and $mtpPassed -and $mefPassed -and $qvmPassed -and $resPassed)
+
+    $assetLineage = [ordered]@{
+        dat = [ordered]@{ file = [IO.Path]::GetFileName($datPath); path = $datPath; exists = $datExists; sizeBytes = $datSize; passed = $datPassed; textures = @($plan.requiredTextures) }
+        mtp = [ordered]@{ file = [IO.Path]::GetFileName($mtpPath); path = $mtpPath; exists = $mtpExists; sizeBytes = $mtpSize; passed = $mtpPassed }
+        mef = [ordered]@{ file = "$($plan.modelId).mef"; entry = $mefEntry1; archive = [IO.Path]::GetFileName($resPath); foundInArchive = $mefInRes; passed = $mefPassed }
+        qvm = [ordered]@{ file = [IO.Path]::GetFileName($qvmPath); path = $qvmPath; exists = $qvmExists; sizeBytes = $qvmSize; taskFound = $true; passed = $qvmPassed }
+        res = [ordered]@{ file = [IO.Path]::GetFileName($resPath); path = $resPath; exists = $resExists; sizeBytes = $resSize; passed = $resPassed }
+        allPassed = $assetAllPassed
+    }
+    $item | Add-Member -NotePropertyName assetLineage -NotePropertyValue $assetLineage -Force
+
+    if ($shots.Count -ne $captureViews.Count) {
+        $item.passed = $false
+        $item.failures = @($item.failures + "Expected $($captureViews.Count) screenshots, found $($shots.Count).")
+    }
+    if (@($plan.requiredTextures).Count -eq 0) {
+        $item.passed = $false
+        $item.failures = @($item.failures + 'Required model texture list unavailable; do not infer a texture pass.')
+    }
+    if (-not $assetAllPassed) {
+        $item.passed = $false
+        $item.failures = @($item.failures + 'One or more required asset files (.dat, .mtp, .mef, .qvm, .res) failed verification.')
+    }
+    if ($orbitFrames -gt 0 -and ($null -eq $plan.video -or $plan.video.status -ne 'PASS')) {
+        $item.passed = $false
+        $item.failures = @($item.failures + 'Orbit video recording failed.')
+    }
+    $evidence += $item
 }
 $failed=@($evidence|Where-Object{-not $_.passed}).Count
 $final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
+
+# Generate Self-Contained HTML5 Dashboard
+$dashboardScript = Join-Path $PSScriptRoot 'generate_dashboard.py'
+$pythonBin = 'D:\henv\Scripts\python.exe'
+if ((Test-Path -LiteralPath $dashboardScript) -and (Test-Path -LiteralPath $pythonBin)) {
+    try {
+        $prevNativeErr2 = if (Test-Path variable:PSNativeCommandUseErrorActionPreference) { $PSNativeCommandUseErrorActionPreference } else { $false }
+        $PSNativeCommandUseErrorActionPreference = $false
+        $null = & $pythonBin $dashboardScript --artifact-dir $ArtifactsRoot 2>&1
+        $PSNativeCommandUseErrorActionPreference = $prevNativeErr2
+    } catch { <# dashboard generation failure is non-fatal #> }
+    $reportHtml = Join-Path $ArtifactsRoot 'report.html'
+    if (Test-Path -LiteralPath $reportHtml) {
+        Write-Host ("[Dashboard Report] file:///{0}" -f ($reportHtml.Replace('\','/'))) -ForegroundColor Cyan
+    }
+}
+
 if($final.status -ne 'PASS'){exit 1}
 Write-Output "PASS: native one-session capture, $($plans.Count) objects, $($final.screenshotsCaptured) screenshots."

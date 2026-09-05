@@ -24,6 +24,9 @@ param(
     [switch]$DistinctTypes,
     [switch]$DistinctCategories,
     [ValidateRange(1, 10)][int]$ViewCount = 10,
+    [switch]$Video,
+    [ValidateRange(1, 60)][int]$VideoSeconds = 3,
+    [ValidateRange(1, 60)][int]$VideoFps = 12,
     [switch]$PrepareOnly,
     [switch]$Resume,
     [switch]$LegacySerial,
@@ -125,6 +128,11 @@ if ($LegacySerial) {
         if ($DistinctCategories) { $runnerArgs += '-DistinctCategories' }
         if ($DistinctTypes) { $runnerArgs += '-DistinctTypes' }
         if ($PrepareOnly) { $runnerArgs += '-PrepareOnly' }
+        if ($Video -or $PSBoundParameters.ContainsKey('VideoSeconds')) {
+            $runnerArgs += '-Video'
+            $runnerArgs += @('-VideoSeconds', $VideoSeconds)
+            $runnerArgs += @('-VideoFps', $VideoFps)
+        }
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $toolPath @runnerArgs
         $levelExit = $LASTEXITCODE
         $levelStatePath = Join-Path $levelRoot 'batch.json'
@@ -141,6 +149,17 @@ if ($LegacySerial) {
         $color = if ($res.status -eq 'PASS' -or $res.status -eq 'PREPARED') { 'Green' } else { 'Red' }
         $objCount = if ($res.objects) { @($res.objects).Count } elseif ($res.selectableObjects) { $res.selectableObjects } else { 0 }
         Write-Host ("  Level {0}: Category={1}, Status={2}, Objects={3}, Launches={4}, Closes={5}" -f $res.level,$(if($res.category){$res.category}else{$Category}),$res.status,$objCount,$res.launchCount,$res.closeCount) -ForegroundColor $color
+    }
+
+    # Generate Top-Level Dashboard Report
+    $dashScript = Join-Path $repoRoot 'tools\e2e\generate_dashboard.py'
+    $pythonBin = 'D:\henv\Scripts\python.exe'
+    if ((Test-Path -LiteralPath $dashScript) -and (Test-Path -LiteralPath $pythonBin)) {
+        & $pythonBin $dashScript --artifact-dir $ArtifactsRoot 2>&1 | Out-Null
+        $reportHtml = Join-Path $ArtifactsRoot 'report.html'
+        if (Test-Path -LiteralPath $reportHtml) {
+            Write-Host ("[Dashboard Report] file:///{0}" -f ($reportHtml.Replace('\','/'))) -ForegroundColor Cyan
+        }
     }
 }
 

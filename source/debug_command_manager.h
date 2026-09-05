@@ -15,6 +15,8 @@ struct DebugCommand {
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
+    int orbit_frames = 0;
+    int video_fps = 12;
 };
 
 class App; // Forward declaration
