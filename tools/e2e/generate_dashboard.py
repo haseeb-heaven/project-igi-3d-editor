@@ -13,6 +13,53 @@ try:
 except ImportError:
     HAS_PILLOW = False
 
+def load_model_names():
+    names = {}
+    base_dirs = [
+        Path(__file__).resolve().parent.parent.parent,
+        Path.cwd(),
+    ]
+    for b in base_dirs:
+        p1 = b / 'assets' / 'editor' / 'tools' / 'IGIModels.json'
+        if p1.exists():
+            try:
+                for item in json.loads(p1.read_text(encoding='utf-8-sig')):
+                    mid = item.get('ModelId') or item.get('Model ID')
+                    name = item.get('ModelName') or item.get('Name')
+                    if mid and name and mid not in names:
+                        names[mid] = name
+            except Exception: pass
+        p2 = b / 'assets' / 'misc' / 'IGIModelsAllLevel.json'
+        if p2.exists():
+            try:
+                data = json.loads(p2.read_text(encoding='utf-8-sig'))
+                for lvl, cats in data.items():
+                    if isinstance(cats, dict):
+                        for cat, items in cats.items():
+                            if isinstance(items, list):
+                                for it in items:
+                                    mid = it.get('Model ID')
+                                    name = it.get('Name') or it.get('Type')
+                                    if isinstance(it.get('Model'), dict):
+                                        mid = mid or it['Model'].get('ID')
+                                        name = name or it['Model'].get('Name')
+                                    if mid and name and mid not in names:
+                                        names[mid] = name
+            except Exception: pass
+    return names
+
+MODEL_NAMES = load_model_names()
+
+def get_display_name(model_id, fallback_type=None, explicit_name=None):
+    raw = explicit_name or MODEL_NAMES.get(model_id) or fallback_type or model_id
+    if raw.isupper() or '_' in raw:
+        words = raw.split('_')
+        clean = ' '.join(w.capitalize() for w in words)
+        if clean.lower() == 'watertower':
+            return 'WaterTower'
+        return clean
+    return raw
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -183,6 +230,8 @@ def build_report(data_sources, output_path, artifact_root):
         task_id  = obj.get('taskId', 'N/A')
         category = obj.get('category', 'Unknown')
         obj_type = obj.get('type', 'Unknown')
+        obj_name = obj.get('objectName') or obj.get('name')
+        disp_name = get_display_name(model_id, fallback_type=obj_type, explicit_name=obj_name)
         prefix   = obj.get('prefix', f'obj-{idx:04d}')
         lvl      = obj.get('_level', '?')
         root_dir = Path(obj.get('_root', str(artifact_root)))
@@ -302,13 +351,13 @@ def build_report(data_sources, output_path, artifact_root):
                 fail_html += f'<div>&#9888; {f}</div>'
             fail_html += '</div>'
 
-        search_data = f'{model_id} {task_id} {category} {obj_type}'.lower()
+        search_data = f'{disp_name} {model_id} {task_id} {category} {obj_type}'.lower()
 
         cards.append(f'''
 <div class="card" data-search="{search_data}" data-cat="{category}" data-status="{status_txt}">
   <div class="card-header">
     <span class="badge {status_cls}">{status_icon} {status_txt}</span>
-    <span style="color:var(--cyan);font-size:13px">L{lvl} · {model_id}</span>
+    <span style="color:var(--cyan);font-size:13px">L{lvl} · {disp_name} ({model_id})</span>
     <span style="color:var(--muted);font-size:11px">{obj_type} · {category}</span>
     <span style="color:var(--muted);font-size:11px;margin-left:auto">task {task_id}</span>
   </div>
