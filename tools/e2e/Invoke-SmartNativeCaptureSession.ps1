@@ -214,6 +214,7 @@ $skipped = @($all | Where-Object {
         elseif (@($_.authoredRotation).Count -ne 3 -and (Get-ObjectCategory $_.type) -ne 'AI') { 'missing authored rotation' }
         else { 'no authored textures in level DAT' }
     [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;category=(Get-ObjectCategory $_.type);modelId=$_.modelId;status='SKIPPED';reason=$reason}
+}) + $notSelected
 $modelNameMap = @{}
 foreach ($catalogRel in @('../../assets/editor/tools/IGIModels.json', '../../assets/misc/IGIModels.json')) {
     $catalogPath = Join-Path $PSScriptRoot $catalogRel
