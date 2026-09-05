@@ -235,11 +235,6 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     auto& obj = objects[target_idx];
     app_->selected_object_index_ = target_idx;
 
-    // Ensure all building lightmaps are loaded before capturing — they are not
-    // loaded by default; the user normally triggers this via the Escape menu.
-    // This call is idempotent (re-uploading the same OLM textures is harmless).
-    app_->CalculateLightmapsForAllObjects();
-
     Logger::Get().Log(LogLevel::INFO, "[CaptureModel] Picked object " + std::to_string(target_idx) +
         ", modelId=" + obj.modelId + ", taskId=" + obj.taskId + ", hasLightmap=" +
         std::to_string(app_->renderer_.HasLightmapForTask(LightmapTaskKey(obj))));
