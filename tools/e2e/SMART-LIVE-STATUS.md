@@ -23,6 +23,31 @@ human-workflow plan across levels 1–14.
 
 ## Next work
 
+### Physical capture and state-evidence progress
+
+The runner now supports opt-in `screenshot.client=true` with per-monitor DPI
+awareness restored after capture. A live test confirmed 1920x1080 client pixels;
+the former 1536x864 screenshots clipped the right/bottom of this desktop.
+
+`SmartModelEvidence.ps1` checks fresh per-launch loader position/orientation and
+texture assignment counts. All ten views in `artifacts/e2e/smart-watchtower-physical-10`
+passed those checks (one matching transform and one 19/19 assignment record per
+view), and source/QED restoration checks passed. The hand-authored camera fixture
+removes the unit test's dependency on local game assets. Four focused script
+tests pass, including negative cases for missing/ambiguous state, wrong transforms,
+missing assignments, and invalid client-capture/draw-mask options.
+
+The supplemental `artifacts/e2e/smart-watchtower-below-diagnostic` capture uses
+the existing `-draw_parts -2` option. Terrain-hidden diagnostic intent is retained
+in the manifest; the original terrain-occluded image is not replaced. The floor
+and supports are visible underneath. Remaining diagonal images were inspected.
+The extracted mesh dump has 19 material groups, slots 0–7 (slot 7 repeated), and
+zero attachments. Its 19/8 count warning is not alone evidence of missing textures.
+
+Pilot acceptance is still not automatic: individual live texture identities,
+projected-bounds/occlusion checks, and a consolidated evidence acceptance report
+remain to be implemented. No expansion to all objects has occurred.
+
 ### Saved-camera pilot progress
 
 `New-SmartCameraPlan.ps1` now calculates eight horizontal poses and above/below

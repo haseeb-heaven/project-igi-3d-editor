@@ -2,6 +2,10 @@
 
 ## Unreleased — Editor workflow E2E (`e2e-editor-harness`)
 
+- Added DPI-aware full-client screenshots, fresh-log model transform and
+  texture-assignment checks, and separately labelled terrain-hidden diagnostic
+  captures. Verified ten watchtower views plus an underside diagnostic;
+  individual material identity and automated visual acceptance remain pending.
 - Added a pilot-only smart live testing generator and fail-closed evidence
   scaffold; corrected duplicate horizontal orbit mappings with a regression
   test. The first watchtower capture exposed an F11 graph-target mismatch and

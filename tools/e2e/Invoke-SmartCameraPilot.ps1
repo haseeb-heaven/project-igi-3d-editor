@@ -2,15 +2,27 @@
 param(
     [Parameter(Mandatory)][string]$CameraPlan,
     [Parameter(Mandatory)][string]$ArtifactsRoot,
+    [string]$InventoryPath = 'artifacts/task6-metadata-manifest.json',
     [string]$GameRoot = 'D:\IGI1',
     [ValidateRange(1,14)][int]$Level = 1,
     [ValidatePattern('^\d+$')][string]$TaskId = '1105',
     [ValidateRange(1,10)][int]$ViewCount = 1,
+    [string]$ViewName = '',
+    [switch]$HideTerrainDiagnostic,
     [switch]$AllowConfigMutation
 )
 $ErrorActionPreference = 'Stop'
 if (-not $AllowConfigMutation) { throw 'Requires -AllowConfigMutation; QED config is temporarily changed and restored.' }
 if (Get-Process igi1ed -ErrorAction SilentlyContinue) { throw 'Close the existing editor before the serial pilot.' }
+. (Join-Path $PSScriptRoot 'SmartModelEvidence.ps1')
+$inventory = Get-Content -LiteralPath $InventoryPath -Raw | ConvertFrom-Json
+$levelInventory = @($inventory.levels | Where-Object level -eq $Level)
+if ($levelInventory.Count -ne 1) { throw 'Missing or ambiguous level inventory.' }
+$anchors = @($levelInventory[0].inventory | Where-Object taskId -eq $TaskId)
+if ($anchors.Count -ne 1) { throw 'Missing or ambiguous object anchor.' }
+$anchor = $anchors[0]
+$sourcePath = Join-Path $GameRoot $levelInventory[0].sourcePath
+if ((Get-FileHash $sourcePath -Algorithm SHA256).Hash -ne $anchor.sourceHash) { throw 'Stale object inventory.' }
 $plan = Get-Content -LiteralPath $CameraPlan -Raw | ConvertFrom-Json
 if (@($plan.views).Count -ne 10) { throw 'Expected ten planned camera views.' }
 foreach ($view in $plan.views) {
@@ -40,7 +52,9 @@ $config = Join-Path $qed 'qedconfig.qsc'
 $original = Get-Content -LiteralPath $config -Raw
 $invariant = [Globalization.CultureInfo]::InvariantCulture
 try {
-    foreach ($view in @($plan.views | Select-Object -First $ViewCount)) {
+    $views = if ($ViewName) { @($plan.views | Where-Object name -eq $ViewName) } else { @($plan.views | Select-Object -First $ViewCount) }
+    if ($views.Count -eq 0) { throw 'Requested camera view is absent.' }
+    foreach ($view in $views) {
         $text = $original
         $position = @($view.position | ForEach-Object { ([double]$_).ToString('R',$invariant) }) -join ', '
         # An all-zero orientation means "use spawn orientation" in the editor.
@@ -55,23 +69,30 @@ try {
         }
         [IO.File]::WriteAllText($config,$text,[Text.UTF8Encoding]::new($false))
         $steps = @(
-            @{id='launch';type='launch_editor';level=$Level},
+            @{id='launch';type='launch_editor';level=$Level;drawParts=$(if($HideTerrainDiagnostic){-2}else{-1})},
             @{id='loaded';type='wait_for_log';pattern="\[App\] LoadLevel\(\) COMPLETE for level $Level";timeoutSeconds=120},
             @{id='health';type='assert_process'},
             @{id='find';type='key';key='CTRL+SHIFT+I'},
             @{id='id';type='type_text';text=$TaskId},
             @{id='select';type='key';key='ENTER'},
             @{id='settle';type='wait';seconds=2},
-            @{id='capture';type='screenshot';name=$view.name},
+            @{id='capture';type='screenshot';name=$view.name;client=$true},
             @{id='window';type='capture_window_state'},
             @{id='close';type='close_editor';force=$true}
         )
         $manifest = Join-Path $ArtifactsRoot ($view.name+'.json')
-        @{scenarios=@(@{name=$view.name;level=$Level;requiresMutation=$false;steps=$steps})} | ConvertTo-Json -Depth 10 | Set-Content $manifest -Encoding UTF8
+        @{diagnosticTerrainHidden=[bool]$HideTerrainDiagnostic;scenarios=@(@{name=$view.name;level=$Level;requiresMutation=$false;steps=$steps})} | ConvertTo-Json -Depth 10 | Set-Content $manifest -Encoding UTF8
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'editor-e2e.ps1') -GameRoot $GameRoot -ScenarioPath $manifest -ArtifactsRoot (Join-Path $ArtifactsRoot $view.name)
         if ($LASTEXITCODE -ne 0) { throw "Capture failed for $($view.name)." }
         # Retain a stable log snapshot before the next launch appends to it.
         Copy-Item (Join-Path $GameRoot 'igi1ed.log') (Join-Path $ArtifactsRoot ($view.name+'.log'))
+        $run = Get-Content (Join-Path (Join-Path $ArtifactsRoot $view.name) 'run.json') -Raw | ConvertFrom-Json
+        $logBytes = [IO.File]::ReadAllBytes((Join-Path $ArtifactsRoot ($view.name+'.log')))
+        $offset = [int]$run.results[0].logOffset
+        $freshLog = [Text.Encoding]::UTF8.GetString($logBytes,$offset,$logBytes.Length-$offset)
+        $evidence = Test-SmartModelLog $freshLog $anchor
+        $evidence | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $ArtifactsRoot ($view.name+'-model-evidence.json')) -Encoding UTF8
+        if (-not $evidence.passed) { throw "Model evidence failed: $($evidence.failures -join '; ')" }
     }
 } finally {
     $remaining = @(Get-Process igi1ed -ErrorAction SilentlyContinue)
@@ -82,4 +103,5 @@ try {
         if ((Get-FileHash $dest -Algorithm SHA256).Hash -ne $snapshot.sha256) { throw "Restore mismatch: $dest; backup retained at $backup" }
     }
     'Original QED files restored and hashes verified.'
+    if ((Get-FileHash $sourcePath -Algorithm SHA256).Hash -ne $anchor.sourceHash) { throw 'Level source changed during capture; investigate before further runs.' }
 }

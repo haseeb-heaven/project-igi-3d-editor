@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$ObjPath = 'artifacts/e2e/watchtower-assets/405_01_1.obj')
+param([string]$ObjPath = (Join-Path $PSScriptRoot 'fixtures/camera-box.obj'))
 $ErrorActionPreference = 'Stop'
 $plan = & (Join-Path $PSScriptRoot 'New-SmartCameraPlan.ps1') -ObjPath $ObjPath -Position @(100,200,300)
 if ($plan.views.Count -ne 10) { throw 'Missing view coverage' }

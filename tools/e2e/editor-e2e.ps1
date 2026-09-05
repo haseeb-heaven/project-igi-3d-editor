@@ -125,7 +125,10 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root)
     if ([string]::IsNullOrWhiteSpace($id)) { Fail "Scenario '$ScenarioName' step $Index is missing id." }
     if ([string]::IsNullOrWhiteSpace($type) -or $script:SupportedSteps -notcontains $type) { Fail "Scenario '$ScenarioName' step '$id' has unsupported type '$type'." }
     switch ($type) {
-        'launch_editor' { Assert-Integer (Get-Property $Step 'level') "$ScenarioName/$id level" 1 14 }
+        'launch_editor' {
+            Assert-Integer (Get-Property $Step 'level') "$ScenarioName/$id level" 1 14
+            if ($null -ne (Get-Property $Step 'drawParts')) { Assert-Integer (Get-Property $Step 'drawParts') "$ScenarioName/$id drawParts" -2 127 }
+        }
         'wait_for_window' { if ($null -ne (Get-Property $Step 'timeoutSeconds')) { Assert-Integer (Get-Property $Step 'timeoutSeconds') "$ScenarioName/$id timeoutSeconds" 1 300 } }
         'wait_for_log' { if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'pattern'))) { Fail "$ScenarioName/$id requires pattern." } }
         'key' { if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'key'))) { Fail "$ScenarioName/$id requires key." } }
@@ -168,6 +171,8 @@ function Validate-Step($Step, [string]$ScenarioName, [int]$Index, [string]$Root)
         }
         'screenshot' {
             if ([string]::IsNullOrWhiteSpace([string](Get-Property $Step 'name'))) { Fail "$ScenarioName/$id requires name." }
+            if ($null -ne (Get-Property $Step 'client') -and (Get-Property $Step 'client') -isnot [bool]) { Fail "$ScenarioName/$id client must be boolean." }
+            if ((Get-Property $Step 'client') -and $null -ne (Get-Property $Step 'region')) { Fail "$ScenarioName/$id client capture cannot also declare a desktop region." }
             if ($null -ne (Get-Property $Step 'region')) { Assert-Region (Get-Property $Step 'region') "$ScenarioName/$id region" }
         }
         'assert_screenshot_region' {
@@ -323,6 +328,7 @@ public static class EditorE2E_Native {
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out Rect lpRect);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
@@ -455,11 +461,22 @@ function Focus-Editor($Process) {
     [void][EditorE2E_Native]::SetFocus($Process.MainWindowHandle)
     Start-Sleep -Milliseconds 120
 }
-function Capture-Screenshot([string]$Path, $Region) {
+function Capture-Screenshot([string]$Path, $Region, [IntPtr]$ClientWindow = [IntPtr]::Zero) {
     Add-Type -AssemblyName System.Drawing
     Add-Type -AssemblyName System.Windows.Forms
+    $previousDpi = [IntPtr]::Zero
+    if ($ClientWindow -ne [IntPtr]::Zero) {
+        $previousDpi = [EditorE2E_Native]::SetThreadDpiAwarenessContext([IntPtr](-4))
+        if ($previousDpi -eq [IntPtr]::Zero) { Fail 'Cannot enable physical-pixel client capture.' }
+    }
+    try {
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $x = 0; $y = 0; $width = $bounds.Width; $height = $bounds.Height
+    if ($ClientWindow -ne [IntPtr]::Zero) {
+        $client = [EditorE2E_Native]::ClientRect($ClientWindow)
+        $x=$client[4]; $y=$client[5]; $width=$client[2]; $height=$client[3]
+        if ($width -le 0 -or $height -le 0) { Fail 'Cannot resolve client capture bounds.' }
+    }
     if ($null -ne $Region) { $x = [int]$Region[0]; $y = [int]$Region[1]; $width = [int]$Region[2]; $height = [int]$Region[3] }
     $bitmap = [System.Drawing.Bitmap]::new($width, $height)
     try {
@@ -468,6 +485,9 @@ function Capture-Screenshot([string]$Path, $Region) {
         $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally { $bitmap.Dispose() }
     return [pscustomobject]@{ path = $Path; x = $x; y = $y; width = $width; height = $height }
+    } finally {
+        if ($previousDpi -ne [IntPtr]::Zero) { [void][EditorE2E_Native]::SetThreadDpiAwarenessContext($previousDpi) }
+    }
 }
 function Get-ImageMetrics([string]$Path, $Region) {
     Add-Type -AssemblyName System.Drawing
@@ -839,6 +859,7 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                         $logOffset = if (Test-Path -LiteralPath $logPath) { (Get-Item -LiteralPath $logPath).Length } else { 0 }
                         $wmi = [wmiclass]'\\.\root\cimv2:Win32_Process'
                         $command = '"' + $Editor + '" --game-path "' + $Root + '" -level ' + $level
+                        if ($null -ne $step.drawParts) { $command += ' -draw_parts ' + [int]$step.drawParts }
                         $created = $wmi.Create($command, $Root)
                         if ([int]$created.ReturnValue -ne 0) { Fail "WMI launch failed with return code $($created.ReturnValue)." }
                         $process = Wait-ForEditor ([int]$created.ProcessId) 45
@@ -1015,9 +1036,11 @@ function Invoke-Scenario($Scenario, [string]$Root, [string]$Editor, [string]$Out
                     'screenshot' {
                         Focus-Editor $process
                         $file = Join-Path $scenarioDir (([string]$step.name) + '.png')
-                        $latestScreenshot = Capture-Screenshot $file $step.region
+                        $captureWindow = if ($step.client) { $process.MainWindowHandle } else { [IntPtr]::Zero }
+                        $latestScreenshot = Capture-Screenshot $file $step.region $captureWindow
                         $screenshots[[string]$step.name] = $latestScreenshot
                         $record.screenshot = $file
+                        $record.captureBounds = $latestScreenshot
                     }
                     'assert_screenshot_region' {
                         if ($null -eq $latestScreenshot) { Fail 'Image assertion requires a preceding screenshot step.' }
