@@ -117,7 +117,7 @@ if ($LegacySerial) {
     $exitCode = 0
     foreach ($levelNumber in $levels) {
         $levelRoot = Join-Path $ArtifactsRoot ('level' + $levelNumber)
-        $runnerArgs = @('-ArtifactsRoot', $levelRoot, '-GameRoot', 'D:\IGI1', '-Level', $levelNumber, '-Category', $Category, '-ViewCount', $ViewCount)
+        $runnerArgs = @('-ArtifactsRoot', $levelRoot, '-GameRoot', 'D:\IGI1', '-Level', $levelNumber, '-Category', $Category, '-ViewCount', $ViewCount, '-NoDashboard')
         if (-not [string]::IsNullOrWhiteSpace($EditorExePath)) { $runnerArgs += @('-EditorExePath', $EditorExePath) }
         if ($MaxObjects -gt 0) { $runnerArgs += @('-MaxObjects', $MaxObjects) }
         $selectedTypes = @()

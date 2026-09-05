@@ -14,7 +14,8 @@ param(
     [switch]$Video,
     [ValidateRange(1,60)][int]$VideoSeconds = 3,
     [ValidateRange(1,60)][int]$VideoFps = 12,
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+    [switch]$NoDashboard
 )
 
 $ErrorActionPreference = 'Stop'
@@ -431,19 +432,21 @@ $failed=@($evidence|Where-Object{-not $_.passed}).Count
 $final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
 
-# Generate Self-Contained HTML5 Dashboard
-$dashboardScript = Join-Path $PSScriptRoot 'generate_dashboard.py'
-$pythonBin = 'D:\henv\Scripts\python.exe'
-if ((Test-Path -LiteralPath $dashboardScript) -and (Test-Path -LiteralPath $pythonBin)) {
-    try {
-        $prevNativeErr2 = if (Test-Path variable:PSNativeCommandUseErrorActionPreference) { $PSNativeCommandUseErrorActionPreference } else { $false }
-        $PSNativeCommandUseErrorActionPreference = $false
-        $null = & $pythonBin $dashboardScript --artifact-dir $ArtifactsRoot 2>&1
-        $PSNativeCommandUseErrorActionPreference = $prevNativeErr2
-    } catch { <# dashboard generation failure is non-fatal #> }
-    $reportHtml = Join-Path $ArtifactsRoot 'report.html'
-    if (Test-Path -LiteralPath $reportHtml) {
-        Write-Host ("[Dashboard Report] file:///{0}" -f ($reportHtml.Replace('\','/'))) -ForegroundColor Cyan
+# Generate Self-Contained HTML5 Dashboard (skipped when called from Run-SmartTest to avoid duplicate reports)
+if (-not $NoDashboard) {
+    $dashboardScript = Join-Path $PSScriptRoot 'generate_dashboard.py'
+    $pythonBin = 'D:\henv\Scripts\python.exe'
+    if ((Test-Path -LiteralPath $dashboardScript) -and (Test-Path -LiteralPath $pythonBin)) {
+        try {
+            $prevNativeErr2 = if (Test-Path variable:PSNativeCommandUseErrorActionPreference) { $PSNativeCommandUseErrorActionPreference } else { $false }
+            $PSNativeCommandUseErrorActionPreference = $false
+            $null = & $pythonBin $dashboardScript --artifact-dir $ArtifactsRoot 2>&1
+            $PSNativeCommandUseErrorActionPreference = $prevNativeErr2
+        } catch { <# dashboard generation failure is non-fatal #> }
+        $reportHtml = Join-Path $ArtifactsRoot 'report.html'
+        if (Test-Path -LiteralPath $reportHtml) {
+            Write-Host ("[Dashboard Report] file:///{0}" -f ($reportHtml.Replace('\','/'))) -ForegroundColor Cyan
+        }
     }
 }
 
