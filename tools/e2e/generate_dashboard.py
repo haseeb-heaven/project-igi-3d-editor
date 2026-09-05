@@ -146,6 +146,16 @@ def embed_image(path):
     data = base64.b64encode(p.read_bytes()).decode()
     return f'data:{mime};base64,{data}'
 
+def relative_asset(path, output_dir):
+    """Return a portable URL from the report to a captured asset."""
+    p = Path(path)
+    if not p.exists():
+        return ''
+    try:
+        return os.path.relpath(p.resolve(), Path(output_dir).resolve()).replace('\\', '/')
+    except Exception:
+        return p.name
+
 def make_contact_sheet(png_paths, out_path, thumb_w=320):
     """Create a contact sheet PNG from a list of image paths."""
     if not HAS_PILLOW: return False
@@ -382,7 +392,7 @@ def build_report(data_sources, output_path, artifact_root):
         if png_files:
             cs_path = shot_dir / 'contact_sheet.png'
             if make_contact_sheet(png_files, str(cs_path)):
-                contact_uri = embed_image(str(cs_path))
+                contact_uri = relative_asset(cs_path, output_dir)
 
         # GIF from exterior views
         gif_uri = ''
@@ -396,7 +406,7 @@ def build_report(data_sources, output_path, artifact_root):
         if ext_pngs:
             gif_path = shot_dir / 'preview.gif'
             if make_gif(ext_pngs, str(gif_path)):
-                gif_uri = embed_image(str(gif_path))
+                gif_uri = relative_asset(gif_path, output_dir)
 
         # Orbit video
         video_info = obj.get('video') or {}
@@ -438,7 +448,7 @@ def build_report(data_sources, output_path, artifact_root):
         # --- Tab 1: Images Content ---
         thumbs_html = ''
         for pf in png_files[:10]:
-            uri = embed_image(pf)
+            uri = relative_asset(pf, output_dir)
             fname = Path(pf).name
             m_v = re.search(r'_(Ext_\d+|Int_\d+)\.png$', fname)
             v_name = m_v.group(1) if m_v else fname
