@@ -13,6 +13,8 @@
 #include <chrono>
 #include <direct.h>
 #include <cstdio>
+#include <algorithm>
+#include <cmath>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -298,12 +300,80 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     const int H = app_->window_state_.viewport_height_;
     const int bgraBytes = W * H * 4;
 
-    // Camera constants
-    static constexpr double kOrbitRadius    = 40000.0;
-    static constexpr double kExteriorHeight = 20000.0;
-    static constexpr double kInteriorHeight =  9750.0;
+    // ── Category & Framing Calculation ──────────────────────────────────────
+    const bool isAI = (obj.type.rfind("Human", 0) == 0) || (obj.type == "AI") || (obj.type.find("Soldier") != std::string::npos);
+    const bool isVehicle = (obj.type == "Car" || obj.type == "Heli" || obj.type == "Train" || obj.type == "Plane" || obj.type == "CarAI");
+    const bool isBuilding = obj.isBuilding || (obj.type == "Building");
+
+    // Query mesh extents (in MEF units, 1 MEF unit = 40.96 engine units)
+    glm::vec3 meshExt = app_->renderer_.GetMeshExtents(obj.modelId, obj.isBuilding);
+    const float scale = (obj.scale > 0.0f) ? obj.scale : 1.0f;
+    const float kMefToEngine = 40.96f * scale;
+
+    glm::vec3 extEngine = meshExt * kMefToEngine;
+    float boundRadius = glm::length(extEngine);
+
+    double targetX = obj.pos.x;
+    double targetY = obj.pos.y;
+    double targetZ = obj.pos.z;
+
+    double kOrbitRadius    = 650.0;
+    double kExteriorHeight = 300.0;
+    double kInteriorHeight = 150.0;
+
+    if (isAI) {
+        // AI characters: height ~ 460 engine units (1.8m)
+        // Frame full body clearly: "for AI it can be little far but not that much"
+        kOrbitRadius    = 600.0;
+        kExteriorHeight = 180.0;
+        targetZ        += 180.0; // center on torso
+        kInteriorHeight = targetZ;
+    } else if (isVehicle) {
+        // Vehicles: cars, trucks, APCs, helicopters, planes
+        if (boundRadius > 50.0f) {
+            kOrbitRadius = std::clamp((double)boundRadius * 1.8, 1400.0, 5000.0);
+            targetZ     += std::max((double)extEngine.z, 120.0);
+        } else {
+            kOrbitRadius = 2500.0;
+            targetZ     += 200.0;
+        }
+        kExteriorHeight = kOrbitRadius * 0.35;
+        kInteriorHeight = targetZ;
+    } else if (isBuilding) {
+        // Buildings: water towers, hangars, offices, bunkers
+        // "for buildings are too much it can be far away but not that far OK right now only for the buildings it can be too far but not that too far"
+        if (boundRadius > 50.0f) {
+            kOrbitRadius = std::clamp((double)boundRadius * 1.4, 2500.0, 9500.0);
+            targetZ     += std::max((double)extEngine.z * 0.6, 350.0);
+        } else {
+            kOrbitRadius = 7500.0;
+            targetZ     += 1000.0;
+        }
+        kExteriorHeight = kOrbitRadius * 0.40;
+        kInteriorHeight = std::clamp((double)extEngine.z * 0.5, 400.0, 2500.0);
+    } else {
+        // Rigid objects: chair, table, desk, barrel, computer, phone, alarm switch, pickups
+        // "it needs to be very close for smaller objects OK rigid objects are very smaller they needs to be very close"
+        // "like chair and table and smaller objects it needs to be camera needs to be very close to them OK"
+        if (boundRadius > 10.0f) {
+            kOrbitRadius = std::clamp((double)boundRadius * 1.35, 250.0, 750.0);
+            targetZ     += std::max((double)extEngine.z * 0.5, 40.0);
+        } else {
+            // Very small props or unmeasured
+            kOrbitRadius = 380.0;
+            targetZ     += 40.0;
+        }
+        kExteriorHeight = kOrbitRadius * 0.35;
+        kInteriorHeight = targetZ;
+    }
+
     const float extPitchDeg = -glm::degrees(static_cast<float>(
         std::atan2(kExteriorHeight, kOrbitRadius)));
+
+    Logger::Get().Log(LogLevel::INFO, "[CaptureModel] Camera framing: radius=" +
+        std::to_string(kOrbitRadius) + " height=" + std::to_string(kExteriorHeight) +
+        " pitch=" + std::to_string(extPitchDeg) + " targetZ=" + std::to_string(targetZ) +
+        " boundRadius=" + std::to_string(boundRadius) + " type=" + obj.type);
 
     // Output paths
     _mkdir("screenshots");
@@ -365,19 +435,32 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     // 6 exterior shots (60 degrees apart)
     for (int angle = 0; angle < 360; angle += 60) {
         const float rad = glm::radians((float)angle);
-        const float camX = (float)obj.pos.x - std::sin(rad) * (float)kOrbitRadius;
-        const float camY = (float)obj.pos.y - std::cos(rad) * (float)kOrbitRadius;
-        const float camZ = (float)obj.pos.z + (float)kExteriorHeight;
+        const float camX = (float)targetX - std::sin(rad) * (float)kOrbitRadius;
+        const float camY = (float)targetY - std::cos(rad) * (float)kOrbitRadius;
+        const float camZ = (float)targetZ + (float)kExteriorHeight;
         char suffix[32]; snprintf(suffix, sizeof(suffix), "Ext_%03d", angle);
         capture_still(suffix, camX, camY, camZ, (float)((360 - angle) % 360), extPitchDeg);
     }
 
-    // 4 interior shots (90 degrees apart)
+    // 4 interior / detail shots (90 degrees apart)
     for (int angle = 0; angle < 360; angle += 90) {
         char suffix[32]; snprintf(suffix, sizeof(suffix), "Int_%03d", angle);
-        capture_still(suffix,
-            (float)obj.pos.x, (float)obj.pos.y, (float)obj.pos.z + (float)kInteriorHeight,
-            (float)((360 - angle) % 360), 0.0f);
+        if (isBuilding) {
+            // Inside the building looking outwards
+            capture_still(suffix,
+                (float)targetX, (float)targetY, (float)(obj.pos.z + kInteriorHeight),
+                (float)((360 - angle) % 360), 0.0f);
+        } else {
+            // Close-up detail inspection view from 4 cardinal directions
+            const float rad = glm::radians((float)angle);
+            const float closeRadius = (float)std::max(kOrbitRadius * 0.55, 220.0);
+            const float closeCamX = (float)targetX - std::sin(rad) * closeRadius;
+            const float closeCamY = (float)targetY - std::cos(rad) * closeRadius;
+            const float closeCamZ = (float)targetZ + (float)(kExteriorHeight * 0.25);
+            const float closePitch = -glm::degrees(static_cast<float>(
+                std::atan2(kExteriorHeight * 0.25, closeRadius)));
+            capture_still(suffix, closeCamX, closeCamY, closeCamZ, (float)((360 - angle) % 360), closePitch);
+        }
     }
 
     // Orbit video: PBO ping-pong -> FFmpeg stdin pipe
@@ -420,9 +503,9 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
 
             // Warm-up render to seed PBO[0] before the loop
             {
-                const float camX = (float)obj.pos.x - 0.0f * (float)kOrbitRadius;
-                const float camY = (float)obj.pos.y - 1.0f * (float)kOrbitRadius;
-                const float camZ = (float)obj.pos.z + (float)kExteriorHeight;
+                const float camX = (float)targetX - 0.0f * (float)kOrbitRadius;
+                const float camY = (float)targetY - 1.0f * (float)kOrbitRadius;
+                const float camZ = (float)targetZ + (float)kExteriorHeight;
                 set_camera(camX, camY, camZ, 0.0f, extPitchDeg);
                 app_->OnDisplay();
             }
@@ -435,9 +518,9 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                 const float angle_deg = (360.0f * (float)frame) / (float)cmd.orbit_frames;
                 const float rad = glm::radians(angle_deg);
                 set_camera(
-                    (float)obj.pos.x - std::sin(rad) * (float)kOrbitRadius,
-                    (float)obj.pos.y - std::cos(rad) * (float)kOrbitRadius,
-                    (float)obj.pos.z + (float)kExteriorHeight,
+                    (float)targetX - std::sin(rad) * (float)kOrbitRadius,
+                    (float)targetY - std::cos(rad) * (float)kOrbitRadius,
+                    (float)targetZ + (float)kExteriorHeight,
                     std::fmod(360.0f - angle_deg, 360.0f), extPitchDeg);
                 app_->OnDisplay(); // render next frame
 
