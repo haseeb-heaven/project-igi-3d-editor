@@ -16,7 +16,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateRange(1, 14)][int[]]$Level = @(1),
+    [object[]]$Level = @(1),
     [switch]$AllLevels,
     [string]$Category = 'All',
     [string[]]$ObjectTypes = @(),
@@ -64,6 +64,44 @@ if ($AllObjects) {
     $MaxObjects = 0
 }
 
+$resolvedLevels = [System.Collections.Generic.List[int]]::new()
+foreach ($item in $Level) {
+    if ($null -eq $item) { continue }
+    $clean = "$item".Trim()
+    if ([string]::IsNullOrWhiteSpace($clean)) { continue }
+    if ($clean -ieq 'all' -or $clean -eq '1-14' -or $clean -eq '1..14') {
+        $AllLevels = $true
+        break
+    }
+    if ($clean -match '^(\d+)\.\.(\d+)$' -or $clean -match '^(\d+)-(\d+)$') {
+        $start = [int]$Matches[1]
+        $end = [int]$Matches[2]
+        if ($start -le $end) {
+            for ($i = $start; $i -le $end; $i++) {
+                if ($i -ge 1 -and $i -le 14) { $resolvedLevels.Add($i) }
+            }
+        }
+    } elseif ($clean -match ',') {
+        foreach ($sub in ($clean -split ',')) {
+            $num = 0
+            if ([int]::TryParse($sub.Trim(), [ref]$num) -and $num -ge 1 -and $num -le 14) {
+                $resolvedLevels.Add($num)
+            }
+        }
+    } else {
+        $num = 0
+        if ([int]::TryParse($clean, [ref]$num) -and $num -ge 1 -and $num -le 14) {
+            $resolvedLevels.Add($num)
+        }
+    }
+}
+if ($AllLevels) {
+    $Level = @(1..14)
+} else {
+    if ($resolvedLevels.Count -eq 0) { $resolvedLevels.Add(1) }
+    $Level = @($resolvedLevels | Select-Object -Unique | Sort-Object)
+}
+
 $levelStr = if ($AllLevels) { 'all' } else { ($Level -join '-') }
 if ([string]::IsNullOrWhiteSpace($ArtifactsRoot)) {
     $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
@@ -92,10 +130,10 @@ switch ($Category.ToLowerInvariant()) {
 
 $categoryTypes = @{
     All = @()
-    Buildings = @('Building','Door','Terminal','Switch','AlarmControl','Elevator','Fence','Cabinet')
-    RigidObjects = @('EditRigidObj','Static','Dynamic','ExplodeObject','RotatingObject','StationaryGun','SCamera','AlarmLight','Siren','Generator','GenericPickup','GenericTBA','Radio','Wire')
+    Buildings = @('Building')
+    RigidObjects = @('EditRigidObj','Static','Dynamic','ExplodeObject','RotatingObject','StationaryGun','SCamera','AlarmLight','Siren','Generator','GenericPickup','GenericTBA','Radio','Wire','Door','Terminal','Switch','AlarmControl','Elevator','Fence','Cabinet')
     Vehicles = @('Car','Heli','Train','Plane','CarAI')
-    AI = @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanPlayer','HumanAI')
+    AI = @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanAI')
 }
 
 if ($LegacySerial) {

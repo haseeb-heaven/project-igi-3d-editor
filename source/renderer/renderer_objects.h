@@ -101,6 +101,16 @@ public:
                            int draw_parts,
                            const glm::vec3& camera_pos,
                            int selected_object_index);
+    int CountObjectVisiblePixels(GLuint ubo_mats,
+                                 const std::vector<LevelObject>& objects,
+                                 int draw_parts,
+                                 const glm::vec3& camera_pos,
+                                 int selected_object_index,
+                                 int target_object_index,
+                                 int viewport_width,
+                                 int viewport_height,
+                                 const std::vector<float>& scene_depth,
+                                 int* target_id_pixels = nullptr);
     static bool IsSkippedModelId(const std::string& modelId);
     glm::vec3 GetMeshExtents(const std::string& modelId, bool isBuilding);
     glm::vec3 GetMeshCenter(const std::string& modelId, bool isBuilding);

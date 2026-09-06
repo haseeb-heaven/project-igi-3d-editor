@@ -69,6 +69,9 @@ if (WIN32)
     ICON ${PROJECT_SOURCE_DIR}/assets/igi-editor.ico
     OUTPUT_NAME "igi1ed"
   )
+  if (MSVC)
+    target_link_options(igi-editor PRIVATE "/LARGEADDRESSAWARE")
+  endif()
 endif()
 
 target_precompile_headers(igi-editor PRIVATE source/pch.h)
@@ -275,6 +278,7 @@ add_executable(igi_tests
     tests/test_mef_native_lightmap.cpp
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
+    tests/test_capture_camera.cpp
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
     tests/test_audio_asset_resolver.cpp

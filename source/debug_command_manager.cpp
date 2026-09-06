@@ -5,6 +5,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../third_party/tinygltf/stb_image_write.h"
 #include "renderer/renderer.h"
+#include "capture_camera.h"
 #include "level/level.h"
 #include "level/level_objects.h"
 #include <fstream>
@@ -313,67 +314,94 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     glm::vec3 extEngine = meshExt * kMefToEngine;
     float boundRadius = glm::length(extEngine);
 
-    double targetX = obj.pos.x;
-    double targetY = obj.pos.y;
-    double targetZ = obj.pos.z;
+    // Compute true 3D center offset rotated by object's orientation
+    glm::vec3 meshCenter = app_->renderer_.GetMeshCenter(obj.modelId, obj.isBuilding);
+    glm::mat4 rotMat(1.0f);
+    rotMat = glm::rotate(rotMat, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f));
+    rotMat = glm::rotate(rotMat, (float)obj.rot.x, glm::vec3(1.0f, 0.0f, 0.0f));
+    rotMat = glm::rotate(rotMat, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::vec3 centerOffset = glm::vec3(rotMat * glm::vec4(meshCenter * kMefToEngine, 1.0f));
 
-    double kOrbitRadius    = 650.0;
-    double kExteriorHeight = 300.0;
-    double kInteriorHeight = 150.0;
+    double targetX = obj.pos.x + centerOffset.x;
+    double targetY = obj.pos.y + centerOffset.y;
+    double targetZ = obj.pos.z + centerOffset.z;
+
+    double kOrbitRadius    = 400.0;
+    double kExteriorHeight = 150.0;
+    double kInteriorHeight = 100.0;
 
     if (isAI) {
-        // AI characters: height ~ 460 engine units (1.8m)
-        // Frame full body clearly: "for AI it can be little far but not that much"
-        kOrbitRadius    = 600.0;
-        kExteriorHeight = 180.0;
-        targetZ        += 180.0; // center on torso
+        // AI characters: boundRadius ~ 4345
+        // User requested: "very close camera man fix it move far away now little far fix this man listen this this one"
+        // Move camera back to ~7000 units so full body from head to boots is cleanly framed with generous margins.
+        kOrbitRadius    = std::clamp((double)boundRadius * 1.65, 7000.0, 7500.0);
+        kExteriorHeight = kOrbitRadius * 0.20;
         kInteriorHeight = targetZ;
     } else if (isVehicle) {
         // Vehicles: cars, trucks, APCs, helicopters, planes
-        if (boundRadius > 50.0f) {
-            kOrbitRadius = std::clamp((double)boundRadius * 1.8, 1400.0, 5000.0);
-            targetZ     += std::max((double)extEngine.z, 120.0);
-        } else {
-            kOrbitRadius = 2500.0;
-            targetZ     += 200.0;
-        }
-        kExteriorHeight = kOrbitRadius * 0.35;
+        kOrbitRadius    = std::clamp((double)boundRadius * 1.35, 6000.0, 25000.0);
+        targetZ        += std::max((double)extEngine.z * 0.4, 80.0);
+        kExteriorHeight = kOrbitRadius * 0.30;
         kInteriorHeight = targetZ;
     } else if (isBuilding) {
         // Buildings: water towers, hangars, offices, bunkers
-        // "for buildings are too much it can be far away but not that far OK right now only for the buildings it can be too far but not that too far"
-        if (boundRadius > 50.0f) {
-            kOrbitRadius = std::clamp((double)boundRadius * 1.4, 2500.0, 9500.0);
-            targetZ     += std::max((double)extEngine.z * 0.6, 350.0);
-        } else {
-            kOrbitRadius = 7500.0;
-            targetZ     += 1000.0;
-        }
-        kExteriorHeight = kOrbitRadius * 0.40;
-        kInteriorHeight = std::clamp((double)extEngine.z * 0.5, 400.0, 2500.0);
+        // "for buildings are too much it can be far away but not that far OK"
+        kOrbitRadius    = igi::ResolveBuildingCaptureOrbitRadius(boundRadius);
+        targetZ        += std::max((double)extEngine.z * 0.45, 250.0);
+        kExteriorHeight = kOrbitRadius * 0.30;
+        kInteriorHeight = std::clamp((double)extEngine.z * 0.5, 800.0, 5000.0);
     } else {
         // Rigid objects: chair, table, desk, barrel, computer, phone, alarm switch, pickups
-        // "it needs to be very close for smaller objects OK rigid objects are very smaller they needs to be very close"
-        // "like chair and table and smaller objects it needs to be camera needs to be very close to them OK"
-        if (boundRadius > 10.0f) {
-            kOrbitRadius = std::clamp((double)boundRadius * 1.35, 250.0, 750.0);
-            targetZ     += std::max((double)extEngine.z * 0.5, 40.0);
-        } else {
-            // Very small props or unmeasured
-            kOrbitRadius = 380.0;
-            targetZ     += 40.0;
-        }
-        kExteriorHeight = kOrbitRadius * 0.35;
+        // Scale proportionally to boundRadius so large weapons (Dragunov, boundRadius 2700)
+        // and small props are both framed perfectly without clipping
+        kOrbitRadius    = std::clamp((double)boundRadius * 1.40, 450.0, 8000.0);
+        targetZ        += std::max((double)extEngine.z * 0.4, 20.0);
+        kExteriorHeight = kOrbitRadius * 0.28;
         kInteriorHeight = targetZ;
     }
 
     const float extPitchDeg = -glm::degrees(static_cast<float>(
         std::atan2(kExteriorHeight, kOrbitRadius)));
 
+    const float detailRadius = isBuilding
+        ? (float)kOrbitRadius
+        : isAI
+            ? (float)kOrbitRadius * 0.85f
+            : std::max((float)kOrbitRadius * 0.65f, 300.0f);
+    const float exteriorDistance = std::sqrt(
+        (float)(kOrbitRadius * kOrbitRadius +
+                kExteriorHeight * kExteriorHeight));
+    const float detailDistance = isBuilding
+        ? exteriorDistance
+        : std::sqrt(detailRadius * detailRadius +
+                    (float)(kExteriorHeight * 0.25 * kExteriorHeight * 0.25));
+    const float captureNearPlane = igi::ResolveCaptureNearPlane(
+        std::min(exteriorDistance, detailDistance), RENDER_Z_NEAR);
+    struct ScopedCaptureNearPlane {
+        float original = RENDER_Z_NEAR;
+        explicit ScopedCaptureNearPlane(float replacement) { RENDER_Z_NEAR = replacement; }
+        ~ScopedCaptureNearPlane() { RENDER_Z_NEAR = original; }
+    } scopedCaptureNearPlane(captureNearPlane);
+    struct ScopedCaptureDrawParts {
+        App* app;
+        int original;
+        ScopedCaptureDrawParts(App* target, int original_parts)
+            : app(target), original(original_parts) {}
+        ~ScopedCaptureDrawParts() { app->SetDrawParts(original); }
+    } scopedCaptureDrawParts(app_, app_->GetDrawParts());
+
+    // Clear terrain so hills/ground do not clip through models
+    int captureDrawParts = scopedCaptureDrawParts.original & ~Renderer::DRAW_TERRAIN;
+    // For props, AI, and vehicles: hide enclosing buildings so indoor objects are never occluded by outside walls
+    if (!isBuilding) {
+        captureDrawParts &= ~Renderer::DRAW_BUILDINGS;
+    }
+    app_->SetDrawParts(captureDrawParts);
+
     Logger::Get().Log(LogLevel::INFO, "[CaptureModel] Camera framing: radius=" +
         std::to_string(kOrbitRadius) + " height=" + std::to_string(kExteriorHeight) +
         " pitch=" + std::to_string(extPitchDeg) + " targetZ=" + std::to_string(targetZ) +
-        " boundRadius=" + std::to_string(boundRadius) + " type=" + obj.type);
+        " boundRadius=" + std::to_string(boundRadius) + " near=" + std::to_string(captureNearPlane));
 
     // Output paths
     _mkdir("screenshots");
@@ -399,6 +427,7 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
 
     // Sync still capture: double-render -> glReadPixels -> BMP + PNG + evidence
     std::vector<unsigned char> bgra(bgraBytes);
+    std::vector<float> sceneDepth(static_cast<size_t>(W) * H);
     auto capture_still = [&](const char* suffix,
                               float camX, float camY, float camZ,
                               float yawDeg, float pitchDeg) {
@@ -407,7 +436,48 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         app_->OnDisplay(); // present to front
         glReadBuffer(GL_FRONT);
         glReadPixels(0, 0, W, H, GL_BGRA, GL_UNSIGNED_BYTE, bgra.data());
+        glReadPixels(0, 0, W, H, GL_DEPTH_COMPONENT, GL_FLOAT, sceneDepth.data());
         glReadBuffer(GL_BACK);
+
+        int targetIdPixels = 0;
+        int visiblePixels = app_->renderer_.CountObjectVisiblePixels(
+            app_->view_define_, objects, captureDrawParts,
+            app_->selected_object_index_, target_idx, sceneDepth, &targetIdPixels);
+
+        // If occluded by a prop/crate in front of camera, step forward towards target
+        float actualCamX = camX, actualCamY = camY, actualCamZ = camZ;
+        if (visiblePixels == 0 && !isBuilding) {
+            for (float stepFraction : { 0.75f, 0.55f, 0.40f }) {
+                float testX = (float)targetX + (camX - (float)targetX) * stepFraction;
+                float testY = (float)targetY + (camY - (float)targetY) * stepFraction;
+                float testZ = (float)targetZ + (camZ - (float)targetZ) * stepFraction;
+                set_camera(testX, testY, testZ, yawDeg, pitchDeg);
+                app_->OnDisplay();
+                app_->OnDisplay();
+                glReadBuffer(GL_FRONT);
+                glReadPixels(0, 0, W, H, GL_DEPTH_COMPONENT, GL_FLOAT, sceneDepth.data());
+                glReadBuffer(GL_BACK);
+                int testIdPixels = 0;
+                int testVisible = app_->renderer_.CountObjectVisiblePixels(
+                    app_->view_define_, objects, captureDrawParts,
+                    app_->selected_object_index_, target_idx, sceneDepth, &testIdPixels);
+                if (testVisible > 0) {
+                    actualCamX = testX; actualCamY = testY; actualCamZ = testZ;
+                    visiblePixels = testVisible;
+                    targetIdPixels = testIdPixels;
+                    glReadBuffer(GL_FRONT);
+                    glReadPixels(0, 0, W, H, GL_BGRA, GL_UNSIGNED_BYTE, bgra.data());
+                    glReadBuffer(GL_BACK);
+                    break;
+                }
+            }
+        }
+
+        const double totalPixels = static_cast<double>(W) * H;
+        const double targetCoverage = (totalPixels > 0.0)
+            ? (static_cast<double>(visiblePixels) / totalPixels)
+            : 0.0;
+        const bool targetVisible = (visiblePixels > 0);
 
         char bmpPath[256], pngPath[256];
         snprintf(bmpPath, sizeof(bmpPath), "screenshots/Level%02d_Model%s_%s.bmp",
@@ -421,19 +491,24 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                    << ",\"modelId\":" << JsonStr(cmd.modelId)
                    << ",\"taskId\":"  << JsonStr(obj.taskId)
                    << ",\"view\":"    << JsonStr(std::string(suffix))
-                   << ",\"camera\":{\"x\":" << camX << ",\"y\":" << camY
-                   << ",\"z\":" << camZ << ",\"yaw\":" << yawDeg
+                   << ",\"camera\":{\"x\":" << actualCamX << ",\"y\":" << actualCamY
+                   << ",\"z\":" << actualCamZ << ",\"yaw\":" << yawDeg
                    << ",\"pitch\":" << pitchDeg << "}"
                    << ",\"bmp\":" << JsonStr(std::string(bmpPath))
                    << ",\"png\":" << JsonStr(std::string(pngPath))
                    << ",\"source\":\"rendered-framebuffer\""
                    << ",\"rendered\":true"
+                   << ",\"targetVisible\":" << (targetVisible ? "true" : "false")
+                   << ",\"targetPixels\":" << visiblePixels
+                   << ",\"targetIdPixels\":" << targetIdPixels
+                   << ",\"targetCoverage\":" << targetCoverage
                    << "}\n";
         }
     };
 
-    // 6 exterior shots (60 degrees apart)
-    for (int angle = 0; angle < 360; angle += 60) {
+    // 12 exterior shots (30 degrees apart) give flat or occluded models enough
+    // camera directions for the runner to retain clear, GPU-proven views.
+    for (int angle = 0; angle < 360; angle += 30) {
         const float rad = glm::radians((float)angle);
         const float camX = (float)targetX - std::sin(rad) * (float)kOrbitRadius;
         const float camY = (float)targetY - std::cos(rad) * (float)kOrbitRadius;
@@ -453,12 +528,11 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         } else {
             // Close-up detail inspection view from 4 cardinal directions
             const float rad = glm::radians((float)angle);
-            const float closeRadius = (float)std::max(kOrbitRadius * 0.55, 220.0);
-            const float closeCamX = (float)targetX - std::sin(rad) * closeRadius;
-            const float closeCamY = (float)targetY - std::cos(rad) * closeRadius;
+            const float closeCamX = (float)targetX - std::sin(rad) * detailRadius;
+            const float closeCamY = (float)targetY - std::cos(rad) * detailRadius;
             const float closeCamZ = (float)targetZ + (float)(kExteriorHeight * 0.25);
             const float closePitch = -glm::degrees(static_cast<float>(
-                std::atan2(kExteriorHeight * 0.25, closeRadius)));
+                std::atan2(kExteriorHeight * 0.25, detailRadius)));
             capture_still(suffix, closeCamX, closeCamY, closeCamZ, (float)((360 - angle) % 360), closePitch);
         }
     }
@@ -475,11 +549,12 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                  cmd.level, cmd.modelId.c_str());
 
         std::string ffmpegBin = FindFFmpegBin();
-        // Pipe: raw BGRA -> libx264/yuv420p MP4
+        // Pipe: raw BGRA (bottom-up from OpenGL) -> vflip -> libx264/yuv420p MP4
         char pipeCmd[1024];
         snprintf(pipeCmd, sizeof(pipeCmd),
             "%s -y -f rawvideo -pix_fmt bgra -s %dx%d -r %d -i - "
-            "-c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart "
+            "-vf vflip "
+            "-c:v libx264 -preset ultrafast -pix_fmt yuv420p -crf 20 -movflags +faststart "
             "%s 2>screenshots/ffmpeg_err.log",
             ffmpegBin.c_str(), W, H, videoFps, videoPath);
 

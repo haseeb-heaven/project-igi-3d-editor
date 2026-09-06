@@ -20,7 +20,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$allCaptureViews = @('Ext_000','Ext_060','Ext_120','Ext_180','Ext_240','Ext_300','Int_000','Int_090','Int_180','Int_270')
+$allCaptureViews = @('Ext_000','Ext_030','Ext_060','Ext_090','Ext_120','Ext_150','Ext_180','Ext_210','Ext_240','Ext_270','Ext_300','Ext_330','Int_000','Int_090','Int_180','Int_270')
 $captureViews = @($allCaptureViews | Select-Object -First $ViewCount)
 if (-not $PrepareOnly -and (Get-Process igi1ed -ErrorAction SilentlyContinue)) { throw 'Close the existing editor before a native capture session.' }
 if ([string]::IsNullOrWhiteSpace($EditorExePath)) {
@@ -67,7 +67,7 @@ function Get-SafeName([string]$Value) { return ($Value -replace '[^A-Za-z0-9_-]'
 function Get-ObjectCategory([string]$Type) {
     if ($Type -in @('HumanSoldier','HumanSoldierFemale','HumanSoldierRPG','HumanPlayer','HumanAI','AISquad','PatrolPath','PatrolPathCommand')) { return 'AI' }
     if ($Type -in @('Car','Heli','Train','Plane','CarAI')) { return 'Vehicles' }
-    if ($Type -in @('Building','Door','Terminal','Switch','AlarmControl','Elevator','Fence','Cabinet')) { return 'Buildings' }
+    if ($Type -eq 'Building') { return 'Buildings' }
     return 'RigidObjects'
 }
 function Get-RequiredTextureMap([string]$DatPath, [string]$OutputPath) {
@@ -183,6 +183,9 @@ $ModelIds = @($ModelIds | ForEach-Object { $_ -split ',' } | Where-Object { -not
 $all = @($levelRow.inventory)
 if ($Category -and $Category -ne 'All') {
     $all = @($all | Where-Object { (Get-ObjectCategory $_.type) -eq $Category })
+    if ($Category -eq 'AI') {
+        $all = @($all | Where-Object { $_.modelId -ne '000_01_1' -and $_.type -ne 'HumanPlayer' })
+    }
 }
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
 if ($ModelIds.Count) { $all = @($all | Where-Object { $ModelIds -contains [string]$_.modelId }) }
@@ -340,7 +343,6 @@ try {
     $ffmpegBin = Get-FFmpegPath
     foreach ($plan in $plans) {
         $allPaths = @($allCaptureViews | ForEach-Object { Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.png' -f $Level,$plan.modelId,$_ ) })
-        $paths = @($allPaths | Select-Object -First $captureViews.Count)
         foreach ($path in $allPaths) {
             if (-not $fileBackups.ContainsKey($path)) {
                 $fileBackups[$path] = if(Test-Path -LiteralPath $path){[IO.File]::ReadAllBytes($path)}else{$null}
@@ -348,7 +350,11 @@ try {
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
         }
         $doneMarker = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_Done.txt' -f $Level,$plan.modelId)
+        $videoOut    = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_orbit.mp4'  -f $Level,$plan.modelId)
+        $sidecarPath = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_orbit.json' -f $Level,$plan.modelId)
         if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
+        if (Test-Path -LiteralPath $videoOut) { Remove-Item -LiteralPath $videoOut -Force }
+        if (Test-Path -LiteralPath $sidecarPath) { Remove-Item -LiteralPath $sidecarPath -Force }
 
         $pos = Get-CommandPosition $plan
         $line = if ($orbitFrames -gt 0) {
@@ -360,17 +366,6 @@ try {
         if (-not (Wait-ForCaptureComplete $allPaths $doneMarker 180)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
         $targetDir = Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)
         New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-        foreach ($path in $paths) { Copy-Item -LiteralPath $path -Destination (Join-Path $targetDir ([IO.Path]::GetFileName($path))) -Force }
-
-        # Copy BMP raw frames too
-        $bmpPaths = @($allCaptureViews | Select-Object -First $captureViews.Count | ForEach-Object {
-            Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.bmp' -f $Level,$plan.modelId,$_)
-        })
-        foreach ($bp in $bmpPaths) {
-            if (Test-Path -LiteralPath $bp) {
-                Copy-Item -LiteralPath $bp -Destination (Join-Path $targetDir ([IO.Path]::GetFileName($bp))) -Force
-            }
-        }
 
         $videoResult = $null
         if ($orbitFrames -gt 0) {
@@ -414,7 +409,24 @@ try {
             $captureEvidence = @(Get-Content -LiteralPath $evidenceJsonlPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_ | ConvertFrom-Json })
             Copy-Item -LiteralPath $evidenceJsonlPath -Destination (Join-Path $targetDir 'evidence.jsonl') -Force -ErrorAction SilentlyContinue
         }
-        $plan | Add-Member -NotePropertyName captureEvidence -NotePropertyValue $captureEvidence -Force
+        $selectedEvidence = @($captureEvidence |
+            Sort-Object -Descending -Property @{ Expression = {
+                if ($_.targetVisible -eq $true -and $null -ne $_.targetCoverage) { [double]$_.targetCoverage } else { -1.0 }
+            }} |
+            Select-Object -First $captureViews.Count)
+        foreach ($record in $selectedEvidence) {
+            $pngName = [IO.Path]::GetFileName([string]$record.png)
+            $pngPath = Join-Path $screenshotRoot $pngName
+            if (Test-Path -LiteralPath $pngPath) {
+                Copy-Item -LiteralPath $pngPath -Destination (Join-Path $targetDir $pngName) -Force
+            }
+            $bmpName = [IO.Path]::ChangeExtension($pngName, '.bmp')
+            $bmpPath = Join-Path $screenshotRoot $bmpName
+            if (Test-Path -LiteralPath $bmpPath) {
+                Copy-Item -LiteralPath $bmpPath -Destination (Join-Path $targetDir $bmpName) -Force
+            }
+        }
+        $plan | Add-Member -NotePropertyName captureEvidence -NotePropertyValue $selectedEvidence -Force
         if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
     }
 } catch {

@@ -301,4 +301,54 @@ int Renderer_Objects::PickObjectAtScreen(int x, int y, int w, int h,
     return (id == 0) ? -1 : id - 1;
 }
 
+int Renderer_Objects::CountObjectVisiblePixels(
+    GLuint ubo_mats, const std::vector<LevelObject>& objects, int draw_parts,
+    const glm::vec3& camera_pos, int selected_object_index,
+    int target_object_index, int viewport_width, int viewport_height,
+    const std::vector<float>& scene_depth, int* target_id_pixels) {
+    if (!pick_shader_prog_ || target_object_index < 0 ||
+        target_object_index >= static_cast<int>(objects.size()) ||
+        viewport_width <= 0 || viewport_height <= 0 ||
+        scene_depth.size() != static_cast<size_t>(viewport_width) * viewport_height) {
+        return 0;
+    }
+    if (viewport_width != pick_fbo_w_ || viewport_height != pick_fbo_h_) {
+        InitPickingFBO(viewport_width, viewport_height);
+    }
+    if (!pick_fbo_) return 0;
+
+    DrawForPicking(ubo_mats, objects, draw_parts, camera_pos,
+                   selected_object_index);
+
+    std::vector<uint8_t> pixels(
+        static_cast<size_t>(pick_fbo_w_) * static_cast<size_t>(pick_fbo_h_) * 3);
+    std::vector<float> pick_depth(
+        static_cast<size_t>(pick_fbo_w_) * static_cast<size_t>(pick_fbo_h_));
+    glBindFramebuffer(GL_FRAMEBUFFER, pick_fbo_);
+    glReadPixels(0, 0, pick_fbo_w_, pick_fbo_h_, GL_RGB, GL_UNSIGNED_BYTE,
+                 pixels.data());
+    glReadPixels(0, 0, pick_fbo_w_, pick_fbo_h_, GL_DEPTH_COMPONENT, GL_FLOAT,
+                 pick_depth.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    const int target_id = target_object_index + 1;
+    int id_pixels = 0;
+    int visible_pixels = 0;
+    for (size_t offset = 0; offset < pixels.size(); offset += 3) {
+        const int id = (static_cast<int>(pixels[offset]) << 16) |
+                       (static_cast<int>(pixels[offset + 1]) << 8) |
+                        static_cast<int>(pixels[offset + 2]);
+        const size_t pixel_index = offset / 3;
+        if (id == target_id) {
+            ++id_pixels;
+            if (scene_depth[pixel_index] < 1.0f &&
+                std::abs(scene_depth[pixel_index] - pick_depth[pixel_index]) <= 0.0001f) {
+                ++visible_pixels;
+            }
+        }
+    }
+    if (target_id_pixels) *target_id_pixels = id_pixels;
+    return visible_pixels;
+}
+
 // ─── Draw ─────────────────────────────────────────────────────────────────────

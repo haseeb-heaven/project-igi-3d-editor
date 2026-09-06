@@ -21,11 +21,13 @@ if "%~1"=="" goto normalize
 if /I "%~1"=="--level" set "LEVEL=%~2"&shift&shift&goto parse
 if /I "%~1"=="--levels" set "LEVEL=%~2"&shift&shift&goto parse
 if /I "%~1"=="-level" set "LEVEL=%~2"&shift&shift&goto parse
+if /I "%~1"=="-levels" set "LEVEL=%~2"&shift&shift&goto parse
 if /I "%~1"=="--all-levels" set "ALL_LEVELS=1"&shift&goto parse
 if /I "%~1"=="-all-levels" set "ALL_LEVELS=1"&shift&goto parse
 if /I "%~1"=="--category" set "OBJECTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="-category" set "OBJECTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--categories" set "OBJECTS=%~2"&shift&shift&goto parse
+if /I "%~1"=="-categories" set "OBJECTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--objects" set "OBJECTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="-objects" set "OBJECTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--ai" set "OBJECTS=AI"&shift&goto parse
@@ -43,6 +45,9 @@ if /I "%~1"=="-vehicle" set "OBJECTS=Vehicles"&shift&goto parse
 if /I "%~1"=="-vehicles" set "OBJECTS=Vehicles"&shift&goto parse
 if /I "%~1"=="--object-type" set "OBJECT_TYPE=%~2"&shift&shift&goto parse
 if /I "%~1"=="--model" set "MODEL_ID=%~2"&shift&shift&goto parse
+if /I "%~1"=="--models" set "MODEL_ID=%~2"&shift&shift&goto parse
+if /I "%~1"=="-model" set "MODEL_ID=%~2"&shift&shift&goto parse
+if /I "%~1"=="-models" set "MODEL_ID=%~2"&shift&shift&goto parse
 if /I "%~1"=="--editor-exe" set "EDITOR_EXE=%~2"&shift&shift&goto parse
 if /I "%~1"=="--artifacts" set "ARTIFACTS=%~2"&shift&shift&goto parse
 if /I "%~1"=="--maximum" set "MAX=%~2"&shift&shift&goto parse
