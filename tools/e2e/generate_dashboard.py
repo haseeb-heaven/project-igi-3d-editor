@@ -550,7 +550,42 @@ def build_report(data_sources, output_path, artifact_root):
   {tex_html}
 </div>'''
 
-        # --- Tab 5: Logs & Evidence ---
+        # --- Tab 5: Visual integrity ---
+        visual_bundle = obj.get('visualIntegrity') or {}
+        visual_result = visual_bundle.get('visualIntegrity') or {}
+        visual_status = visual_result.get('status', obj.get('visualIntegrityStatus', 'INCONCLUSIVE'))
+        visual_findings = visual_result.get('findings') or []
+        visual_rows = ''.join(
+            f'<tr><td>{f.get("rule", "?")}</td><td>{f.get("part", "-")}</td>'
+            f'<td>{f.get("viewIndex", "-")}</td><td>{f.get("observedPixels", "-")}</td>'
+            f'<td>{f.get("requiredPixels", "-")}</td><td>{f.get("reason", "")}</td></tr>'
+            for f in visual_findings)
+        visual_table = f'''<table>
+  <thead><tr><th>Rule</th><th>Part</th><th>View</th><th>Observed</th><th>Required</th><th>Reason</th></tr></thead>
+  <tbody>{visual_rows}</tbody>
+</table>''' if visual_rows else '<div style="color:var(--muted)">No visual-integrity findings.</div>'
+        overlay_html = ''
+        for ev in evidence_records[:10]:
+            overlay = ev.get('visualOverlay')
+            if overlay:
+                overlay_path = shot_dir / Path(overlay).name
+                overlay_uri = relative_asset(overlay_path, output_dir)
+                if overlay_uri:
+                    overlay_html += f'''<div class="thumb-card" onclick="openModal('{overlay_uri}')">
+  <img src="{overlay_uri}" alt="diagnostic overlay" loading="lazy" />
+  <div class="thumb-lbl">{ev.get('view', 'view')} diagnostic</div>
+</div>'''
+        visual_pane_html = f'''<div class="kv-box">
+  <div class="section-title" style="font-size:10px;margin-bottom:8px">Target-Scoped Visual Integrity</div>
+  {kv('Status', bool_badge(visual_status == 'PASS', visual_status))}
+  {kv('Expected Parts', str(len(visual_bundle.get('expectedParts') or [])))}
+  {kv('Views Checked', str(visual_result.get('viewsChecked', 0)))}
+  {visual_table}
+</div>
+<div class="section-title" style="margin-top:16px">Diagnostic Overlays</div>
+<div class="gallery">{overlay_html or '<div style="color:var(--muted)">No diagnostic overlays captured.</div>'}</div>'''
+
+        # --- Tab 6: Logs & Evidence ---
         ev_rows = ''
         for ev in evidence_records[:15]:
             view_name = ev.get('view', '?')
@@ -595,6 +630,7 @@ def build_report(data_sources, output_path, artifact_root):
     <button class="tab-btn" data-tab="video" onclick="switchTab('{idx}', 'video')">&#x1F3A5; Video</button>
     <button class="tab-btn" data-tab="transform" onclick="switchTab('{idx}', 'transform')">&#x1F4CD; Position &amp; Orientation</button>
     <button class="tab-btn" data-tab="assets" onclick="switchTab('{idx}', 'assets')">&#x1F4E6; Assets</button>
+    <button class="tab-btn" data-tab="visual" onclick="switchTab('{idx}', 'visual')">&#x1F50D; Visual Integrity</button>
     <button class="tab-btn" data-tab="evidence" onclick="switchTab('{idx}', 'evidence')">&#x1F4DC; Logs &amp; Evidence</button>
   </div>
   <div class="tab-content">
@@ -609,6 +645,9 @@ def build_report(data_sources, output_path, artifact_root):
     </div>
     <div class="tab-pane" id="pane-{idx}-assets">
       {assets_pane_html}
+    </div>
+    <div class="tab-pane" id="pane-{idx}-visual">
+      {visual_pane_html}
     </div>
     <div class="tab-pane" id="pane-{idx}-evidence">
       {evidence_pane_html}

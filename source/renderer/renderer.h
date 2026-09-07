@@ -725,6 +725,13 @@ public:
 			vd.pos_, selected_object_index, target_object_index,
 			vd.viewport_width_, vd.viewport_height_, scene_depth, target_id_pixels);
 	}
+	Renderer_Objects::VisualEvidence CaptureObjectVisualEvidence(
+		const view_define_s& vd, const std::vector<LevelObject>& objects,
+		int target_object_index, const std::vector<float>& scene_depth) {
+		SetupUBOMats(vd);
+		return objects_.CaptureObjectVisualEvidence(ubo_mats_, objects, target_object_index,
+			vd.viewport_width_, vd.viewport_height_, scene_depth);
+	}
 	// Pass-throughs for ATTA promotion (see Renderer_Objects).
 	static constexpr int kAttaPickBase = Renderer_Objects::kAttaPickBase;
 	bool GetAttaPickEntry(int entry, AttaPickEntry& out) const { return objects_.GetAttaPickEntry(entry, out); }

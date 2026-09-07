@@ -10,6 +10,12 @@ $ErrorActionPreference = 'Stop'
 function Fail([string]$Message) { throw [System.InvalidOperationException]::new($Message) }
 function Full([string]$Path) { return [System.IO.Path]::GetFullPath($Path) }
 function Values($Value) { if ($null -eq $Value) { return @() }; return @($Value) }
+function Get-Sha256([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+    finally { $sha.Dispose(); $stream.Dispose() }
+}
 function RequireFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { Fail "Required file is missing: $Path" }
 }
@@ -316,7 +322,7 @@ try {
         # and corpus resolution cover the full importable set.
         $allModelArchives = @(Get-ChildItem -LiteralPath $locationRoot -Directory | Where-Object { $_.Name -match '^level([0-9]+)$' } | ForEach-Object { Join-Path $_.FullName ("models\" + $_.Name + '.res') } | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) + $archiveCandidates
         $modelLods = Get-ModelLods $converter $allModelArchives
-        $sourceHash = (Get-FileHash -LiteralPath $objectsQvm -Algorithm SHA256).Hash.ToLowerInvariant()
+        $sourceHash = Get-Sha256 $objectsQvm
         $inventory = New-Object System.Collections.Generic.List[object]
         $taskIds = New-Object System.Collections.Generic.List[string]
         $taskCallData = @{}
@@ -574,7 +580,7 @@ try {
         schemaVersion=1
         generatedBy='New-EditorWorkflowManifest.ps1'
         generatedFrom=$GameRoot
-        catalogueHash=(Get-FileHash -LiteralPath $cataloguePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        catalogueHash=(Get-Sha256 $cataloguePath)
         inventoryHash=$inventoryHash
         levels=$levels.ToArray()
         scenarios=$scenarios.ToArray()

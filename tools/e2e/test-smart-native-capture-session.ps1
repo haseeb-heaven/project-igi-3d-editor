@@ -8,6 +8,11 @@ if ($runnerText -notmatch '--developer-mode') { throw 'Native capture must start
 if ($runnerText -notmatch 'Selected editor does not consume developer commands') { throw 'Native capture must fail clearly when the selected editor lacks its command watcher.' }
 if ($runnerText -notmatch '__smart_capture_probe_missing__') { throw 'Native capture must probe that the developer command watcher consumes a harmless missing-model command.' }
 if ($runnerText -notmatch 'Wait-ForCaptureComplete \$allPaths') { throw 'Native capture must wait for every emitted view before restoring shared screenshot paths.' }
+if ($runnerText -notmatch "VisualIntegrityPolicy = 'Required'") { throw 'Native capture must require a visual-integrity PASS by default.' }
+foreach ($evidenceField in @('visualObjectMask','visualMaterialMask','visualDepth','visualOverlay')) {
+    if ($runnerText -notmatch $evidenceField) { throw "Native capture does not package $evidenceField evidence." }
+}
+if ($runnerText -notmatch 'loader evidence cannot satisfy this gate') { throw 'Visual-integrity failure must remain distinct from loader evidence.' }
 
 $editorExePath = (Resolve-Path (Join-Path $PSScriptRoot '../../bin/Release/igi1ed.exe')).Path
 $root = Join-Path ([IO.Path]::GetTempPath()) ('igi-native-session-' + [Guid]::NewGuid().ToString('N'))

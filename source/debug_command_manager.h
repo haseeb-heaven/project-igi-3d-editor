@@ -10,6 +10,7 @@ struct DebugCommand {
     std::string type;
     int level = -1;
     int val = 0;
+    std::string taskId;
     std::string modelId;
     bool has_pos = false;
     double x = 0.0;

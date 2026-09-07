@@ -279,6 +279,7 @@ add_executable(igi_tests
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
     tests/test_capture_camera.cpp
+    tests/test_visual_integrity.cpp
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
     tests/test_audio_asset_resolver.cpp
@@ -360,6 +361,7 @@ target_sources(igi_tests PRIVATE
     source/renderer/fnt_parser.cpp
     source/level/terrain_files.cpp
     source/renderer/mef_native.cpp
+    source/visual_integrity.cpp
     source/utils_igi1conv.cpp
     source/game_clock.cpp
     source/level/qvm_native_registry.cpp

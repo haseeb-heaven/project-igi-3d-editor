@@ -5,6 +5,13 @@
  *****************************************************************************/
 #include "renderer_objects_internal.h"
 
+// Keep the diagnostic transform identical to the regular object draw path.
+// This helper is file-local in renderer_objects.cpp, so the picking module
+// needs its own equivalent predicate.
+static bool IsMetalSlideUpDoorModelForPicking(const std::string& modelId) {
+    return !modelId.empty() && modelId.rfind("506_", 0) == 0;
+}
+
 void Renderer_Objects::InitPickingFBO(int w, int h) {
     // Delete existing resources
     if (pick_fbo_)       { glDeleteFramebuffers(1,  &pick_fbo_);       pick_fbo_ = 0; }
@@ -349,6 +356,171 @@ int Renderer_Objects::CountObjectVisiblePixels(
     }
     if (target_id_pixels) *target_id_pixels = id_pixels;
     return visible_pixels;
+}
+
+Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
+    GLuint ubo_mats, const std::vector<LevelObject>& objects, int target_object_index,
+    int viewport_width, int viewport_height, const std::vector<float>& scene_depth) {
+    VisualEvidence evidence;
+    if (!pick_shader_prog_ || target_object_index < 0 ||
+        target_object_index >= static_cast<int>(objects.size()) || viewport_width <= 0 ||
+        viewport_height <= 0 || scene_depth.size() != static_cast<size_t>(viewport_width) * viewport_height) {
+        return evidence;
+    }
+    if (viewport_width != pick_fbo_w_ || viewport_height != pick_fbo_h_) {
+        InitPickingFBO(viewport_width, viewport_height);
+    }
+    if (!pick_fbo_) return evidence;
+
+    const LevelObject& obj = objects[target_object_index];
+    Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
+    if (mesh.vertexCount == 0 || !mesh.fromRenderMesh) return evidence;
+
+    evidence.width = viewport_width;
+    evidence.height = viewport_height;
+    const size_t pixels = static_cast<size_t>(viewport_width) * viewport_height;
+    evidence.targetMask.assign(pixels, 0);
+    evidence.partIds.assign(pixels, 0);
+    evidence.targetDepth.assign(pixels, 1.0f);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, pick_fbo_);
+    glViewport(0, 0, viewport_width, viewport_height);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    glUseProgram(pick_shader_prog_);
+    glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
+    const GLint loc_model = glGetUniformLocation(pick_shader_prog_, "u_model");
+    const GLint loc_id = glGetUniformLocation(pick_shader_prog_, "u_object_id");
+
+    glm::mat4 model(1.0f);
+    model = glm::translate(model, glm::vec3(obj.pos));
+    model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.f, 0.f, 1.f));
+    if (IsMetalSlideUpDoorModelForPicking(obj.modelId)) {
+        model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.f, 1.f, 0.f));
+        model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.f, 0.f, 0.f));
+    } else {
+        model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.f, 0.f, 0.f));
+        model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.f, 1.f, 0.f));
+    }
+    if (IsWeaponModel(obj.modelId) || obj.type == "GunPickup" || obj.type == "AmmoPickup" || obj.type == "GenericPickup") {
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.f, 0.f, 1.f));
+    }
+    model = glm::scale(model, glm::vec3(40.96f * obj.scale));
+    glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(model));
+
+    int next_part_id = 1;
+    auto draw_mesh_parts = [&](const Mesh& part_mesh, const glm::mat4& part_model,
+                               bool strict_coverage) {
+        glUniformMatrix4fv(loc_model, 1, GL_FALSE, glm::value_ptr(part_model));
+        if (part_mesh.subMeshes.empty()) {
+            if (part_mesh.VAO && part_mesh.vertexCount > 0) {
+                const int part_id = next_part_id++;
+                evidence.expectedPartIds.push_back(part_id);
+                evidence.expectedParts.push_back({part_id, part_mesh.vertexCount,
+                                                  part_mesh.vertexCount / 3, -1, 0});
+                if (strict_coverage) evidence.strictPartIds.push_back(part_id);
+                glUniform1i(loc_id, part_id);
+                glBindVertexArray(part_mesh.VAO);
+                glDrawArrays(GL_TRIANGLES, 0, part_mesh.vertexCount);
+            }
+            return;
+        }
+        for (const auto& sub : part_mesh.subMeshes) {
+            if (sub.VAO == 0 || sub.vertexCount == 0) continue;
+            const int part_id = next_part_id++;
+            evidence.expectedPartIds.push_back(part_id);
+            evidence.expectedParts.push_back({part_id, sub.vertexCount, sub.vertexCount / 3,
+                                              sub.materialSlot, sub.alphaMode});
+            if (strict_coverage) evidence.strictPartIds.push_back(part_id);
+            glUniform1i(loc_id, part_id);
+            glBindVertexArray(sub.VAO);
+            glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
+        }
+    };
+    draw_mesh_parts(mesh, model, false);
+
+    // The source inventory includes recursive MEF attachments.  This is a
+    // geometry pass, deliberately independent of the visible attachment draw
+    // so an omission in that path cannot certify itself.  It nevertheless
+    // excludes known non-visual authored data using the same data-derived
+    // predicates as the renderer (death zones, collision fallbacks and large
+    // untextured trigger slabs).
+    EnsureDeathZoneIdsLoaded();
+    EnsureAiModelIdsLoaded();
+    const std::string prefix = obj.isBuilding ? "building:" : "object:";
+    std::function<void(const std::string&, const glm::mat4&, std::unordered_set<std::string>&)> draw_attachments;
+    draw_attachments = [&](const std::string& parent_model, const glm::mat4& parent_world,
+                           std::unordered_set<std::string>& ancestry) {
+        const std::string cache_key = std::to_string(current_level_) + ":" + prefix + parent_model;
+        const auto ait = attachment_cache_.find(cache_key);
+        if (ait == attachment_cache_.end()) return;
+        for (const auto& att : ait->second) {
+            std::string mesh_key = std::to_string(current_level_) + ":" + prefix + att.modelId;
+            auto sit = mesh_cache_.find(mesh_key);
+            if (sit == mesh_cache_.end() || sit->second.vertexCount == 0) {
+                mesh_key = std::to_string(current_level_) + ":object:" + att.modelId;
+                sit = mesh_cache_.find(mesh_key);
+            }
+            if (sit == mesh_cache_.end()) continue;
+            const Mesh& child = sit->second;
+            glm::mat4 local_rotation(att.r[0], att.r[1], att.r[2], 0.f,
+                                     att.r[3], att.r[4], att.r[5], 0.f,
+                                     att.r[6], att.r[7], att.r[8], 0.f,
+                                     0.f,      0.f,      0.f,      1.f);
+            const glm::vec3 world_pos = glm::vec3(parent_world * glm::vec4(att.px, att.py, att.pz, 1.f));
+            glm::mat4 parent_rotation = parent_world;
+            parent_rotation[3] = glm::vec4(0.f, 0.f, 0.f, 1.f);
+            glm::mat4 child_world = glm::translate(glm::mat4(1.f), world_pos) * parent_rotation * local_rotation;
+
+            const bool is_death_zone = deathzone_ids_.count(att.modelId) > 0;
+            bool has_texture = child.textureID > 0;
+            for (const auto& sub : child.subMeshes) has_texture |= sub.textureID > 0;
+            const float max_half_extent = std::max(child.halfExtents.x,
+                std::max(child.halfExtents.y, child.halfExtents.z));
+            const bool large_untextured_slab = !has_texture &&
+                (!ai_model_ids_.count(obj.modelId) || max_half_extent >= 700.0f);
+            if (!is_death_zone && child.fromRenderMesh && !large_untextured_slab)
+                draw_mesh_parts(child, glm::scale(child_world, glm::vec3(40.96f * obj.scale)), true);
+
+            if (ancestry.insert(att.modelId).second) {
+                draw_attachments(att.modelId, child_world, ancestry);
+                ancestry.erase(att.modelId);
+            }
+        }
+    };
+    std::unordered_set<std::string> ancestry{obj.modelId};
+    draw_attachments(obj.modelId, glm::scale(model, glm::vec3(1.0f / (40.96f * obj.scale))), ancestry);
+    glBindVertexArray(0);
+    glUseProgram(0);
+
+    std::vector<uint8_t> color(pixels * 3);
+    glReadPixels(0, 0, viewport_width, viewport_height, GL_RGB, GL_UNSIGNED_BYTE, color.data());
+    glReadPixels(0, 0, viewport_width, viewport_height, GL_DEPTH_COMPONENT, GL_FLOAT,
+                 evidence.targetDepth.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    for (size_t index = 0; index < pixels; ++index) {
+        const size_t color_index = index * 3;
+        const int part_id = (static_cast<int>(color[color_index]) << 16) |
+                            (static_cast<int>(color[color_index + 1]) << 8) |
+                            static_cast<int>(color[color_index + 2]);
+        if (part_id == 0) continue;
+        evidence.partIds[index] = part_id;
+        if (scene_depth[index] < 1.0f &&
+            std::abs(scene_depth[index] - evidence.targetDepth[index]) <= 0.0001f) {
+            evidence.targetMask[index] = 1;
+        }
+    }
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    return evidence;
 }
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────

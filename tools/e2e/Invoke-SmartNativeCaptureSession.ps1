@@ -8,6 +8,7 @@ param(
     [string]$Category = 'All',
     [string[]]$IncludeTypes = @(),
     [string[]]$ModelIds = @(),
+    [string[]]$TaskIds = @(),
     [ValidateRange(0,2147483647)][int]$MaxObjects = 0,
     [switch]$DistinctTypes,
     [switch]$DistinctCategories,
@@ -15,6 +16,7 @@ param(
     [switch]$Video,
     [ValidateRange(1,60)][int]$VideoSeconds = 3,
     [ValidateRange(1,60)][int]$VideoFps = 12,
+    [ValidateSet('Required','ReportOnly')][string]$VisualIntegrityPolicy = 'Required',
     [switch]$PrepareOnly,
     [switch]$NoDashboard
 )
@@ -180,6 +182,7 @@ $sourceHash = Get-PortableSha256 $sourcePath
 $editorHash = Get-PortableSha256 $EditorExePath
 $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $ModelIds = @($ModelIds | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$TaskIds = @($TaskIds | ForEach-Object { $_ -split ',' } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 $all = @($levelRow.inventory)
 if ($Category -and $Category -ne 'All') {
     $all = @($all | Where-Object { (Get-ObjectCategory $_.type) -eq $Category })
@@ -189,6 +192,7 @@ if ($Category -and $Category -ne 'All') {
 }
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
 if ($ModelIds.Count) { $all = @($all | Where-Object { $ModelIds -contains [string]$_.modelId }) }
+if ($TaskIds.Count) { $all = @($all | Where-Object { $TaskIds -contains [string]$_.taskId }) }
 $materialPath = Join-Path $ArtifactsRoot 'authored-materials.json'
 $datPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.dat"
 $mtpPath = Join-Path $GameRoot "MISSIONS/location0/level$Level/level$Level.mtp"
@@ -343,6 +347,15 @@ try {
     $ffmpegBin = Get-FFmpegPath
     foreach ($plan in $plans) {
         $allPaths = @($allCaptureViews | ForEach-Object { Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.png' -f $Level,$plan.modelId,$_ ) })
+        $allPaths += @($allCaptureViews | ForEach-Object {
+            @(
+                (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.object-id.png' -f $Level,$plan.modelId,$_)),
+                (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.material-id.png' -f $Level,$plan.modelId,$_)),
+                (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.depth.bin' -f $Level,$plan.modelId,$_)),
+                (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}-diagnostic.png' -f $Level,$plan.modelId,$_))
+            )
+        })
+        $allPaths += Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_visual-integrity.json' -f $Level,$plan.modelId)
         foreach ($path in $allPaths) {
             if (-not $fileBackups.ContainsKey($path)) {
                 $fileBackups[$path] = if(Test-Path -LiteralPath $path){[IO.File]::ReadAllBytes($path)}else{$null}
@@ -358,9 +371,9 @@ try {
 
         $pos = Get-CommandPosition $plan
         $line = if ($orbitFrames -gt 0) {
-            ('capture-model level={0} model={1} x={2} y={3} z={4} orbit_frames={5} video_fps={6}' -f $Level,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),$orbitFrames,$VideoFps)
+            ('capture-model level={0} task={1} model={2} x={3} y={4} z={5} orbit_frames={6} video_fps={7}' -f $Level,$plan.taskId,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),$orbitFrames,$VideoFps)
         } else {
-            ('capture-model level={0} model={1} x={2} y={3} z={4}' -f $Level,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture))
+            ('capture-model level={0} task={1} model={2} x={3} y={4} z={5}' -f $Level,$plan.taskId,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture))
         }
         [IO.File]::WriteAllText($commandPath,$line + [Environment]::NewLine,[Text.UTF8Encoding]::new($false))
         if (-not (Wait-ForCaptureComplete $allPaths $doneMarker 180)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
@@ -404,6 +417,7 @@ try {
         $plan | Add-Member -NotePropertyName video -NotePropertyValue $videoResult -Force
         # Read evidence JSONL written by C++ (one record per view)
         $evidenceJsonlPath = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_evidence.jsonl' -f $Level,$plan.modelId)
+        $visualJsonPath = Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_visual-integrity.json' -f $Level,$plan.modelId)
         $captureEvidence = @()
         if (Test-Path -LiteralPath $evidenceJsonlPath) {
             $captureEvidence = @(Get-Content -LiteralPath $evidenceJsonlPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_ | ConvertFrom-Json })
@@ -425,8 +439,22 @@ try {
             if (Test-Path -LiteralPath $bmpPath) {
                 Copy-Item -LiteralPath $bmpPath -Destination (Join-Path $targetDir $bmpName) -Force
             }
+            foreach ($diagnosticPath in @($record.visualObjectMask, $record.visualMaterialMask, $record.visualDepth, $record.visualOverlay)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$diagnosticPath)) {
+                    $sourcePath = Join-Path $screenshotRoot ([IO.Path]::GetFileName([string]$diagnosticPath))
+                    if (Test-Path -LiteralPath $sourcePath) {
+                        Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $targetDir ([IO.Path]::GetFileName($sourcePath))) -Force
+                    }
+                }
+            }
+        }
+        $visualIntegrity = $null
+        if (Test-Path -LiteralPath $visualJsonPath) {
+            $visualIntegrity = Get-Content -LiteralPath $visualJsonPath -Raw | ConvertFrom-Json
+            Copy-Item -LiteralPath $visualJsonPath -Destination (Join-Path $targetDir 'visual-integrity.json') -Force
         }
         $plan | Add-Member -NotePropertyName captureEvidence -NotePropertyValue $selectedEvidence -Force
+        $plan | Add-Member -NotePropertyName visualIntegrity -NotePropertyValue $visualIntegrity -Force
         if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
     }
 } catch {
@@ -449,7 +477,8 @@ $evidence=@()
 foreach($plan in $plans){
     $anchor=[pscustomobject]@{taskId=$plan.taskId;type=$plan.type;modelId=$plan.modelId;authoredPosition=$plan.authoredPosition;authoredRotation=$plan.authoredRotation;requiredTextures=$plan.requiredTextures}
     $item=Test-SmartModelLog $freshLog $anchor
-    $shots=@(Get-ChildItem -LiteralPath (Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)) -File -Filter '*.png' -ErrorAction SilentlyContinue)
+    $shots=@(Get-ChildItem -LiteralPath (Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)) -File -Filter '*.png' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '_(Ext|Int)_[0-9]{3}\.png$' })
     $item | Add-Member -NotePropertyName taskId -NotePropertyValue $plan.taskId -Force
     $item | Add-Member -NotePropertyName objectName -NotePropertyValue $plan.objectName -Force
     $item | Add-Member -NotePropertyName type -NotePropertyValue $plan.type -Force
@@ -462,6 +491,7 @@ foreach($plan in $plans){
     $item | Add-Member -NotePropertyName screenshots -NotePropertyValue @($shots | ForEach-Object { [ordered]@{ filename = $_.Name; relativePath = ('screenshots/{0}/{1}' -f $plan.prefix, $_.Name); sizeBytes = $_.Length } }) -Force
     $item | Add-Member -NotePropertyName video -NotePropertyValue $plan.video -Force
     $item | Add-Member -NotePropertyName captureEvidence -NotePropertyValue @($plan.captureEvidence) -Force
+    $item | Add-Member -NotePropertyName visualIntegrity -NotePropertyValue $plan.visualIntegrity -Force
 
     # Asset Lineage Verification (.dat, .mtp, .mef, .qvm, .res)
     $datExists = Test-Path -LiteralPath $datPath
@@ -514,10 +544,16 @@ foreach($plan in $plans){
         $item.passed = $false
         $item.failures = @($item.failures + 'Orbit video recording failed.')
     }
+    $visualStatus = if ($null -eq $plan.visualIntegrity) { 'INCONCLUSIVE' } else { [string]$plan.visualIntegrity.visualIntegrity.status }
+    if ($VisualIntegrityPolicy -eq 'Required' -and $visualStatus -ne 'PASS') {
+        $item.passed = $false
+        $item.failures = @($item.failures + "Visual-integrity status is $visualStatus; loader evidence cannot satisfy this gate.")
+    }
+    $item | Add-Member -NotePropertyName visualIntegrityStatus -NotePropertyValue $visualStatus -Force
     $evidence += $item
 }
 $failed=@($evidence|Where-Object{-not $_.passed}).Count
-$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
+$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;visualIntegrityPolicy=$VisualIntegrityPolicy;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
 
 # Generate Self-Contained HTML5 Dashboard (skipped when called from Run-SmartTest to avoid duplicate reports)

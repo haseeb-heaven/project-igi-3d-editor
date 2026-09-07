@@ -6,6 +6,7 @@
 #include "../third_party/tinygltf/stb_image_write.h"
 #include "renderer/renderer.h"
 #include "capture_camera.h"
+#include "visual_integrity.h"
 #include "level/level.h"
 #include "level/level_objects.h"
 #include <fstream>
@@ -16,6 +17,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -65,6 +67,8 @@ void DebugCommandManager::WatcherThread() {
                             cmd.level = std::stoi(token.substr(6));
                         } else if (token.find("model=") == 0) {
                             cmd.modelId = token.substr(6);
+                        } else if (token.find("task=") == 0) {
+                            cmd.taskId = token.substr(5);
                         } else if (token.find("val=") == 0) {
                             cmd.val = std::stoi(token.substr(4));
                         } else if (token.find("x=") == 0) {
@@ -265,6 +269,57 @@ static bool WriteImageBGRA(const char* bmpPath, const char* pngPath,
     if (pngPath) ok &= (stbi_write_png(pngPath, w, h, 3, rgb.data(), w * 3) != 0);
     return ok;
 }
+
+static bool WriteDiagnosticMask(const char* pngPath, const std::vector<unsigned char>& values,
+                                int w, int h, bool encode_part_id) {
+    if (values.size() != static_cast<size_t>(w) * h) return false;
+    std::vector<unsigned char> rgb(static_cast<size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t src = static_cast<size_t>(h - 1 - y) * w + x;
+            const size_t dst = (static_cast<size_t>(y) * w + x) * 3;
+            const unsigned char value = values[src];
+            rgb[dst] = encode_part_id ? value : (value ? 255 : 0);
+            rgb[dst + 1] = encode_part_id ? static_cast<unsigned char>(value * 37) : (value ? 255 : 0);
+            rgb[dst + 2] = encode_part_id ? static_cast<unsigned char>(value * 97) : 0;
+        }
+    }
+    return stbi_write_png(pngPath, w, h, 3, rgb.data(), w * 3) != 0;
+}
+
+static bool WriteDiagnosticOverlay(const char* pngPath, const unsigned char* bgra,
+                                   const std::vector<uint8_t>& target_mask,
+                                   const std::vector<int>& part_ids, int w, int h) {
+    if (!bgra || target_mask.size() != static_cast<size_t>(w) * h ||
+        part_ids.size() != target_mask.size()) return false;
+    std::vector<unsigned char> rgb(static_cast<size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t src = static_cast<size_t>(h - 1 - y) * w + x;
+            const size_t dst = (static_cast<size_t>(y) * w + x) * 3;
+            const unsigned char* color = bgra + src * 4;
+            if (target_mask[src] == 0) {
+                rgb[dst] = color[2] / 3;
+                rgb[dst + 1] = color[1] / 3;
+                rgb[dst + 2] = color[0] / 3;
+                continue;
+            }
+            const unsigned char part = static_cast<unsigned char>(part_ids[src] & 0xFF);
+            rgb[dst] = static_cast<unsigned char>((static_cast<int>(color[2]) + 255) / 2);
+            rgb[dst + 1] = static_cast<unsigned char>((static_cast<int>(color[1]) + part * 37) / 2);
+            rgb[dst + 2] = static_cast<unsigned char>((static_cast<int>(color[0]) + part * 97) / 2);
+        }
+    }
+    return stbi_write_png(pngPath, w, h, 3, rgb.data(), w * 3) != 0;
+}
+
+static bool WriteDiagnosticDepth(const char* path, const std::vector<float>& depth) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) return false;
+    output.write(reinterpret_cast<const char*>(depth.data()),
+                 static_cast<std::streamsize>(depth.size() * sizeof(float)));
+    return output.good();
+}
 void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     auto& objects = app_->level_.GetLevelObjects().GetObjects();
 
@@ -415,6 +470,17 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
 
     // Evidence JSONL (one record per captured view)
     std::ofstream evFile(evidPath, std::ios::out | std::ios::trunc);
+    igi::VisualIntegrityInput visualInput;
+    visualInput.minimumPartPixels = 1;
+    // A raw target mask cannot distinguish an authored window/door opening from a
+    // missing fragment. Enable silhouette-hole enforcement only once a projected
+    // geometry/material mask is supplied; part coverage remains active now.
+    visualInput.minimumInteriorHolePixels = std::numeric_limits<int>::max();
+    std::vector<std::string> visualMaskPaths;
+    std::vector<std::string> visualPartPaths;
+    std::vector<std::string> visualDepthPaths;
+    std::vector<std::string> visualOverlayPaths;
+    std::vector<Renderer_Objects::VisualEvidence::PartInventory> visualExpectedParts;
 
     // Camera setter
     auto set_camera = [&](float camX, float camY, float camZ, float yawDeg, float pitchDeg) {
@@ -486,10 +552,51 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                  cmd.level, cmd.modelId.c_str(), suffix);
         WriteImageBGRA(bmpPath, pngPath, bgra.data(), W, H);
 
+        const auto visualEvidence = app_->renderer_.CaptureObjectVisualEvidence(
+            app_->view_define_, objects, target_idx, sceneDepth);
+        if (visualEvidence.width == W && visualEvidence.height == H) {
+            igi::VisualIntegrityView visualView;
+            visualView.width = W;
+            visualView.height = H;
+            visualView.targetMask = visualEvidence.targetMask;
+            visualView.partIds = visualEvidence.partIds;
+            visualView.sceneDepth = sceneDepth;
+            visualView.targetDepth = visualEvidence.targetDepth;
+            visualView.name = suffix;
+            visualInput.views.push_back(std::move(visualView));
+            if (visualInput.expectedPartIds.empty()) {
+                visualInput.expectedPartIds = visualEvidence.expectedPartIds;
+                visualInput.strictPartIds = visualEvidence.strictPartIds;
+                visualExpectedParts = visualEvidence.expectedParts;
+            }
+
+            std::vector<unsigned char> partBytes(visualEvidence.partIds.size());
+            for (size_t i = 0; i < partBytes.size(); ++i)
+                partBytes[i] = static_cast<unsigned char>(visualEvidence.partIds[i] & 0xFF);
+            char maskPath[256], partPath[256], depthPath[256], overlayPath[256];
+            snprintf(maskPath, sizeof(maskPath), "screenshots/Level%02d_Model%s_%s.object-id.png",
+                     cmd.level, cmd.modelId.c_str(), suffix);
+            snprintf(partPath, sizeof(partPath), "screenshots/Level%02d_Model%s_%s.material-id.png",
+                     cmd.level, cmd.modelId.c_str(), suffix);
+            snprintf(depthPath, sizeof(depthPath), "screenshots/Level%02d_Model%s_%s.depth.bin",
+                     cmd.level, cmd.modelId.c_str(), suffix);
+            snprintf(overlayPath, sizeof(overlayPath), "screenshots/Level%02d_Model%s_%s-diagnostic.png",
+                     cmd.level, cmd.modelId.c_str(), suffix);
+            WriteDiagnosticMask(maskPath, visualEvidence.targetMask, W, H, false);
+            WriteDiagnosticMask(partPath, partBytes, W, H, true);
+            WriteDiagnosticDepth(depthPath, visualEvidence.targetDepth);
+            WriteDiagnosticOverlay(overlayPath, bgra.data(), visualEvidence.targetMask,
+                                   visualEvidence.partIds, W, H);
+            visualMaskPaths.emplace_back(maskPath);
+            visualPartPaths.emplace_back(partPath);
+            visualDepthPaths.emplace_back(depthPath);
+            visualOverlayPaths.emplace_back(overlayPath);
+        }
+
         if (evFile.is_open()) {
             evFile << "{\"level\":" << cmd.level
                    << ",\"modelId\":" << JsonStr(cmd.modelId)
-                   << ",\"taskId\":"  << JsonStr(obj.taskId)
+                   << ",\"taskId\":"  << JsonStr(cmd.taskId.empty() ? obj.taskId : cmd.taskId)
                    << ",\"view\":"    << JsonStr(std::string(suffix))
                    << ",\"camera\":{\"x\":" << actualCamX << ",\"y\":" << actualCamY
                    << ",\"z\":" << actualCamZ << ",\"yaw\":" << yawDeg
@@ -502,6 +609,10 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                    << ",\"targetPixels\":" << visiblePixels
                    << ",\"targetIdPixels\":" << targetIdPixels
                    << ",\"targetCoverage\":" << targetCoverage
+                   << ",\"visualObjectMask\":" << JsonStr(visualMaskPaths.empty() ? "" : visualMaskPaths.back())
+                   << ",\"visualMaterialMask\":" << JsonStr(visualPartPaths.empty() ? "" : visualPartPaths.back())
+                   << ",\"visualDepth\":" << JsonStr(visualDepthPaths.empty() ? "" : visualDepthPaths.back())
+                   << ",\"visualOverlay\":" << JsonStr(visualOverlayPaths.empty() ? "" : visualOverlayPaths.back())
                    << "}\n";
         }
     };
@@ -649,6 +760,45 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                 << "}\n";
     }
 
+    const igi::VisualIntegrityResult visualResult = igi::EvaluateVisualIntegrity(visualInput);
+    char visualJsonPath[256];
+    snprintf(visualJsonPath, sizeof(visualJsonPath), "screenshots/Level%02d_Model%s_visual-integrity.json",
+             cmd.level, cmd.modelId.c_str());
+    {
+        std::ofstream visualFile(visualJsonPath, std::ios::out | std::ios::trunc);
+        visualFile << "{\"schemaVersion\":1,\"object\":{\"level\":" << cmd.level
+                   << ",\"taskId\":" << JsonStr(cmd.taskId.empty() ? obj.taskId : cmd.taskId)
+                   << ",\"modelId\":" << JsonStr(obj.modelId) << "},\"expectedParts\":[";
+        for (size_t i = 0; i < visualExpectedParts.size(); ++i) {
+            if (i) visualFile << ',';
+            const auto& part = visualExpectedParts[i];
+            visualFile << "{\"id\":" << part.id << ",\"vertexCount\":" << part.vertexCount
+                       << ",\"triangleCount\":" << part.triangleCount
+                       << ",\"materialSlot\":" << part.materialSlot
+                       << ",\"alphaMode\":" << part.alphaMode << '}';
+        }
+        visualFile << "],\"evidence\":{\"objectMasks\":[";
+        for (size_t i = 0; i < visualMaskPaths.size(); ++i) {
+            if (i) visualFile << ',';
+            visualFile << JsonStr(visualMaskPaths[i]);
+        }
+        visualFile << "],\"materialMasks\":[";
+        for (size_t i = 0; i < visualPartPaths.size(); ++i) {
+            if (i) visualFile << ',';
+            visualFile << JsonStr(visualPartPaths[i]);
+        }
+        visualFile << "],\"depthBuffers\":[";
+        for (size_t i = 0; i < visualDepthPaths.size(); ++i) {
+            if (i) visualFile << ',';
+            visualFile << JsonStr(visualDepthPaths[i]);
+        }
+        visualFile << "],\"overlays\":[";
+        for (size_t i = 0; i < visualOverlayPaths.size(); ++i) {
+            if (i) visualFile << ',';
+            visualFile << JsonStr(visualOverlayPaths[i]);
+        }
+        visualFile << "]},\"visualIntegrity\":" << igi::VisualIntegrityJson(visualResult) << "}\n";
+    }
     evFile.close();
 
     // Done sentinel — written last so PowerShell wait function triggers only when all files exist

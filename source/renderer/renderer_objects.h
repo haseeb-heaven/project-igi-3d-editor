@@ -111,6 +111,32 @@ public:
                                  int viewport_height,
                                  const std::vector<float>& scene_depth,
                                  int* target_id_pixels = nullptr);
+    // Target-only material/submesh evidence for the native visual-integrity
+    // gate. IDs are one-based submesh indices and are never shared with scene
+    // object IDs, so unrelated objects cannot satisfy a part requirement.
+    struct VisualEvidence {
+        struct PartInventory {
+            int id = 0;
+            int vertexCount = 0;
+            int triangleCount = 0;
+            int materialSlot = -1;
+            int alphaMode = 0;
+        };
+        int width = 0;
+        int height = 0;
+        std::vector<int> expectedPartIds;
+        std::vector<int> strictPartIds;
+        std::vector<PartInventory> expectedParts;
+        std::vector<uint8_t> targetMask;
+        std::vector<int> partIds;
+        std::vector<float> targetDepth;
+    };
+    VisualEvidence CaptureObjectVisualEvidence(GLuint ubo_mats,
+                                               const std::vector<LevelObject>& objects,
+                                               int target_object_index,
+                                               int viewport_width,
+                                               int viewport_height,
+                                               const std::vector<float>& scene_depth);
     static bool IsSkippedModelId(const std::string& modelId);
     glm::vec3 GetMeshExtents(const std::string& modelId, bool isBuilding);
     glm::vec3 GetMeshCenter(const std::string& modelId, bool isBuilding);
