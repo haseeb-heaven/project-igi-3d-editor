@@ -631,9 +631,7 @@ void App::DispatchEventBindings() {
 	}
 	if (terrain_edit_enabled_) {
 		if (Check("TerrainBrushCycle")) {
-			edit_brush_ = (edit_brush_ + 1) % 4;
-			static const char* kNames[] = {"Raise","Lower","Soften","Flatten"};
-			status_message_ = std::string("Terrain brush: ") + kNames[edit_brush_];
+			SetEditBrush((edit_brush_ + 1) % 4);
 		}
 		if (Check("TerrainBrushRadiusDec"))   AdjustBrushRadius(0.8);
 		if (Check("TerrainBrushRadiusInc"))   AdjustBrushRadius(1.25);

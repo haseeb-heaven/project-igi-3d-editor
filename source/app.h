@@ -16,6 +16,7 @@
 #include "runtime/gameplay_host.h"
 #include "runtime/map_computer_camera.h"
 #include "runtime/render_target.h"
+#include "runtime/editor_cursor_mode.h"
 #include <atomic>
 #include <cstdint>
 #include <optional>
@@ -234,20 +235,7 @@ private:
   };
 
   // C1: Custom SPR cursor — multi-mode
-  enum class CursorMode {
-    Default = 0,      // No selection, no terrain edit → Pointer
-    Hover = 1,        // Hovering over an object → highlighttool
-    Selected = 2,     // Object selected (edit mode) → activetool
-    TerrainLift = 3,  // edit_brush_ == BRUSH_RAISE
-    TerrainLower = 4, // edit_brush_ == BRUSH_LOWER
-    TerrainFlatten = 5,
-    TerrainFlattenLine = 6,
-    TerrainDrop = 7,
-    TerrainSoften = 8,
-    Inactive = 9, // inactivetool.spr
-    Camera = 10,  // ALT held, camera look mode  → editor_camera.spr
-    Move = 11,    // ALT held + mouse moving      → editor_move.spr
-  };
+  using CursorMode = igi::CursorMode;
   static const int NUM_CURSORS = 12;
   GLuint cursor_tex_ids_[NUM_CURSORS] = {};
   int cursor_tex_ws_[NUM_CURSORS] = {};

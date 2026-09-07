@@ -1,4 +1,4 @@
-﻿#include "app_internal.h"
+#include "app_internal.h"
 #include "runtime/config_qvm.h"
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
@@ -3169,6 +3169,8 @@ void App::SetEditBrush(int brush) {
 	status_message_ = std::string("Terrain brush: ") + kNames[edit_brush_] +
 		"  (radius " + std::to_string((long)edit_brush_radius_) +
 		", strength " + std::to_string((long)edit_brush_strength_) + ")";
+	UpdateCursorMode();
+	glutPostRedisplay();
 }
 
 int App::GetEditBrush() const {
@@ -3176,7 +3178,7 @@ int App::GetEditBrush() const {
 }
 
 bool App::TerrainPaletteClick(int x, int y) {
-	if (!edit_mode_ || !terrain_edit_enabled_) return false;
+	if (!terrain_edit_enabled_) return false;
 	int idx = TerrainPalette::HitTest(x, y, window_state_.viewport_width_, window_state_.viewport_height_);
 	if (idx < 0) return false;
 	switch (idx) {
@@ -3200,6 +3202,7 @@ void App::AdjustBrushRadius(double factor) {
 	if (edit_brush_radius_ < 5000.0)   edit_brush_radius_ = 5000.0;
 	if (edit_brush_radius_ > 250000.0) edit_brush_radius_ = 250000.0;
 	status_message_ = "Brush radius: " + std::to_string((long)edit_brush_radius_);
+	glutPostRedisplay();
 }
 
 void App::AdjustBrushStrength(double delta) {
@@ -3207,6 +3210,7 @@ void App::AdjustBrushStrength(double delta) {
 	if (edit_brush_strength_ < 1.0)   edit_brush_strength_ = 1.0;
 	if (edit_brush_strength_ > 100.0) edit_brush_strength_ = 100.0;
 	status_message_ = "Brush strength: " + std::to_string((long)edit_brush_strength_);
+	glutPostRedisplay();
 }
 
 void App::SetSelectedObjectScale(float scale) {

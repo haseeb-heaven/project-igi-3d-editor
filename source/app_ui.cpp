@@ -47,26 +47,30 @@ static GLuint LoadOneSpr(const char* path, int& w, int& h) {
 }
 
 void App::LoadAllCursors() {
-	// Order must match CursorMode enum values (0..9)
-	const char* paths[NUM_CURSORS] = {
-		"editor\\qed\\TerrainEditIcon_Pointer.spr",     // 0 Default
-		"editor\\qed\\highlighttool.spr",               // 1 Hover
-		"editor\\qed\\activetool.spr",                  // 2 Selected
-		"editor\\qed\\TerrainEditIcon_Lift.spr",        // 3 TerrainLift
-		"editor\\qed\\TerrainEditIcon_Lower.spr",       // 4 TerrainLower
-		"editor\\qed\\TerrainEditIcon_Flatten.spr",     // 5 TerrainFlatten
-		"editor\\qed\\TerrainEditIcon_FlattenLine.spr", // 6 TerrainFlattenLine
-		"editor\\qed\\TerrainEditIcon_Drop.spr",        // 7 TerrainDrop
-		"editor\\qed\\TerrainEditIcon_Soften.spr",      // 8 TerrainSoften
-		"editor\\qed\\inactivetool.spr",                // 9 Inactive
-		"editor\\qed\\editor_camera.spr",               // 10 Camera (ALT held)
-		"editor\\qed\\editor_move.spr",                 // 11 Move (ALT held + moving)
+	// Build absolute paths from IGI root — SPR files live in editor\qed\ relative to game install.
+	const std::string qed = Utils::GetIGIRootPath() + "\\editor\\qed\\";
+	const std::string absPaths[NUM_CURSORS] = {
+		qed + "TerrainEditIcon_Pointer.spr",  // 0 Default
+		qed + "highlighttool.spr",             // 1 Hover
+		qed + "activetool.spr",                // 2 Selected
+		qed + "TerrainEditIcon_Lift.spr",      // 3 TerrainLift
+		qed + "TerrainEditIcon_Lower.spr",     // 4 TerrainLower
+		qed + "TerrainEditIcon_Flatten.spr",   // 5 TerrainFlatten
+		qed + "TerrainEditIcon_FlattenLine.spr",// 6 TerrainFlattenLine
+		qed + "TerrainEditIcon_Drop.spr",      // 7 TerrainDrop
+		qed + "TerrainEditIcon_Soften.spr",    // 8 TerrainSoften
+		qed + "inactivetool.spr",              // 9 Inactive
+		qed + "editor_camera.spr",             // 10 Camera (ALT held)
+		qed + "editor_move.spr",               // 11 Move (ALT held + moving)
 	};
 	cursor_loaded_count_ = 0;
 	for (int i = 0; i < NUM_CURSORS; ++i) {
-		cursor_tex_ids_[i] = LoadOneSpr(paths[i], cursor_tex_ws_[i], cursor_tex_hs_[i]);
+		cursor_tex_ids_[i] = LoadOneSpr(absPaths[i].c_str(), cursor_tex_ws_[i], cursor_tex_hs_[i]);
 		if (cursor_tex_ids_[i]) cursor_loaded_count_++;
+		else Logger::Get().Log(LogLevel::WARNING, "[Cursor] Failed to load: " + absPaths[i]);
 	}
+	Logger::Get().Log(LogLevel::INFO, "[Cursor] Loaded " + std::to_string(cursor_loaded_count_) +
+		"/" + std::to_string(NUM_CURSORS) + " cursor sprites");
 
 	// Cache AITYPE_ model IDs from IGIModels.json
 	ai_model_ids_.clear();
@@ -232,26 +236,16 @@ void App::ConfirmFileDialog() {
 }
 
 void App::UpdateCursorMode() {
-	if (terrain_edit_enabled_) {
-		// Drop is the neutral terrain cursor; Lift/Lower for raise/lower brush
-		if (edit_brush_ == 0)
-			current_cursor_mode_ = CursorMode::TerrainLift;  // BRUSH_RAISE
-		else if (edit_brush_ == 1)
-			current_cursor_mode_ = CursorMode::TerrainLower; // BRUSH_LOWER
-		else
-			current_cursor_mode_ = CursorMode::TerrainDrop;  // any other terrain mode
-		return;
-	}
-	// Camera mode (ALT held)
 	bool enableCameraMode = Utils::IsKeyBindingPressed(Config::Get().keyEnableCamera);
-	if (enableCameraMode) {
-		// ALT + left button held = camera look (editor_camera.spr)
-		// ALT + any movement = lateral move (editor_move.spr)
-		current_cursor_mode_ = mouse_state_.left_button_down_ ? CursorMode::Camera : CursorMode::Move;
+	if (enableCameraMode)
 		camera_mode_moved_ = false;
-		return;
-	}
-	current_cursor_mode_ = CursorMode::Default;
+	current_cursor_mode_ = igi::ResolveCursorMode(
+		enableCameraMode,
+		mouse_state_.left_button_down_,
+		terrain_edit_enabled_,
+		edit_brush_,
+		selected_object_index_,
+		hover_object_index_);
 }
 
 void App::DrawCustomCursor() {

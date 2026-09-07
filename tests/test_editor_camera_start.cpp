@@ -99,4 +99,30 @@ TEST(EditorCameraStartTest, IdentifiesZyxEulerModelsCorrectly) {
     EXPECT_FALSE(IsZyxEulerModel(""));
 }
 
+#include "../source/runtime/editor_cursor_mode.h"
+
+TEST(EditorCameraStartTest, ResolveCursorModeForTerrainTools) {
+    using igi::CursorMode;
+    using igi::ResolveCursorMode;
+
+    // Terrain edit brushes: 0=Raise/Lift, 1=Lower, 2=Soften, 3=Flatten, other=Drop
+    EXPECT_EQ(ResolveCursorMode(false, false, true, 0, -1, -1), CursorMode::TerrainLift);
+    EXPECT_EQ(ResolveCursorMode(false, false, true, 1, -1, -1), CursorMode::TerrainLower);
+    EXPECT_EQ(ResolveCursorMode(false, false, true, 2, -1, -1), CursorMode::TerrainSoften);
+    EXPECT_EQ(ResolveCursorMode(false, false, true, 3, -1, -1), CursorMode::TerrainFlatten);
+    EXPECT_EQ(ResolveCursorMode(false, false, true, 4, -1, -1), CursorMode::TerrainDrop);
+
+    // Normal mode: Default (pointer), Hover, Selected
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, -1, -1), CursorMode::Default);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, -1, 5), CursorMode::Hover);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, -1), CursorMode::Selected);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, 5), CursorMode::Selected);
+
+    // Camera mode overrides all: Camera on LMB down, Move on movement
+    EXPECT_EQ(ResolveCursorMode(true, true, true, 0, -1, -1), CursorMode::Camera);
+    EXPECT_EQ(ResolveCursorMode(true, false, true, 0, -1, -1), CursorMode::Move);
+    EXPECT_EQ(ResolveCursorMode(true, true, false, 0, -1, -1), CursorMode::Camera);
+    EXPECT_EQ(ResolveCursorMode(true, false, false, 0, -1, -1), CursorMode::Move);
+}
+
 } // namespace
