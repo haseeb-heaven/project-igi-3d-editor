@@ -436,9 +436,12 @@ void Renderer::Draw(const draw_params_s &params,
 
   }
 
-  // RainEffect is authoritative and must not be gated by object, building, or
-  // prop visibility filters in the editor.
-  rain_.Draw(ubo_mats_, params.view_define_->pos_);
+  // RainEffect remains independent of editor draw filters, but precipitation
+  // is suppressed when the camera is within a Building's transformed bounds.
+  const bool cameraIsSheltered = params.level_objects_ &&
+      objects_.IsCameraInsideBuildingBounds(params.level_objects_->GetObjects(),
+                                             params.view_define_->pos_);
+  rain_.Draw(ubo_mats_, params.view_define_->pos_, cameraIsSheltered);
 
   // 3D navigation-graph pass: solid boxes + edges, depth-tested, before the HUD.
   if (graph_overlay_visible_)

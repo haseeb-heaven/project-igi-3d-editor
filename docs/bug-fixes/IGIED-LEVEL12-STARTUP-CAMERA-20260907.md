@@ -23,3 +23,20 @@ the E2E check can distinguish an authored start from a stale saved camera.
   E2E scenario.
 - Focused C++ tests: 8/8 passed.
 - E2E manifest contract: passed.
+- Fresh visible WMI Session 1 corpus sweep: all 14 levels passed startup,
+  scene visibility, pause/cursor checks, and clean shutdown; each level logged
+  `Viewer start source=level-authored-start`.
+
+## WinchHouse navigation regression
+
+The Level 12 WinchHouse could still appear absent after selecting it because
+the developer `goto` command placed the camera at the selected object's origin.
+For a large building that is inside the mesh, so the resulting frame showed
+only an interior wall or underside. `GotoModel` now computes the geometry
+center and transformed bound radius, places the camera outside that bound, and
+aims it at the center. The rule is generic for all model sizes and contains no
+model-ID exception.
+
+Verification: the Release editor was rebuilt, `editor_camera_start_tests`
+passed 3/3, and a fresh WMI Session 1 Level 12 inspection of task `-1#907`
+visibly showed the complete WinchHouse from outside.

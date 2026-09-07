@@ -23,6 +23,11 @@ glm::vec3 Renderer_Objects::GetMeshExtents(const std::string& modelId, bool isBu
     return mesh.halfExtents;
 }
 
+float Renderer_Objects::GetMeshRadius(const std::string& modelId, bool isBuilding) {
+    glm::vec3 extents = GetMeshExtents(modelId, isBuilding);
+    return glm::length(extents);
+}
+
 glm::vec3 Renderer_Objects::GetMeshCenter(const std::string& modelId, bool isBuilding) {
     Mesh mesh = GetOrLoadMesh(modelId, isBuilding);
     return mesh.center;
@@ -381,6 +386,39 @@ const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string&
         std::to_string(geo.vertices.size()) + " vertices, " + std::to_string(geo.bones.size()) +
         " bones, " + std::to_string(renderableTriangles) + " renderable triangles");
     return &(skin_geometry_cache_[modelId] = std::move(geo));
+}
+
+bool Renderer_Objects::IsCameraInsideBuildingBounds(const std::vector<LevelObject>& objects,
+                                                  const glm::vec3& cameraPos) {
+    for (const auto& obj : objects) {
+        if (obj.deleted || !obj.isBuilding || obj.modelId.empty()) continue;
+        Mesh mesh = GetOrLoadMesh(obj.modelId, true);
+        if (mesh.vertexCount == 0) continue;
+
+        // Transform camera position into building local space
+        glm::vec3 delta = cameraPos - glm::vec3(obj.pos);
+        float cosZ = std::cos(-static_cast<float>(obj.rot.z));
+        float sinZ = std::sin(-static_cast<float>(obj.rot.z));
+        glm::vec3 localPos(
+            delta.x * cosZ - delta.y * sinZ,
+            delta.x * sinZ + delta.y * cosZ,
+            delta.z
+        );
+
+        float total_scale = 40.96f * obj.scale;
+        if (total_scale <= 0.0f) total_scale = 40.96f;
+        localPos /= total_scale;
+
+        glm::vec3 minBound = mesh.center - mesh.halfExtents;
+        glm::vec3 maxBound = mesh.center + mesh.halfExtents;
+
+        if (localPos.x >= minBound.x && localPos.x <= maxBound.x &&
+            localPos.y >= minBound.y && localPos.y <= maxBound.y &&
+            localPos.z >= minBound.z && localPos.z <= maxBound.z) {
+            return true;
+        }
+    }
+    return false;
 }
 
 

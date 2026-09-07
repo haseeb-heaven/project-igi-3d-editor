@@ -2,19 +2,22 @@
 
 namespace igi {
 
-// RainEffect is authored at the level scope. Visual model bounds are not
-// weather-volume data and must not suppress an enabled effect.
+// RainEffect is authored at the level scope, but precipitation is only visible
+// where the camera has an open sky. A Building mesh bound containing the camera
+// represents shelter for the procedural weather pass.
 constexpr bool ShouldRenderAuthoredWeather(
     bool effectActive, bool visualBuildingBoundsOverlap) noexcept {
-    (void)visualBuildingBoundsOverlap;
-    return effectActive;
+    return effectActive && !visualBuildingBoundsOverlap;
 }
 
-// Weather is level-authored, not object-authored: it remains visible when an
-// editor filter hides objects, buildings, or props.
+// Object visibility filters do not control weather. The shelter test is passed
+// separately so rain and snow remain hidden indoors even when buildings are
+// hidden in the editor.
 constexpr bool ShouldDrawWeatherForFrame(bool effectActive,
-                                         bool rainRendererReady) noexcept {
-    return effectActive && rainRendererReady;
+                                         bool rainRendererReady,
+                                         bool cameraIsSheltered = false) noexcept {
+    return ShouldRenderAuthoredWeather(effectActive, cameraIsSheltered) &&
+           rainRendererReady;
 }
 
 } // namespace igi

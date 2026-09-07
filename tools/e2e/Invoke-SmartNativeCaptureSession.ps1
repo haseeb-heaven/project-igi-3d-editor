@@ -117,9 +117,12 @@ function Get-ResArchiveEntries([string]$ResPath) {
     $out = & $converter res list $ResPath 2>$null
     return @($out | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
-function Wait-ForCaptureComplete([string[]]$Paths, [string]$DoneMarkerPath = '', [int]$TimeoutSeconds = 180) {
+function Wait-ForCaptureComplete([string[]]$Paths, [string]$DoneMarkerPath = '', [int]$TimeoutSeconds = 180, $Process = $null) {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
+        if ($null -ne $Process -and $Process.HasExited) {
+            throw "Editor process terminated unexpectedly with exit code $($Process.ExitCode)."
+        }
         $ready = $true
         foreach ($path in $Paths) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -le 0) { $ready = $false; break }
@@ -130,6 +133,10 @@ function Wait-ForCaptureComplete([string[]]$Paths, [string]$DoneMarkerPath = '',
             } else {
                 return $true
             }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($DoneMarkerPath) -and (Test-Path -LiteralPath $DoneMarkerPath -PathType Leaf)) {
+            Start-Sleep -Seconds 1
+            return $true
         }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
@@ -358,7 +365,7 @@ try {
         $allPaths += Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_visual-integrity.json' -f $Level,$plan.modelId)
         foreach ($path in $allPaths) {
             if (-not $fileBackups.ContainsKey($path)) {
-                $fileBackups[$path] = if(Test-Path -LiteralPath $path){[IO.File]::ReadAllBytes($path)}else{$null}
+                $fileBackups[$path] = (Test-Path -LiteralPath $path)
             }
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
         }
@@ -376,7 +383,7 @@ try {
             ('capture-model level={0} task={1} model={2} x={3} y={4} z={5}' -f $Level,$plan.taskId,$plan.modelId,([double]$pos[0]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[1]).ToString('R',[Globalization.CultureInfo]::InvariantCulture),([double]$pos[2]).ToString('R',[Globalization.CultureInfo]::InvariantCulture))
         }
         [IO.File]::WriteAllText($commandPath,$line + [Environment]::NewLine,[Text.UTF8Encoding]::new($false))
-        if (-not (Wait-ForCaptureComplete $allPaths $doneMarker 180)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
+        if (-not (Wait-ForCaptureComplete $allPaths $doneMarker 180 $process)) { throw "Native capture timed out for task $($plan.taskId), model $($plan.modelId)." }
         $targetDir = Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)
         New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 
@@ -428,7 +435,10 @@ try {
                 if ($_.targetVisible -eq $true -and $null -ne $_.targetCoverage) { [double]$_.targetCoverage } else { -1.0 }
             }} |
             Select-Object -First $captureViews.Count)
-        foreach ($record in $selectedEvidence) {
+        # The visual-integrity result is computed over every native view, so
+        # retain every referenced source frame in the portable bundle. The
+        # selected subset remains the loader/report view contract above.
+        foreach ($record in $captureEvidence) {
             $pngName = [IO.Path]::GetFileName([string]$record.png)
             $pngPath = Join-Path $screenshotRoot $pngName
             if (Test-Path -LiteralPath $pngPath) {
@@ -451,10 +461,48 @@ try {
         $visualIntegrity = $null
         if (Test-Path -LiteralPath $visualJsonPath) {
             $visualIntegrity = Get-Content -LiteralPath $visualJsonPath -Raw | ConvertFrom-Json
-            Copy-Item -LiteralPath $visualJsonPath -Destination (Join-Path $targetDir 'visual-integrity.json') -Force
+            # Rewrite renderer-relative paths to bundle-relative basenames. The
+            # copied result must remain independently inspectable after the
+            # installed screenshots directory is restored.
+            $portableVisualIntegrity = Get-Content -LiteralPath $visualJsonPath -Raw | ConvertFrom-Json
+            if ($portableVisualIntegrity.evidence) {
+                foreach ($field in @('objectMasks','materialMasks','depthBuffers','normalBuffers','overlays')) {
+                    if ($null -ne $portableVisualIntegrity.evidence.$field) {
+                        $portableVisualIntegrity.evidence.$field = @($portableVisualIntegrity.evidence.$field |
+                            ForEach-Object { [IO.Path]::GetFileName([string]$_) })
+                    }
+                }
+            }
+            $portableVisualIntegrity | ConvertTo-Json -Depth 20 |
+                Set-Content -LiteralPath (Join-Path $targetDir 'visual-integrity.json') -Encoding UTF8
         }
         $plan | Add-Member -NotePropertyName captureEvidence -NotePropertyValue $selectedEvidence -Force
         $plan | Add-Member -NotePropertyName visualIntegrity -NotePropertyValue $visualIntegrity -Force
+        $bundleFiles = @()
+        foreach ($bundleFile in @(Get-ChildItem -LiteralPath $targetDir -File -Recurse)) {
+            $relative = $bundleFile.FullName.Substring($targetDir.TrimEnd('\').Length + 1).Replace('\','/')
+            $bundleFiles += [ordered]@{
+                relativePath = $relative
+                sizeBytes = [int64]$bundleFile.Length
+                sha256 = Get-PortableSha256 $bundleFile.FullName
+            }
+        }
+        $visualStatus = if ($null -eq $visualIntegrity) { 'INCONCLUSIVE' } else {
+            [string]$visualIntegrity.visualIntegrity.status
+        }
+        $bundleManifest = [ordered]@{
+            schemaVersion = 1
+            object = [ordered]@{ level = $Level; taskId = [string]$plan.taskId; modelId = [string]$plan.modelId; type = [string]$plan.type }
+            source = [ordered]@{ editorExecutable = $EditorExePath; editorSha256 = $editorHash; inventoryPath = $InventoryPath; inventorySha256 = $inventoryHash }
+            capture = [ordered]@{ requestedViewCount = $captureViews.Count; capturedViewCount = $captureEvidence.Count; viewNames = @($captureEvidence | ForEach-Object { [string]$_.view }); method = 'native direct camera' }
+            expectedParts = if ($null -ne $portableVisualIntegrity) { @($portableVisualIntegrity.expectedParts) } else { @() }
+            visualIntegrityPath = 'visual-integrity.json'
+            evidencePath = 'evidence.jsonl'
+            visualIntegrityStatus = $visualStatus
+            files = $bundleFiles
+        }
+        $bundleManifest | ConvertTo-Json -Depth 20 |
+            Set-Content -LiteralPath (Join-Path $targetDir 'manifest.json') -Encoding UTF8
         if (Test-Path -LiteralPath $doneMarker) { Remove-Item -LiteralPath $doneMarker -Force }
     }
 } catch {
@@ -462,7 +510,7 @@ try {
 } finally {
     $closed = Close-Editor $process
     if ($null -ne $commandOriginal) { [IO.File]::WriteAllBytes($commandPath,$commandOriginal) } elseif (Test-Path -LiteralPath $commandPath) { Remove-Item -LiteralPath $commandPath -Force }
-    foreach ($path in $fileBackups.Keys) { if ($null -ne $fileBackups[$path]) { [IO.File]::WriteAllBytes($path,$fileBackups[$path]) } elseif (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
+    foreach ($path in $fileBackups.Keys) { if (-not $fileBackups[$path] -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } }
 }
 
 if ($null -ne $runFailure) {
@@ -528,9 +576,12 @@ foreach($plan in $plans){
     }
     $item | Add-Member -NotePropertyName assetLineage -NotePropertyValue $assetLineage -Force
 
-    if ($shots.Count -ne $captureViews.Count) {
+    $expectedCapturedViews = if ($plan.visualIntegrity -and $plan.visualIntegrity.evidence.objectMasks) {
+        @($plan.visualIntegrity.evidence.objectMasks).Count
+    } elseif ($plan.captureEvidence) { @($plan.captureEvidence).Count } else { $captureViews.Count }
+    if ($shots.Count -ne $expectedCapturedViews) {
         $item.passed = $false
-        $item.failures = @($item.failures + "Expected $($captureViews.Count) screenshots, found $($shots.Count).")
+        $item.failures = @($item.failures + "Expected $expectedCapturedViews screenshots, found $($shots.Count).")
     }
     if (@($plan.requiredTextures).Count -eq 0) {
         $item.passed = $false
@@ -553,7 +604,8 @@ foreach($plan in $plans){
     $evidence += $item
 }
 $failed=@($evidence|Where-Object{-not $_.passed}).Count
-$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$captureViews.Count);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;visualIntegrityPolicy=$VisualIntegrityPolicy;captureMethod='native direct camera 6 exterior 60-degree views plus 4 interior views'}
+$capturedViewsPerObject = if (@($evidence).Count -gt 0 -and [int]$evidence[0].screenshotCount -gt 0) { [int]$evidence[0].screenshotCount } else { $captureViews.Count }
+$final=[ordered]@{level=$Level;category=$Category;status=$(if($failed -eq 0){'PASS'}else{'FAIL'});inventoryPath=$InventoryPath;inventorySha256=$inventoryHash;editorExecutable=$EditorExePath;editorSha256=$editorHash;logPath=$logPath;launchCount=1;closeCount=1;objects=@($evidence);skippedTasks=@($skipped);screenshotsExpected=($plans.Count*$capturedViewsPerObject);screenshotsCaptured=(@($evidence|Measure-Object screenshotCount -Sum).Sum);requestedViewCount=$captureViews.Count;capturedViewCount=$capturedViewsPerObject;evidencePassed=(@($evidence|Where-Object passed).Count);evidenceFailed=$failed;visualIntegrityPolicy=$VisualIntegrityPolicy;captureMethod='native direct camera 12 exterior 30-degree views plus 4 interior views'}
 $final|ConvertTo-Json -Depth 15|Set-Content -LiteralPath $statePath -Encoding UTF8
 
 # Generate Self-Contained HTML5 Dashboard (skipped when called from Run-SmartTest to avoid duplicate reports)

@@ -1,13 +1,10 @@
 #include "renderer_objects_internal.h"
 #include "object_lightmap.h"
+#include "../capture_camera.h"
 
 
 
 
-static bool IsMetalSlideUpDoorModel(const std::string& modelId) {
-    if (modelId.empty()) return false;
-    return modelId.rfind("506_", 0) == 0;
-}
 
 bool Renderer_Objects::IsSkippedModelId(const std::string& modelId) {
     if (modelId.empty()) return false;
@@ -720,10 +717,10 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
 
         // 2. Apply IGI rotations (Yaw, Pitch, Roll)
         // IGI rotation order: Yaw (Z), then Pitch (X), then Roll (Y)
-        if (IsMetalSlideUpDoorModel(obj.modelId)) {
-            // Slide-up metal doors (levels 12/13/14) carry genuine multi-axis Euler
-            // tuples and seat correctly only with Z->Y->X order. Yaw-only objects are
-            // order-invariant, so scoping this to the door model regresses nothing else.
+        if (IsZyxEulerModel(obj.modelId)) {
+            // Slide-up metal doors (506_) and vehicle missile attachments (615_01_1)
+            // carry genuine multi-axis Euler tuples and seat correctly with Z->Y->X order.
+            // Yaw-only objects are order-invariant, so scoping this regresses nothing else.
             // FALLBACK if still wrong: try order X->Y->Z, or append a +/-90° spin about Z.
             model = glm::rotate(model, (float)obj.rot.z, glm::vec3(0.0f, 0.0f, 1.0f)); // Yaw
             model = glm::rotate(model, (float)obj.rot.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll
@@ -1052,7 +1049,9 @@ void Renderer_Objects::Draw(GLuint ubo_mats, bool overlay_wireframe,
             if (portal_distances_.count(obj.modelId)) {
                 portalDistance = portal_distances_[obj.modelId];
             }
-            isCloseEnough = (distToCamera <= (portalDistance * WORLD_UNITS_PER_METER));
+            float boundRadius = GetMeshRadius(obj.modelId, obj.isBuilding) * 40.96f * obj.scale;
+            isCloseEnough = igi::ShouldDrawBuildingAttachments(
+                distToCamera, boundRadius, portalDistance * WORLD_UNITS_PER_METER, Config::Get().enableLOD);
         }
 
         // ── Render ATTA sub-models (recursively) ─────────────────────────────

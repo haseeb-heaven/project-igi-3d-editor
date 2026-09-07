@@ -54,6 +54,23 @@ inline GraphCameraPose MakeF11GraphCameraPose(
     return pose;
 }
 
+// Computes the camera snap pose for an authored object, placing the camera
+// back along the viewer's forward vector at a safe distance proportional to
+// the model's bounding radius so the object is fully framed.
+inline GraphCameraPose MakeF11ObjectCameraPose(
+    const glm::dvec3& target,
+    float boundRadius,
+    const glm::dvec3& preferred_forward,
+    bool shiftHeld) {
+    if (boundRadius < 500.0f) boundRadius = 2000.0f;
+    const double distMultiplier = shiftHeld ? 3.0 : 1.6;
+    const double distance = std::max(static_cast<double>(boundRadius * distMultiplier),
+                                     6.0 * 4096.0);
+    glm::dvec3 center = target;
+    center.z += boundRadius * 0.25;
+    return MakeF11GraphCameraPose(center, preferred_forward, distance);
+}
+
 // Resolve the graph task referenced by a selected editor object. HumanSoldier
 // stores the relationship on its nested HumanAI task, while AIGraph and
 // HumanAI selections carry it directly. Keep this lookup independent of the

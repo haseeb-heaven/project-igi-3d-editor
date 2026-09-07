@@ -132,8 +132,10 @@ void Renderer_Rain::SetParams(bool active, bool is_snow, float startMeters, floa
     alpha_ = alpha;
 }
 
-void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
-    if (!igi::ShouldDrawWeatherForFrame(active_, shader_program_ != 0)) return;
+void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos,
+                         bool cameraIsSheltered) {
+    if (!igi::ShouldDrawWeatherForFrame(active_, shader_program_ != 0,
+                                        cameraIsSheltered)) return;
 
     // RainEffect's Traceline start/end are raycast-occlusion heights (sky-to-ground
     // probe), not absolute world Y — re-anchor them to the camera each frame so the
@@ -170,5 +172,9 @@ void Renderer_Rain::Draw(GLuint ubo_mats, const glm::vec3& cameraPos) {
     glLineWidth(1.0f);
 
     glDepthMask(depthMaskWas);
+    // Weather is the final 3D scene pass before graph/HUD overlays. Restore the
+    // blend state it temporarily enabled so those overlays and the next frame
+    // start from the same opaque-scene state regardless of weather activity.
+    glDisable(GL_BLEND);
     glUseProgram(0);
 }

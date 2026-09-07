@@ -279,6 +279,7 @@ add_executable(igi_tests
     tests/test_igi1conv_lightmap.cpp
     tests/test_debug_command_parser.cpp
     tests/test_capture_camera.cpp
+    tests/test_editor_camera_start.cpp
     tests/test_visual_integrity.cpp
     tests/test_runtime_subsystems.cpp
     tests/test_ai_patrol_port.cpp
@@ -424,6 +425,19 @@ target_precompile_headers(igi_tests PRIVATE source/pch.h)
 
 include(GoogleTest)
 gtest_discover_tests(igi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+# Keep the editor-start policy regression lightweight and independent from the
+# large runtime integration translation unit/PCH. This gives the camera policy
+# a fast, reliable unit-test seam even when the full aggregate test target is
+# memory constrained on Windows.
+add_executable(editor_camera_start_tests
+    tests/test_editor_camera_start.cpp
+)
+target_include_directories(editor_camera_start_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1
+)
+target_link_libraries(editor_camera_start_tests PRIVATE gtest_main)
+gtest_discover_tests(editor_camera_start_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 add_executable(igi_mcp
     source/mcp/mcp_main.cpp

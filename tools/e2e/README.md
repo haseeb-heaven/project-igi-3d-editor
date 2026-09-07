@@ -62,12 +62,16 @@ integrity policy with no findings. A verified run is recorded at
 `artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
 
 The explicit artifact root contains `batch.json`. Per-object directories under
-`screenshots/obj-<index>-task<id>-<model>/` contain selected stills,
+`screenshots/obj-<index>-task<id>-<model>/` contain the native stills,
 `evidence.jsonl`, `visual-integrity.json`, object/material mask PNGs, depth
-binary data, and diagnostic overlays. The batch records the inventory and
-editor hashes, source hash, policy, task IDs, loader evidence, and visual
-status. Generated screenshots, videos, and live artifacts remain local
-evidence and are not source files to commit.
+binary data, diagnostic overlays, and a hashed portable `manifest.json`.
+Validate a completed root independently with
+`Test-SmartCaptureArtifact.ps1 -ArtifactsRoot <root>`; it rejects missing or
+unsafe evidence paths, hash mismatches, and required visual FAIL/INCONCLUSIVE
+results. The batch records the inventory and editor hashes, source hash,
+policy, task IDs, loader evidence, and requested versus captured view counts.
+Generated screenshots, videos, and live artifacts remain local evidence and
+are not source files to commit.
 
 The focused manifest exercises Level 9 weather, Level 12 startup glass, pause
 logging/severity, property-panel interaction, save/reopen persistence, and

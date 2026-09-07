@@ -5,12 +5,6 @@
  *****************************************************************************/
 #include "renderer_objects_internal.h"
 
-// Keep the diagnostic transform identical to the regular object draw path.
-// This helper is file-local in renderer_objects.cpp, so the picking module
-// needs its own equivalent predicate.
-static bool IsMetalSlideUpDoorModelForPicking(const std::string& modelId) {
-    return !modelId.empty() && modelId.rfind("506_", 0) == 0;
-}
 
 void Renderer_Objects::InitPickingFBO(int w, int h) {
     // Delete existing resources
@@ -373,7 +367,8 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     if (!pick_fbo_) return evidence;
 
     const LevelObject& obj = objects[target_object_index];
-    Mesh mesh = GetOrLoadMesh(obj.modelId, obj.isBuilding);
+    const std::string modelId = obj.modelId.empty() ? obj.segmentModelId : obj.modelId;
+    Mesh mesh = GetOrLoadMesh(modelId, obj.isBuilding);
     if (mesh.vertexCount == 0 || !mesh.fromRenderMesh) return evidence;
 
     evidence.width = viewport_width;
@@ -403,7 +398,7 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     glm::mat4 model(1.0f);
     model = glm::translate(model, glm::vec3(obj.pos));
     model = glm::rotate(model, static_cast<float>(obj.rot.z), glm::vec3(0.f, 0.f, 1.f));
-    if (IsMetalSlideUpDoorModelForPicking(obj.modelId)) {
+    if (IsZyxEulerModel(obj.modelId)) {
         model = glm::rotate(model, static_cast<float>(obj.rot.y), glm::vec3(0.f, 1.f, 0.f));
         model = glm::rotate(model, static_cast<float>(obj.rot.x), glm::vec3(1.f, 0.f, 0.f));
     } else {
@@ -497,9 +492,9 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
             }
         }
     };
-    std::unordered_set<std::string> ancestry{obj.modelId};
+    std::unordered_set<std::string> ancestry{modelId};
     glPolygonOffset(-2.0f, -2.0f);
-    draw_attachments(obj.modelId, glm::scale(model, glm::vec3(1.0f / (40.96f * obj.scale))), ancestry);
+    draw_attachments(modelId, glm::scale(model, glm::vec3(1.0f / (40.96f * obj.scale))), ancestry);
     glBindVertexArray(0);
     glUseProgram(0);
 

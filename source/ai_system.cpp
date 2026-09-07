@@ -321,6 +321,35 @@ bool FaceNode(AiGuardEntity& g, int node) {
     return IsFacing(g, world, kLookAtTolerance);
 }
 
+// Inferred fallback for editor-authored guards that have waypoints but no
+// usable PatrolPath/QVM command stream. Parsed vanilla patrol commands take
+// precedence; this keeps a playable level alive when only graph data exists.
+void AdvanceFallbackPatrol(AiGuardEntity& guard, double delta_seconds) {
+    if (guard.waypoints.size() < 2) {
+        return;
+    }
+
+    const size_t waypoint_count = guard.waypoints.size();
+    const size_t target_index = guard.current_waypoint % waypoint_count;
+    const glm::vec3 target_position = guard.waypoints[target_index];
+    const glm::vec2 horizontal_offset(
+        target_position.x - guard.position.x,
+        target_position.y - guard.position.y);
+    const float horizontal_distance = glm::length(horizontal_offset);
+    if (horizontal_distance <= kWaypointArriveRadius) {
+        guard.current_waypoint = static_cast<uint32_t>((target_index + 1) % waypoint_count);
+        return;
+    }
+
+    const glm::vec2 direction = horizontal_offset / horizontal_distance;
+    const float travel_distance = kPatrolSpeed * static_cast<float>(delta_seconds);
+    const float clamped_travel_distance = std::min(travel_distance, horizontal_distance);
+    guard.position.x += direction.x * clamped_travel_distance;
+    guard.position.y += direction.y * clamped_travel_distance;
+    guard.position.z = HeightAlongLegTo(guard, target_position, guard.position.x, guard.position.y);
+    guard.yaw = glm::degrees(std::atan2(direction.x, direction.y));
+}
+
 // OpenIGI AiSoldier.RunPatrolCommand: execute the current patrol command.
 void RunPatrolCommand(AiGuardEntity& g, uint64_t tick, double delta_seconds) {
     if (g.patrol_stopped) return;
@@ -490,6 +519,8 @@ void AiSystem::Update(
             guard.tick = tick_;
             if (!guard.patrol_commands.empty()) {
                 RunPatrolCommand(guard, tick_, delta_seconds);
+            } else if (!guard.graph) {
+                AdvanceFallbackPatrol(guard, delta_seconds);
             }
         }
 

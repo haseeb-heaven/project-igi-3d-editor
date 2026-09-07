@@ -10,6 +10,7 @@
 #include "runtime/audio_system.h"
 #include "runtime/level_weather.h"
 #include "runtime/pause_menu_state.h"
+#include "runtime/editor_camera_start.h"
 #include <mmsystem.h>
 #include <future>
 #include <set>
@@ -235,9 +236,9 @@ void App::LoadLevel(int level_no) {
 			// switch) can place the new level at an unrelated map location.  Keep it
 			// only for an in-session reload of the same level; fresh level loads must
 			// begin at the authored level start.
-			const bool hasSavedCamera = config.cameraPosX != 0.0f ||
-				config.cameraPosY != 0.0f || config.cameraPosZ != 0.0f;
-			const bool useSavedCamera = last_loaded_level_ == level_no && hasSavedCamera;
+			const bool useSavedCamera = igi::ShouldUseSavedEditorCamera(
+				last_loaded_level_, level_no,
+				glm::vec3(config.cameraPosX, config.cameraPosY, config.cameraPosZ));
 			viewer_.pos_ = useSavedCamera ?
 				glm::vec3(config.cameraPosX, config.cameraPosY, config.cameraPosZ) : start_pos;
 

@@ -59,7 +59,7 @@ void DebugCommandManager::WatcherThread() {
                 std::string token;
                 iss >> token;
                 
-                if (token == "goto" || token == "capture-model" || token == "delete" || token == "wireframe" || token == "draw-parts") {
+                if (token == "goto" || token == "capture-model" || token == "delete" || token == "wireframe" || token == "draw-parts" || token == "reset-level") {
                     DebugCommand cmd;
                     cmd.type = token;
                     while (iss >> token) {
@@ -137,6 +137,8 @@ void DebugCommandManager::ProcessCommand(const DebugCommand& cmd) {
         }
     } else if (cmd.type == "draw-parts") {
         app_->SetDrawParts(cmd.val);
+    } else if (cmd.type == "reset-level") {
+        app_->ResetLevel();
     }
 }
 

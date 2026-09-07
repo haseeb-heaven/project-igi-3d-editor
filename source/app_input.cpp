@@ -740,6 +740,13 @@ void App::ResetLevel() {
 	catch (...) {}
 
 	// Reload level after reset
+	last_loaded_level_ = -1;
+	Config::Get().cameraPosX = 0.0f;
+	Config::Get().cameraPosY = 0.0f;
+	Config::Get().cameraPosZ = 0.0f;
+	Config::Get().cameraOriX = 0.0f;
+	Config::Get().cameraOriY = 0.0f;
+	Config::Get().cameraOriZ = 0.0f;
 	LoadLevel(levelNo);
 	// Snap objects to terrain after level reset
 	SnapObjectsToTerrain();
@@ -793,6 +800,13 @@ void App::ResetScript() {
 	catch (...) {}
 
 	// Reload the level to apply changes
+	last_loaded_level_ = -1;
+	Config::Get().cameraPosX = 0.0f;
+	Config::Get().cameraPosY = 0.0f;
+	Config::Get().cameraPosZ = 0.0f;
+	Config::Get().cameraOriX = 0.0f;
+	Config::Get().cameraOriY = 0.0f;
+	Config::Get().cameraOriZ = 0.0f;
 	LoadLevel(levelNo);
 }
 

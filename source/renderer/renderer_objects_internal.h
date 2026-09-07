@@ -42,3 +42,11 @@ inline bool IsWeaponModel(const std::string& modelId) {
     }
     return false;
 }
+
+// Models that use Z -> Y -> X rotation order instead of default Z -> X -> Y.
+// 506_ slide-up doors carry multi-axis Euler angles.
+// 615_01_1 (missile on rack/carriage) uses multi-axis pitch/roll angles.
+inline bool IsZyxEulerModel(const std::string& modelId) {
+    if (modelId.empty()) return false;
+    return modelId.rfind("506_", 0) == 0 || modelId == "615_01_1";
+}

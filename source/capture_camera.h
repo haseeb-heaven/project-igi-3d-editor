@@ -27,4 +27,15 @@ inline float ResolveBuildingCaptureOrbitRadius(float bound_radius) {
                   std::max(0.0f, bound_radius) * kOutsideBoundsFactor);
 }
 
+// Building attachments remain visible while the camera is within the model's
+// transformed bounding sphere, regardless of their authored portal distance.
+inline bool ShouldDrawBuildingAttachments(float camera_distance_to_center,
+                                         float model_bound_radius,
+                                         float portal_distance_world,
+                                         bool lod_enabled) noexcept {
+  return !lod_enabled ||
+         camera_distance_to_center <= portal_distance_world ||
+         camera_distance_to_center <= model_bound_radius;
+}
+
 }  // namespace igi

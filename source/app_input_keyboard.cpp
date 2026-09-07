@@ -448,6 +448,37 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			renderer_.GraphSelected() >= 0;
 		if (!hasSelectedObject && !hasGraphTarget) return;
 
+		if (hasSelectedObject && !renderer_.IsGraphOverlayVisible()) {
+			const auto& obj = objects[selected_object_index_];
+			const float boundRadius = renderer_.GetMeshRadius(obj.modelId, obj.isBuilding) * 40.96f * obj.scale;
+
+			// Shift+F11: wider radius framing (CameraSnapToObjectWithRadius)
+			const bool shiftHeld = (glutGetModifiers() & GLUT_ACTIVE_SHIFT) != 0 ||
+			                       (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+			const GraphCameraPose pose = MakeF11ObjectCameraPose(
+				obj.pos, boundRadius, glm::dvec3(viewer_.forward_), shiftHeld);
+
+			orbit_active_ = false;
+			input_.mouse_delta_x_ = 0;
+			input_.mouse_delta_y_ = 0;
+			viewer_.velocity_ = glm::vec3(0.0f);
+			viewer_.pos_ = glm::vec3(pose.position);
+			viewer_.yaw_ = pose.yaw_degrees;
+			viewer_.pitch_ = pose.pitch_degrees;
+			UpdateViewerVectors();
+
+			Logger::Get().Log(LogLevel::INFO,
+				"[Camera] F11 CameraSnapToObject model=" + obj.modelId +
+				" type=" + obj.type + " task=" + obj.taskId +
+				" radius=" + std::to_string(boundRadius) +
+				" distance=" + std::to_string(glm::distance(pose.position, obj.pos)) +
+				" camera=(" + std::to_string(viewer_.pos_.x) + "," +
+				std::to_string(viewer_.pos_.y) + "," +
+				std::to_string(viewer_.pos_.z) + ")");
+			return;
+		}
+
 		const std::optional<glm::dvec3> relatedGraphOrigin =
 			FindRelatedGraphOrigin(objects, selected_object_index_);
 		const std::string relatedGraphTaskId =
@@ -483,7 +514,17 @@ void App::Input_OnSpecial(int key, int x, int y) {
 			viewer_.yaw_ = pose.yaw_degrees;
 			viewer_.pitch_ = pose.pitch_degrees;
 		} else {
-			viewer_.pos_ = glm::vec3(target.position);
+			float boundRadius = 2000.0f;
+			if (hasSelectedObject) {
+				const auto& obj = objects[selected_object_index_];
+				boundRadius = renderer_.GetMeshRadius(obj.modelId, obj.isBuilding) * 40.96f * obj.scale;
+				if (boundRadius < 500.0f) boundRadius = 2000.0f;
+			}
+			const GraphCameraPose pose = MakeF11ObjectCameraPose(
+				target.position, boundRadius, glm::dvec3(viewer_.forward_), /*shiftHeld=*/false);
+			viewer_.pos_ = glm::vec3(pose.position);
+			viewer_.yaw_ = pose.yaw_degrees;
+			viewer_.pitch_ = pose.pitch_degrees;
 		}
 		UpdateViewerVectors();
 		const char* target_name = target.kind == GraphCameraTargetKind::GraphNode

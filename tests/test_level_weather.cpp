@@ -231,13 +231,28 @@ TEST(LevelWeatherTest, EscapedVarStringNewlineEnablesWeather) {
     EXPECT_FLOAT_EQ(weather.alpha, 0.15f);
 }
 
-TEST(LevelWeatherTest, ActiveQuotedLevelNineRainIsNotHiddenByVisualBuildingBounds) {
+TEST(LevelWeatherTest, ActiveQuotedLevelNineRainIsHiddenByVisualBuildingBounds) {
     const igi::LevelWeatherSettings weather = igi::ResolveLevelWeather(
         {RainEffect("TRUE", "\"TRUE\n\"", "0.15")});
 
     ASSERT_TRUE(weather.active);
-    EXPECT_TRUE(igi::ShouldRenderAuthoredWeather(
+    EXPECT_FALSE(igi::ShouldRenderAuthoredWeather(
         weather.active, true /* visual building AABB overlaps the camera */));
+    EXPECT_FALSE(igi::ShouldDrawWeatherForFrame(
+        weather.active, true /* rain renderer initialized */,
+        true /* camera is sheltered */));
+}
+
+TEST(LevelWeatherTest, ActiveAuthoredWeatherRemainsVisibleOutsideBuildingBounds) {
+    const igi::LevelWeatherSettings weather = igi::ResolveLevelWeather(
+        {RainEffect("FALSE", "TRUE", "0.06")});
+
+    ASSERT_TRUE(weather.active);
+    EXPECT_TRUE(igi::ShouldRenderAuthoredWeather(
+        weather.active, false /* camera is outdoors */));
+    EXPECT_TRUE(igi::ShouldDrawWeatherForFrame(
+        weather.active, true /* rain renderer initialized */,
+        false /* camera is outdoors */));
 }
 
 TEST(LevelWeatherTest, ActiveAuthoredWeatherDoesNotDependOnObjectRenderFlags) {

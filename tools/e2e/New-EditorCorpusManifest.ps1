@@ -57,7 +57,9 @@ foreach ($levelDir in $levelDirs) {
     $sceneRegion = @(300, 80, 900, 700)
     $pauseRegion = @(760, 0, 776, 864)
     $loadPattern = "\[App\] LoadLevel\(\) COMPLETE for level $level"
-    $weatherPattern = '\[App\] (WeatherEffect resolved: active=1|No active RainEffect in level — weather disabled)'
+    # Keep the assertion ASCII-only so a UTF-8/ANSI boundary cannot corrupt the
+    # optional explanatory suffix in the generated JSON manifest.
+    $weatherPattern = '\[App\] (WeatherEffect resolved: active=1|No active RainEffect in level)'
     $fatalPattern = '\[App\] (?:FATAL|Failed to load level|Unknown error loading level|Out of memory)'
     # Spline waypoint placeholders intentionally have no texture. Exclude that
     # sentinel while keeping real resolver misses and import-pack misses fatal.

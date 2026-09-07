@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <iterator>
+#include "mcp/mcp_json.h"
 #include "visual_integrity.h"
 
 namespace {
@@ -30,6 +33,33 @@ bool HasRule(const igi::VisualIntegrityResult& result, const char* rule) {
         [rule](const igi::VisualIntegrityFinding& finding) {
             return finding.rule == rule;
         });
+}
+
+igi::VisualIntegrityInput LoadEvidenceFixture(const char* path) {
+    std::ifstream file(path, std::ios::binary);
+    EXPECT_TRUE(file.is_open()) << path;
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    mcp::JsonValue root;
+    mcp::JsonError error;
+    EXPECT_TRUE(mcp::JsonParse(text, root, error)) << error.message;
+
+    igi::VisualIntegrityInput input;
+    for (const auto& part : root.at("expectedPartIds").as_array())
+        input.expectedPartIds.push_back(static_cast<int>(part.as_number()));
+    for (const auto& source_view : root.at("views").as_array()) {
+        igi::VisualIntegrityView view;
+        view.width = static_cast<int>(source_view.at("width").as_number());
+        view.height = static_cast<int>(source_view.at("height").as_number());
+        view.name = source_view.at("name").as_string();
+        for (const auto& id : source_view.at("partIds").as_array())
+            view.partIds.push_back(static_cast<int>(id.as_number()));
+        for (const auto& visible : source_view.at("targetMask").as_array())
+            view.targetMask.push_back(visible.as_bool() ? 1 : 0);
+        view.sceneDepth.assign(view.targetMask.size(), 0.5f);
+        view.targetDepth.assign(view.targetMask.size(), 0.5f);
+        input.views.push_back(std::move(view));
+    }
+    return input;
 }
 
 }  // namespace
@@ -108,4 +138,163 @@ TEST(VisualIntegrityTest, FailsWhenTargetMaskContainsLargeInteriorHole) {
 
     EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
     EXPECT_TRUE(HasRule(result, "silhouette-hole"));
+}
+
+TEST(VisualIntegrityTest, FailsWhenVisibleTargetPixelsEscapeProjectedGeometry) {
+    auto view = MakeView({1, 1, 1, 1,
+                          0, 0, 0, 0,
+                          0, 0, 0, 0,
+                          0, 0, 0, 0});
+    view.targetMask.assign(16, 0);
+    // The scene claims a target fragment where the target-only geometry pass
+    // has no projected part. That cannot be evidence for this target.
+    view.targetMask[10] = 1;
+
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1}, {view}));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "target-bounds"));
+}
+
+TEST(VisualIntegrityTest, ClassifiesFullyOccludedPartAsInconclusive) {
+    auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                          2, 2, 2, 2, 2, 2, 2, 2});
+    for (size_t index = 8; index < view.targetMask.size(); ++index) {
+        view.targetMask[index] = 0;
+        view.sceneDepth[index] = 0.4f;  // a nearer non-target scene surface
+        view.targetDepth[index] = 0.5f;
+    }
+
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1, 2}, {view}));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kInconclusive);
+    EXPECT_TRUE(HasRule(result, "occluded-part"));
+    EXPECT_FALSE(HasRule(result, "part-coverage"));
+}
+
+TEST(VisualIntegrityTest, SerializesActionableFindingWithSeverity) {
+    igi::VisualIntegrityResult result;
+    result.status = igi::VisualIntegrityStatus::kFail;
+    result.findings.push_back({"part-coverage", "12", 2, 0, 4,
+                               "expected target part produced no visible fragments"});
+
+    const std::string json = igi::VisualIntegrityJson(result);
+
+    EXPECT_NE(json.find("\"rule\":\"part-coverage\""), std::string::npos);
+    EXPECT_NE(json.find("\"severity\":\"error\""), std::string::npos);
+}
+
+TEST(VisualIntegrityTest, MarksUnmeasurableProjectedPartAsInconclusive) {
+    auto view = MakeView({1, 0, 0, 0,
+                          0, 0, 0, 0,
+                          0, 0, 0, 0,
+                          0, 0, 0, 0});
+    view.targetMask.assign(16, 0);
+    view.targetMask[0] = 1;
+
+    auto input = MakeInput({1}, {view});
+    input.minimumPartPixels = 2;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kInconclusive);
+    EXPECT_TRUE(HasRule(result, "insufficient-projection"));
+}
+
+TEST(VisualIntegrityTest, FailsTransparentPartWithoutDepthEvidence) {
+    auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                          1, 1, 1, 1, 1, 1, 1, 1});
+    view.sceneDepth.assign(16, 1.0f);
+    view.targetDepth.assign(16, 1.0f);
+
+    igi::VisualIntegrityPart transparent_part;
+    transparent_part.id = 1;
+    transparent_part.alphaMode = 2;
+    auto input = MakeInput({1}, {view});
+    input.expectedParts = {transparent_part};
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "transparency-evidence"));
+}
+
+TEST(VisualIntegrityTest, FailsWhenRuntimeTransformDoesNotMatchAuthoring) {
+    auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                          1, 1, 1, 1, 1, 1, 1, 1});
+    view.transformMatchesAuthored = false;
+
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1}, {view}));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "transform-agreement"));
+}
+
+TEST(VisualIntegrityTest, FailsWhenRepeatedCameraFramesChangeTargetArea) {
+    auto first = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                           1, 1, 1, 1, 1, 1, 1, 1});
+    first.temporalGroup = 7;
+    auto second = first;
+    second.targetMask.assign(16, 0);
+    second.targetMask[0] = 1;
+    second.targetMask[1] = 1;
+    second.targetMask[4] = 1;
+    second.targetMask[5] = 1;
+
+    auto input = MakeInput({1}, {first, second});
+    input.requireTemporalEvidence = true;
+    input.maximumTemporalAreaDelta = 0.10f;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "temporal-stability"));
+}
+
+TEST(VisualIntegrityTest, MarksMissingRepeatedFrameEvidenceAsInconclusive) {
+    auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                          1, 1, 1, 1, 1, 1, 1, 1});
+    view.temporalGroup = 7;
+
+    auto input = MakeInput({1}, {view});
+    input.requireTemporalEvidence = true;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kInconclusive);
+    EXPECT_TRUE(HasRule(result, "temporal-evidence"));
+}
+
+TEST(VisualIntegrityTest, AllowsCameraPredictedAreaChangeWhenCoverageIsStable) {
+    auto first = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
+                           1, 1, 1, 1, 1, 1, 1, 1});
+    first.temporalGroup = 8;
+    auto second = first;
+    // The camera projects only a quarter of the target in the second frame,
+    // but every projected fragment remains visible.
+    second.partIds.assign(16, 0);
+    second.targetMask.assign(16, 0);
+    second.partIds[0] = second.partIds[1] = second.partIds[4] = second.partIds[5] = 1;
+    second.targetMask[0] = second.targetMask[1] = second.targetMask[4] = second.targetMask[5] = 1;
+
+    auto input = MakeInput({1}, {first, second});
+    input.requireTemporalEvidence = true;
+    input.maximumTemporalAreaDelta = 0.10f;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "temporal-stability"));
+}
+
+TEST(VisualIntegrityTest, WatchtowerBaselineFixturePassesWithoutModelSpecificRules) {
+    const auto result = igi::EvaluateVisualIntegrity(
+        LoadEvidenceFixture("tests/fixtures/visual_integrity/watchtower-baseline.json"));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_EQ(result.partsExpected, 2);
+    EXPECT_EQ(result.partsObserved, 2);
+}
+
+TEST(VisualIntegrityTest, WinchHouseNegativeFixtureFailsForUnderCoveredGeometry) {
+    const auto result = igi::EvaluateVisualIntegrity(
+        LoadEvidenceFixture("tests/fixtures/visual_integrity/winchhouse-undercovered.json"));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "part-coverage"));
 }

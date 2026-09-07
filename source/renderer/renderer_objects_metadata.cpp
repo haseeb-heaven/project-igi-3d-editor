@@ -53,7 +53,14 @@ void Renderer_Objects::EnsurePortalDistancesLoaded() {
                 modelId = modelId.substr(1, modelId.size() - 2);
             }
             try {
-                float portalDist = std::stof(tokens[4]);
+                // tokens[8] is the authored "Distance to cutoff" (tokens[4..7] are LOD 1..4 distances).
+                // Using tokens[4] truncated visibility to the LOD 1 distance (e.g. 1m for WinchHouse 463_01_1).
+                float portalDist = std::stof(tokens[8]);
+                if (portalDist <= 0.0f) {
+                    for (size_t ti = 4; ti < tokens.size(); ++ti) {
+                        portalDist = std::max(portalDist, std::stof(tokens[ti]));
+                    }
+                }
                 portal_distances_[modelId] = portalDist;
             } catch (...) {}
         }
