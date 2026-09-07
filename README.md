@@ -236,7 +236,11 @@ $env:IGI_TEST_LEVEL="10"; .\igi_tests.exe
 .\igi_tests.exe
 ```
 
-**570 tests** across 79 suites: QSC lexer/parser, QVM round-trips (synthetic + real game data for all 14 levels), MCP protocol/domain/transport coverage, file-format parsers (DAT, RES, TEX, MTP, FNT, Graph), verify-core units, and level-verification integration tests.
+The current Release test binary registers **675 tests** across 107 suites. It
+covers QSC/QVM, MCP, file-format parsers, editor/runtime policy, visual
+integrity, and level-verification integration. A clean full-suite result also
+requires the installed mission corpus; see [Test Suite Documentation](docs/TESTS.md)
+for the current verified and environment-gated status.
 
 For the full test reference — suites, filters, fixture descriptions, and build/deploy instructions — see:
 👉 **[Test Suite Documentation](docs/TESTS.md)**
@@ -245,7 +249,21 @@ For the full test reference — suites, filters, fixture descriptions, and build
 
 ## 🧪 Live End-to-End (E2E) Native Testing
 
-The project includes an interactive, GPU-validated end-to-end verification harness driven by [`e2e_live_test.cmd`](e2e_live_test.cmd) and [`Run-SmartTest.ps1`](Run-SmartTest.ps1). It executes the editor natively on the interactive desktop (Session 1), capturing 10 multi-angle camera views per object while verifying transform logs, DAT material caching, and submesh texture bindings with zero crashes.
+The project includes two complementary live E2E paths. The generic
+[`editor-e2e.ps1`](tools/e2e/editor-e2e.ps1) runner exercises data-driven UI
+workflows. The native smart runner behind [`e2e_live_test.cmd`](e2e_live_test.cmd)
+and [`Run-SmartTest.ps1`](Run-SmartTest.ps1) launches through WMI in interactive
+Session 1 and records loader evidence separately from the deterministic visual
+integrity gate. With its default `Required` policy, a selected object passes
+only when both evidence layers pass; loader or texture records cannot mask a
+visual-integrity failure.
+
+The visual gate is target-scoped and deterministic: it uses object/material ID
+masks, depth evidence, projected part coverage, attachment coverage, and
+diagnostic overlays. It contains no model-specific pass rules or image
+classifier. The Level 12 strict fixtures are Watchtower (`405_02_1`, task
+`570`) and WinchHouse (`463_01_1`, task `-1#907`); the verified pair passes with
+all 20 selected screenshots and no visual-integrity findings.
 
 👉 **[Complete Live E2E Testing Guide (All Categories & Levels)](docs/LIVE_E2E_TESTING.md)**
 
@@ -270,6 +288,24 @@ e2e_live_test --level 5 --distinct-categories --maximum 4
 # Dry-run plan preview (verifies candidates without opening game window)
 e2e_live_test --level 5 --distinct-categories --maximum 4 --prepare-only
 ```
+
+For the strict Level 12 fixture pair, call the native runner directly so task
+IDs and the required policy are explicit:
+
+```powershell
+$native = 'D:\Code\project-igi-editor\tools\e2e\Invoke-SmartNativeCaptureSession.ps1'
+$out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-Date -Format yyyyMMdd-HHmmss)
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $native `
+  -GameRoot D:\IGI1 -EditorExePath D:\Code\project-igi-editor\bin\Release\igi1ed.exe `
+  -Level 12 -Category Buildings -ModelIds '405_02_1,463_01_1' `
+  -TaskIds '570,-1#907' -MaxObjects 0 -ViewCount 10 -Video `
+  -VisualIntegrityPolicy Required -ArtifactsRoot $out
+```
+
+The expected batch status is `PASS` when both selected objects pass the required
+visual-integrity policy. The per-object result identifies `taskId`,
+`visualIntegrityStatus`, and any actionable findings. The verified run is
+recorded at `artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
 
 ---
 
@@ -344,7 +380,7 @@ See [CHANGELOGS.md](CHANGELOGS.md) for version history and detailed change logs,
 If you encounter any issues or have suggestions, feel free to reach out:
 
 - **🎮 Discord**: Message me at `heaven.hm` or join our [Discord Server](https://discord.com/invite/9SJucSsyt).
-- **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com).
+- **📧 Email**: [DEFAULT_RECIPIENT_EMAIL](mailto:DEFAULT_RECIPIENT_EMAIL).
 - **🌟 GitHub**: Follow the project on [Heaven-HM profile](https://github.com/heaven-hm/).
 - **📺 YouTube**: Subscribe to [Heaven-HM channel](https://www.youtube.com/@heaven-hm91) for guides and walkthroughs.
 

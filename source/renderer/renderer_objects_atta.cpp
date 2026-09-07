@@ -1090,13 +1090,11 @@ void Renderer_Objects::DrawAttachmentsRecursive(
         // No level-12 forced-opaque case: it discarded the winch-house ARGB
         // glass in the opaque pass (invisible until ATTA promotion).
 
-        // Skip this sub-model if it doesn't belong in the current pass:
-        //   Windows: transparent pass only
-        //   Alpha attachments: both passes
-        //   Opaque attachments: opaque pass only
-        const bool drawInThisPass = attIsWindow
-            ? isTransparentPass
-            : (!isTransparentPass || attHasAlpha);
+        // Skip this sub-model if it doesn't belong in the current pass. Window
+        // models can contain both opaque structural blocks and genuinely alpha
+        // blended panes, so the model-level window classification must not force
+        // the opaque blocks through the transparent pass.
+        const bool drawInThisPass = !isTransparentPass || attHasAlpha;
         if (!drawInThisPass) {
             // Still recurse into children — they may need a different pass
             std::string childKey = parentModelId + ">" + att.modelId;
@@ -1108,15 +1106,8 @@ void Renderer_Objects::DrawAttachmentsRecursive(
             continue;
         }
 
-        if (attIsWindow) {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glUniform1f(loc_alpha, 0.55f); // visible reflectivity, still see-through
-            glUniform1f(loc_glass_min_, 0.30f); // clean glass sheen floor
-        } else {
-            glUniform1f(loc_alpha, 1.0f);
-            glUniform1f(loc_glass_min_, 0.0f);
-        }
+        glUniform1f(loc_alpha, 1.0f);
+        glUniform1f(loc_glass_min_, 0.0f);
 
         // Draw sub-model submeshes
         if (!subMesh.subMeshes.empty()) {
@@ -1124,15 +1115,21 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 if (sub.VAO == 0 || sub.vertexCount == 0) continue;
 
                 // In the transparent pass, only draw alpha submeshes (with blending).
-                // In the opaque pass, draw everything — the shader discards α<0.5 pixels.
+                // Opaque blocks of a mixed window model belong in the opaque pass so
+                // they write depth and remain visible through the normal scene path.
                 bool subNeedsBlend = (sub.alphaMode == 2);
                 if (attIsTree) subNeedsBlend = false;
-                if (isTransparentPass && !attIsWindow && !subNeedsBlend) continue;
+                if (attIsWindow) {
+                    if (isTransparentPass != subNeedsBlend) continue;
+                } else if (isTransparentPass && !subNeedsBlend) {
+                    continue;
+                }
 
                 if (subNeedsBlend) {
                     glEnable(GL_BLEND);
                     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                    glUniform1f(loc_alpha, sub.baseColorFactor.a);
+                    glUniform1f(loc_alpha, attIsWindow ? 0.55f : sub.baseColorFactor.a);
+                    if (attIsWindow) glUniform1f(loc_glass_min_, 0.30f);
                 }
 
                 if (sub.textureID > 0) {
@@ -1161,6 +1158,7 @@ void Renderer_Objects::DrawAttachmentsRecursive(
                 if (subNeedsBlend) {
                     glDisable(GL_BLEND);
                     glUniform1f(loc_alpha, 1.0f);
+                    if (attIsWindow) glUniform1f(loc_glass_min_, 0.0f);
                 }
             }
             glBindVertexArray(0);

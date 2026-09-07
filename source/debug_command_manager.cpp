@@ -323,6 +323,22 @@ static bool WriteDiagnosticDepth(const char* path, const std::vector<float>& dep
 void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     auto& objects = app_->level_.GetLevelObjects().GetObjects();
 
+    // A model capture is an authored-asset inspection, not a gameplay view.
+    // Building ATTA visibility is normally gated by the level's portal distance;
+    // that gate can be much smaller than the orbit needed to frame the complete
+    // model (for example, a building may author a one-metre portal distance).
+    // Disable only the renderer's distance gate for this scoped capture and
+    // restore the user's setting on every exit path.
+    struct ScopedCaptureLod {
+        bool enabled;
+        ScopedCaptureLod() : enabled(Config::Get().enableLOD) {
+            Config::Get().enableLOD = false;
+        }
+        ~ScopedCaptureLod() {
+            Config::Get().enableLOD = enabled;
+        }
+    } scopedCaptureLod;
+
     double cx = cmd.x, cy = cmd.y, cz = cmd.z;
     if (std::abs(cx) < 1000000.0 && std::abs(cy) < 1000000.0 && std::abs(cz) < 1000000.0)
         cx *= 256.0, cy *= 256.0, cz *= 256.0;

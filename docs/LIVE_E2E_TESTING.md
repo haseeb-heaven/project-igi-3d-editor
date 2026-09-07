@@ -1,6 +1,10 @@
 # Project IGI Editor — Live End-to-End (E2E) Testing Guide
 
-This guide provides a comprehensive manual and automated test reference for running live, native, end-to-end verification across all 14 game levels and every object category in Project IGI Editor.
+This guide provides a manual and automated reference for live, native,
+end-to-end verification across the 14 game levels and object categories in
+Project IGI Editor. It documents both generic UI workflows and the stricter
+deterministic native visual-integrity gate; a loader PASS alone is not visual
+acceptance.
 
 ---
 
@@ -10,8 +14,17 @@ The Project IGI Editor test harness verifies real runtime 3D scene rendering, mo
 - **One-Session Interactive Execution**: Launches the editor on the user's interactive desktop (Session 1) using WMI `Win32_Process.Create`.
 - **4 GB Large Address Aware (VAS)**: Validated for 64-bit aware 32-bit execution without memory truncation.
 - **OpenGL Driver Crash Immunity**: Fully protects fixed-function rendering pipelines (`glBegin`/`glEnd`) from vertex buffer object (VBO) state leakage in modern GPU drivers (e.g. AMD `atioglxx.dll` offset `0x444` crash).
-- **Multi-Angle Camera Captures**: Takes 10 high-resolution camera angles (6 exterior 60° orbits + 4 interior views) per selected object.
-- **Multi-Point Verification Evidence**: Validates loaded object transforms, DAT material cache loads, and submesh texture assignments in `batch.json`.
+- **Deterministic target evidence**: Emits target object/material ID masks and
+  depth data, then checks projected submesh coverage and independently rendered
+  attachment parts. The check is generic and has no model-specific rules or
+  image classifier.
+- **Multi-Angle Camera Captures**: Emits a fixed 16-view capture set (12
+  exterior poses and 4 interior views). `-ViewCount` controls the number of
+  selected records copied into each object result; the default is 10.
+- **Separate evidence layers**: `batch.json` records loader transforms, DAT
+  material/texture evidence, screenshots, and visual-integrity status
+  separately. The native runner defaults to `-VisualIntegrityPolicy Required`,
+  so a visual `FAIL` or `INCONCLUSIVE` fails the selected object.
 
 ---
 
@@ -35,6 +48,26 @@ e2e_live_test --level 5 --rigid --maximum 1
 :: Cross-category trial: 1 object from EACH category (4 objects, 40 screenshots)
 e2e_live_test --level 5 --distinct-categories --maximum 4
 ```
+
+These convenience commands use `Run-SmartTest.ps1` and the required visual
+policy in the underlying native runner. For the Level 12 strict fixtures, use
+the native script directly so authored task IDs are selectable:
+
+```powershell
+$native = 'D:\Code\project-igi-editor\tools\e2e\Invoke-SmartNativeCaptureSession.ps1'
+$out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-Date -Format yyyyMMdd-HHmmss)
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $native `
+  -GameRoot D:\IGI1 -EditorExePath D:\Code\project-igi-editor\bin\Release\igi1ed.exe `
+  -Level 12 -Category Buildings -ModelIds '405_02_1,463_01_1' `
+  -TaskIds '570,-1#907' -MaxObjects 0 -ViewCount 10 -Video `
+  -VisualIntegrityPolicy Required -ArtifactsRoot $out
+```
+
+Expected result: batch `PASS` when both selected objects satisfy the required
+visual-integrity policy. Watchtower (`405_02_1`, task `570`) and WinchHouse
+(`463_01_1`, task `-1#907`) must both be visual `PASS` with no findings. A
+verified run is recorded at
+`artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
 
 ---
 
@@ -252,11 +285,16 @@ Prepared native one-session level 5: 4 objects, 10 views each.
 
 ## 📊 Inspecting Artifacts & Evidence
 
-Every test run outputs artifacts into a timestamped directory under `artifacts/e2e/`:
-`artifacts/e2e/run-lvl<level>-<category>-<timestamp>/`
+The convenience wrapper defaults to a timestamped directory under
+`artifacts/e2e/`:
+`artifacts/e2e/run-lvl<level>-<category>-<timestamp>/`. The strict fixture
+command above uses its explicit `-ArtifactsRoot`; its batch summary is
+`<ArtifactsRoot>/batch.json`.
 
 ### 1. `batch.json` (Per-Level Evidence)
-Contains the exact cryptographic proof of execution:
+Contains the execution and acceptance summary, including the inventory/editor
+hashes, `visualIntegrityPolicy`, per-object `taskId`, loader evidence, and
+`visualIntegrityStatus`:
 ```json
 {
   "level": 5,
@@ -281,7 +319,11 @@ Contains the exact cryptographic proof of execution:
       "type": "Heli",
       "category": "Vehicles",
       "modelId": "709_01_1",
-      "screenshotCount": 10
+      "screenshotCount": 10,
+      "visualIntegrityStatus": "PASS",
+      "visualIntegrity": {
+        "visualIntegrity": { "status": "PASS", "findings": [] }
+      }
     }
   ]
 }
@@ -291,7 +333,7 @@ Contains the exact cryptographic proof of execution:
 Captured images are neatly organized by object prefix in:
 `artifacts/e2e/run-.../level<N>/screenshots/obj-<index>-task<id>-<model>/`
 
-Files include:
+Files include the selected rendered stills, plus target-scoped evidence files:
 - `Level05_Model709_01_1_Ext_000.png`
 - `Level05_Model709_01_1_Ext_060.png`
 - `Level05_Model709_01_1_Ext_120.png`
@@ -302,6 +344,12 @@ Files include:
 - `Level05_Model709_01_1_Int_090.png`
 - `Level05_Model709_01_1_Int_180.png`
 - `Level05_Model709_01_1_Int_270.png`
+
+For the strict native runner, each object directory also contains
+`evidence.jsonl`, `visual-integrity.json`, per-view `.object-id.png` and
+`.material-id.png` masks, `.depth.bin` data, and `-diagnostic.png` overlays.
+Task identity is retained in the object directory name and JSON records; an
+anonymous authored ID is represented literally, for example `-1#907`.
 
 ---
 
@@ -323,3 +371,10 @@ Files include:
 | `--prepare-only` | - | `false` | Dry-run plan generation and validation without opening the game window. |
 | `--artifacts <dir>` | - | auto | Custom output root directory for screenshots and evidence logs. |
 | `--editor-exe <path>` | - | auto | Custom path to `igi1ed.exe` binary. |
+
+The table above describes the `e2e_live_test.cmd` convenience surface. The
+direct `Invoke-SmartNativeCaptureSession.ps1` surface additionally supports
+`-GameRoot`, `-InventoryPath`, `-TaskIds`, `-VisualIntegrityPolicy` (`Required`
+or `ReportOnly`), `-Video`, and `-NoDashboard`. Use the direct surface for
+strict fixture selection and task-id preservation; `ReportOnly` must not be
+used as a release gate.

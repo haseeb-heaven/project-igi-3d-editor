@@ -45,5 +45,5 @@ This document tracks all known rendering bugs, engine limitations, and editor wo
 If you encounter any other bugs, crashes, or rendering issues that are not documented here, please feel free to report them to the dev team!
 
 * **🎮 Discord**: Message us directly at `Jones_IGI#3954` or join the modding community on the [Project IGI Discord Server](https://discord.com/invite/QpbQrRFAER).
-* **📧 Email**: [igiproz.hm@gmail.com](mailto:igiproz.hm@gmail.com)
+* **📧 Email**: [DEFAULT_RECIPIENT_EMAIL](mailto:DEFAULT_RECIPIENT_EMAIL)
 * **🌟 GitHub**: Create a detailed issue on the [project-igi-editor GitHub Repository](https://github.com/Jones-HM/project-igi-editor/issues) with reproduction steps and logs.

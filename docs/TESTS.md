@@ -28,10 +28,12 @@ $env:Path = (Join-Path (Get-Location) 'assets/dlls/x86') + ';' + $env:Path
 ```
 
 The focused MCP run contains 86 tests: 85 passed and one Windows symlink
-containment test skipped because the test account lacks symlink privilege. The
-The full Win32 Release run against `D:\IGI1` completed 570 tests: 561 passed
-and 9 skipped. The skips are the symlink privilege case, the absent optional
-MEF corpus, and seven vanilla-fixture parity prerequisites.
+containment test skipped because the test account lacks symlink privilege.
+The current Release binary registers 675 tests across 107 suites. In the
+latest local run, 601 passed, 33 were skipped, and 41 failed. The failures are
+environment-gated: the checkout lacks the installed mission corpus under
+`bin\Release\missions`, so parser, runtime-data, and `VerifyLevelIntegration`
+checks cannot be treated as a source regression until the corpus is restored.
 
 ---
 
@@ -122,7 +124,7 @@ $env:IGI_TEST_LEVEL="3"; .\igi_tests.exe --gtest_filter="AllLevels/VerifyLevelIn
 | **Total — all levels** | **230** |
 | **Total — `IGI_TEST_LEVEL=1`** | **229** |
 | Focused MCP tests | 86 |
-| Current `igi_tests.exe` registration | **570 across 79 suites** |
+| Current `igi_tests.exe` registration | **675 across 107 suites** |
 
 ---
 
@@ -318,3 +320,49 @@ The screenshot assertions are generic runner capabilities: color ratios test
 stable UI/material regions and difference ratios test whether a scene region
 changes between two captured frames. Each red failure retains both checkpoint
 PNGs and the JSON step record for diagnosis.
+
+### Deterministic native visual-integrity gate
+
+The smart native runner adds a stricter, target-scoped gate to the loader
+checks. Its default `-VisualIntegrityPolicy Required` requires a visual
+integrity result of `PASS` for every selected object; `ReportOnly` is for
+diagnostics and is not release acceptance. The gate evaluates deterministic
+object/material ID masks, depth evidence, projected part coverage, and
+independently rendered attachment coverage. It does not use an image
+classifier or model-specific pass rules.
+
+Run the focused runner contract test without launching a live capture:
+
+```powershell
+& pwsh -NoProfile -ExecutionPolicy Bypass -File `
+  'D:\Code\project-igi-editor\tools\e2e\test-smart-native-capture-session.ps1'
+```
+
+For live fixture coverage, use `Invoke-SmartNativeCaptureSession.ps1` directly
+when task identity must be explicit. `-TaskIds` preserves authored IDs,
+including anonymous IDs such as `-1#907`; the `e2e_live_test.cmd` convenience
+wrapper does not expose that parameter.
+
+```powershell
+$native = 'D:\Code\project-igi-editor\tools\e2e\Invoke-SmartNativeCaptureSession.ps1'
+$out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-Date -Format yyyyMMdd-HHmmss)
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $native `
+  -GameRoot D:\IGI1 -EditorExePath D:\Code\project-igi-editor\bin\Release\igi1ed.exe `
+  -Level 12 -Category Buildings -ModelIds '405_02_1,463_01_1' `
+  -TaskIds '570,-1#907' -MaxObjects 0 -ViewCount 10 -Video `
+  -VisualIntegrityPolicy Required -ArtifactsRoot $out
+```
+
+The expected fixture result is a batch `PASS`: Watchtower (`405_02_1`, task
+`570`) and WinchHouse (`463_01_1`, task `-1#907`) both pass the required visual
+integrity policy with no findings. The verified run is recorded at
+`artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
+
+Native artifacts are written below the explicit `-ArtifactsRoot`, with the
+batch summary at `batch.json`. Each selected object has a directory under
+`screenshots/obj-<index>-task<id>-<model>/` containing the copied stills,
+`evidence.jsonl`, `visual-integrity.json`, object/material masks, depth data,
+and diagnostic overlays. The batch also records the inventory path and SHA-256,
+editor executable and SHA-256, source path and SHA-256, task IDs, policy, and
+pass/fail status. Generated screenshots, videos, and live artifacts are local
+evidence and are not source files to commit.

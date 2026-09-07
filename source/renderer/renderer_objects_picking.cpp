@@ -393,6 +393,7 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glEnable(GL_POLYGON_OFFSET_FILL);
 
     glUseProgram(pick_shader_prog_);
     glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
@@ -444,6 +445,7 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
             glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
         }
     };
+    glPolygonOffset(-1.0f, -1.0f);
     draw_mesh_parts(mesh, model, false);
 
     // The source inventory includes recursive MEF attachments.  This is a
@@ -496,6 +498,7 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
         }
     };
     std::unordered_set<std::string> ancestry{obj.modelId};
+    glPolygonOffset(-2.0f, -2.0f);
     draw_attachments(obj.modelId, glm::scale(model, glm::vec3(1.0f / (40.96f * obj.scale))), ancestry);
     glBindVertexArray(0);
     glUseProgram(0);
@@ -520,6 +523,7 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     return evidence;
 }
 

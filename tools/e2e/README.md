@@ -29,6 +29,46 @@ include region metrics, tolerant color ratios, and frame-to-frame difference
 ratios. These assertions are data-driven and can be reused by additional
 level/model fixtures without adding production-specific logic to the runner.
 
+## Deterministic native visual-integrity gate
+
+The generic UI runner above and the smart native runner are separate E2E
+surfaces. `Invoke-SmartNativeCaptureSession.ps1`, called by
+`Run-SmartTest.ps1` and `e2e_live_test.cmd`, launches the editor through WMI in
+interactive Session 1 and records loader evidence separately from visual
+acceptance. Its default `-VisualIntegrityPolicy Required` is fail-closed: each
+selected object must have visual-integrity `PASS`; loader transforms, DAT
+texture loads, or assignment records cannot mask a visual failure.
+
+The visual check is deterministic and target-scoped. It uses object/material ID
+masks, depth evidence, projected submesh coverage, and strict coverage for
+independently rendered MEF attachments. It has no image classifier and no
+model-specific pass rule. Use the direct script when selecting an authored task
+ID, because the convenience `.cmd` wrapper does not expose `-TaskIds` or
+`-VisualIntegrityPolicy`:
+
+```powershell
+$native = 'D:\Code\project-igi-editor\tools\e2e\Invoke-SmartNativeCaptureSession.ps1'
+$out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-Date -Format yyyyMMdd-HHmmss)
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $native `
+  -GameRoot D:\IGI1 -EditorExePath D:\Code\project-igi-editor\bin\Release\igi1ed.exe `
+  -Level 12 -Category Buildings -ModelIds '405_02_1,463_01_1' `
+  -TaskIds '570,-1#907' -MaxObjects 0 -ViewCount 10 -Video `
+  -VisualIntegrityPolicy Required -ArtifactsRoot $out
+```
+
+The expected fixture result is batch `PASS`: Watchtower (`405_02_1`, task
+`570`) and WinchHouse (`463_01_1`, task `-1#907`) both pass the required visual
+integrity policy with no findings. A verified run is recorded at
+`artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
+
+The explicit artifact root contains `batch.json`. Per-object directories under
+`screenshots/obj-<index>-task<id>-<model>/` contain selected stills,
+`evidence.jsonl`, `visual-integrity.json`, object/material mask PNGs, depth
+binary data, and diagnostic overlays. The batch records the inventory and
+editor hashes, source hash, policy, task IDs, loader evidence, and visual
+status. Generated screenshots, videos, and live artifacts remain local
+evidence and are not source files to commit.
+
 The focused manifest exercises Level 9 weather, Level 12 startup glass, pause
 logging/severity, property-panel interaction, save/reopen persistence, and
 model import with model-specific texture application evidence. The model
@@ -73,7 +113,8 @@ and distant building floors:
   -GameRoot D:\IGI1 -AllowGameDataMutation
 ```
 
-The pipeline is intentionally red while a known visual defect is present. A
-red result is useful evidence only when its scenario directory contains the
-failed step's screenshot and `scenario.json`; do not turn these assertions
+The generic pipeline may be red while a known UI/scene defect is present. A red
+result is useful evidence only when its scenario directory contains the failed
+step's screenshot and `scenario.json`. This pipeline is complementary to the
+strict native visual-integrity result; do not turn either assertion surface
 into permissive scene-wide pixel checks.
