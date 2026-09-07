@@ -24,6 +24,7 @@
         { "id": "window", "type": "wait_for_window", "timeoutSeconds": 45 },
         { "id": "load", "type": "wait", "seconds": 12 },
         { "id": "healthy", "type": "assert_process" },
+        { "id": "authored-start", "type": "assert_log", "pattern": "Viewer start source=level-authored-start" },
         { "id": "scene", "type": "screenshot", "name": "level12-startup" },
         { "id": "scene-visible", "type": "assert_screenshot_region", "region": [300, 80, 900, 700], "minNonBlackRatio": 0.15, "minUniqueRatio": 0.01, "minMeanLuma": 20 },
         { "id": "close", "type": "close_editor" }

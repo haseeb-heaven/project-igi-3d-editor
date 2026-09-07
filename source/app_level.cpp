@@ -230,10 +230,19 @@ void App::LoadLevel(int level_no) {
 		float start_yaw;
 		if (level_.Load(level_load_params_s, start_pos, start_yaw)) {
 			const auto& config = Config::Get();
-			viewer_.pos_ = (config.cameraPosX != 0.0f || config.cameraPosY != 0.0f || config.cameraPosZ != 0.0f) ?
+			// A persisted camera belongs to the previous editor session and has no
+			// level association.  Reusing it on the first load (or after a level
+			// switch) can place the new level at an unrelated map location.  Keep it
+			// only for an in-session reload of the same level; fresh level loads must
+			// begin at the authored level start.
+			const bool hasSavedCamera = config.cameraPosX != 0.0f ||
+				config.cameraPosY != 0.0f || config.cameraPosZ != 0.0f;
+			const bool useSavedCamera = last_loaded_level_ == level_no && hasSavedCamera;
+			viewer_.pos_ = useSavedCamera ?
 				glm::vec3(config.cameraPosX, config.cameraPosY, config.cameraPosZ) : start_pos;
 
-			bool hasConfigOri = (config.cameraOriX != 0.0f || config.cameraOriY != 0.0f || config.cameraOriZ != 0.0f);
+			bool hasConfigOri = useSavedCamera &&
+				(config.cameraOriX != 0.0f || config.cameraOriY != 0.0f || config.cameraOriZ != 0.0f);
 			if (hasConfigOri) {
 				viewer_.yaw_   = config.cameraOriX;
 				viewer_.pitch_ = config.cameraOriY;
@@ -247,6 +256,8 @@ void App::LoadLevel(int level_no) {
 			}
 
 			UpdateViewerVectors();
+			Logger::Get().Log(LogLevel::INFO, std::string("[App] Viewer start source=") +
+				(useSavedCamera ? "saved-session-camera" : "level-authored-start"));
 			Logger::Get().Log(LogLevel::INFO, "[App] Level " + std::to_string(level_no) + " loaded. Viewer start=(" + std::to_string(viewer_.pos_.x) + "," + std::to_string(viewer_.pos_.y) + "," + std::to_string(viewer_.pos_.z) + ") yaw=" + std::to_string(viewer_.yaw_));
 			last_loaded_level_ = level_no;
 
