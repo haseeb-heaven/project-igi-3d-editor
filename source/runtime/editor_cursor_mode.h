@@ -35,8 +35,8 @@ constexpr CursorMode ResolveCursorMode(
     bool leftButtonDown,
     bool terrainEditEnabled,
     int editBrush,
-    int selectedObjectIndex,
-    int hoverObjectIndex) noexcept {
+    int /*selectedObjectIndex*/ = -1,
+    int /*hoverObjectIndex*/ = -1) noexcept {
     if (enableCameraMode) {
         return leftButtonDown ? CursorMode::Camera : CursorMode::Move;
     }
@@ -46,12 +46,6 @@ constexpr CursorMode ResolveCursorMode(
         if (editBrush == 2) return CursorMode::TerrainSoften;
         if (editBrush == 3) return CursorMode::TerrainFlatten;
         return CursorMode::TerrainDrop;
-    }
-    if (selectedObjectIndex >= 0) {
-        return CursorMode::Selected;
-    }
-    if (hoverObjectIndex >= 0) {
-        return CursorMode::Hover;
     }
     return CursorMode::Default;
 }

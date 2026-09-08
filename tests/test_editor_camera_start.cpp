@@ -112,11 +112,11 @@ TEST(EditorCameraStartTest, ResolveCursorModeForTerrainTools) {
     EXPECT_EQ(ResolveCursorMode(false, false, true, 3, -1, -1), CursorMode::TerrainFlatten);
     EXPECT_EQ(ResolveCursorMode(false, false, true, 4, -1, -1), CursorMode::TerrainDrop);
 
-    // Normal mode: Default (pointer), Hover, Selected
+    // Normal mode: Always Default (pointer arrow) matching main branch behavior
     EXPECT_EQ(ResolveCursorMode(false, false, false, 0, -1, -1), CursorMode::Default);
-    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, -1, 5), CursorMode::Hover);
-    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, -1), CursorMode::Selected);
-    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, 5), CursorMode::Selected);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, -1, 5), CursorMode::Default);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, -1), CursorMode::Default);
+    EXPECT_EQ(ResolveCursorMode(false, false, false, 0, 2, 5), CursorMode::Default);
 
     // Camera mode overrides all: Camera on LMB down, Move on movement
     EXPECT_EQ(ResolveCursorMode(true, true, true, 0, -1, -1), CursorMode::Camera);
