@@ -16,6 +16,21 @@ bool HasExpectedSize(const VisualIntegrityView& view) {
            view.sceneDepth.size() == pixels && view.targetDepth.size() == pixels;
 }
 
+bool HasFiniteDepth(const VisualIntegrityView& view) {
+    return std::all_of(view.sceneDepth.begin(), view.sceneDepth.end(), [](float value) {
+        return std::isfinite(value);
+    }) && std::all_of(view.targetDepth.begin(), view.targetDepth.end(), [](float value) {
+        return std::isfinite(value);
+    });
+}
+
+bool HasDepthRange(const VisualIntegrityView& view) {
+    return std::all_of(view.sceneDepth.begin(), view.sceneDepth.end(),
+                       [](float value) { return value >= 0.0f && value <= 1.0f; }) &&
+           std::all_of(view.targetDepth.begin(), view.targetDepth.end(),
+                       [](float value) { return value >= 0.0f && value <= 1.0f; });
+}
+
 void AddFinding(VisualIntegrityResult& result, const char* rule, int view_index,
                 const std::string& part, int observed, int required,
                 const char* reason, const VisualIntegrityView* view = nullptr) {
@@ -27,7 +42,8 @@ void AddFinding(VisualIntegrityResult& result, const char* rule, int view_index,
     result.findings.push_back(std::move(finding));
 }
 
-int CountInteriorHolePixels(const VisualIntegrityView& view) {
+int CountInteriorHolePixels(const VisualIntegrityView& view, float depth_epsilon,
+                            const std::vector<int>& transparent_part_ids) {
     const int width = view.width;
     const int height = view.height;
     std::vector<uint8_t> visited(view.targetMask.size(), 0);
@@ -43,12 +59,20 @@ int CountInteriorHolePixels(const VisualIntegrityView& view) {
             std::queue<int> pending;
             pending.push(start);
             visited[start] = 1;
-            int area = 0;
+            int projected_area = 0;
             bool touches_bounds = false;
             while (!pending.empty()) {
                 const int index = pending.front();
                 pending.pop();
-                ++area;
+                // Geometry behind a nearer scene fragment is an occlusion,
+                // not a break in this target's silhouette.  Count only
+                // projected pixels which should have been visible here.
+                if (view.partIds[index] > 0 &&
+                    std::find(transparent_part_ids.begin(), transparent_part_ids.end(),
+                              view.partIds[index]) == transparent_part_ids.end() &&
+                    view.sceneDepth[index] >= view.targetDepth[index] - depth_epsilon) {
+                    ++projected_area;
+                }
                 const int px = index % width;
                 const int py = index / width;
                 touches_bounds |= px == 0 || py == 0 || px == width - 1 || py == height - 1;
@@ -62,7 +86,9 @@ int CountInteriorHolePixels(const VisualIntegrityView& view) {
                     pending.push(next);
                 }
             }
-            if (!touches_bounds) largest_hole = std::max(largest_hole, area);
+            // A hole is only meaningful when it is enclosed by visible target
+            // fragments. Its geometry-derived area excludes authored openings.
+            if (!touches_bounds) largest_hole = std::max(largest_hole, projected_area);
         }
     }
     return largest_hole;
@@ -104,6 +130,78 @@ int CountPart(const std::vector<int>& parts, int id) {
 VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input) {
     VisualIntegrityResult result;
     if (input.expectedPartIds.empty() || input.views.empty()) return result;
+    if (!std::isfinite(input.minimumPartCoverageRatio) ||
+        input.minimumPartCoverageRatio < 0.0f || input.minimumPartCoverageRatio > 1.0f ||
+        !std::isfinite(input.minimumObservedPartRatio) ||
+        input.minimumObservedPartRatio < 0.0f || input.minimumObservedPartRatio > 1.0f ||
+        !std::isfinite(input.depthEpsilon) || input.depthEpsilon < 0.0f ||
+        !std::isfinite(input.maximumTemporalAreaDelta) ||
+        input.maximumTemporalAreaDelta < 0.0f || input.maximumTemporalAreaDelta > 1.0f ||
+        input.minimumInteriorHolePixels < 0 || input.minimumPartPixels < 1) {
+        AddFinding(result, "invalid-inventory", -1, "", 0, 0,
+                   "visual-integrity thresholds must be finite and within their allowed ranges");
+        result.status = VisualIntegrityStatus::kFail;
+        return result;
+    }
+
+    std::vector<int> expected_ids = input.expectedPartIds;
+    std::sort(expected_ids.begin(), expected_ids.end());
+    if (expected_ids.front() <= 0 ||
+        std::adjacent_find(expected_ids.begin(), expected_ids.end()) != expected_ids.end()) {
+        AddFinding(result, "invalid-inventory", -1, "", 0, 0,
+                   "expected part IDs must be unique positive values");
+        result.status = VisualIntegrityStatus::kFail;
+        return result;
+    }
+    std::vector<int> strict_ids = input.strictPartIds;
+    std::sort(strict_ids.begin(), strict_ids.end());
+    if ((!strict_ids.empty() && strict_ids.front() <= 0) ||
+        std::adjacent_find(strict_ids.begin(), strict_ids.end()) != strict_ids.end() ||
+        std::any_of(strict_ids.begin(), strict_ids.end(), [&](int id) {
+            return !std::binary_search(expected_ids.begin(), expected_ids.end(), id);
+        })) {
+        AddFinding(result, "invalid-inventory", -1, "", 0, 0,
+                   "strict part IDs must be unique expected parts");
+        result.status = VisualIntegrityStatus::kFail;
+        return result;
+    }
+
+    if (!input.expectedParts.empty()) {
+        std::vector<int> inventory_ids;
+        inventory_ids.reserve(input.expectedParts.size());
+        for (const VisualIntegrityPart& part : input.expectedParts) {
+            inventory_ids.push_back(part.id);
+            const bool has_geometry_metadata = part.vertexCount != 0 || part.triangleCount != 0 ||
+                part.localBoundsMin.x != 0.0f || part.localBoundsMin.y != 0.0f ||
+                part.localBoundsMin.z != 0.0f || part.localBoundsMax.x != 0.0f ||
+                part.localBoundsMax.y != 0.0f || part.localBoundsMax.z != 0.0f ||
+                !part.textureIdentity.empty();
+            if (part.id <= 0 ||
+                (has_geometry_metadata && (part.vertexCount <= 0 || part.triangleCount <= 0)) ||
+                !std::isfinite(part.localBoundsMin.x) ||
+                !std::isfinite(part.localBoundsMin.y) ||
+                !std::isfinite(part.localBoundsMin.z) ||
+                !std::isfinite(part.localBoundsMax.x) ||
+                !std::isfinite(part.localBoundsMax.y) ||
+                !std::isfinite(part.localBoundsMax.z) ||
+                (has_geometry_metadata && part.localBoundsMin.x > part.localBoundsMax.x) ||
+                (has_geometry_metadata && part.localBoundsMin.y > part.localBoundsMax.y) ||
+                (has_geometry_metadata && part.localBoundsMin.z > part.localBoundsMax.z)) {
+                AddFinding(result, "invalid-inventory", -1, std::to_string(part.id), 0, 0,
+                           "expected geometry inventory contains invalid counts or bounds");
+                result.status = VisualIntegrityStatus::kFail;
+                return result;
+            }
+        }
+        std::sort(inventory_ids.begin(), inventory_ids.end());
+        if (std::adjacent_find(inventory_ids.begin(), inventory_ids.end()) != inventory_ids.end() ||
+            inventory_ids != expected_ids) {
+            AddFinding(result, "invalid-inventory", -1, "", 0, 0,
+                       "geometry inventory IDs must exactly match expected part IDs");
+            result.status = VisualIntegrityStatus::kFail;
+            return result;
+        }
+    }
 
     // A part is expected only when the target-only geometry pass projects it in
     // at least one sampled view.  Authoring inventory alone is insufficient:
@@ -113,14 +211,18 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
     std::vector<int> observed_parts;
     std::vector<int> occluded_parts;
     std::vector<int> missing_parts;
+    std::vector<int> transparent_part_ids;
+    for (const VisualIntegrityPart& part : input.expectedParts) {
+        if (part.alphaMode == 2) transparent_part_ids.push_back(part.id);
+    }
     bool has_valid_view = false;
     bool has_inconclusive_evidence = false;
     std::map<int, std::vector<TemporalMeasurement>> temporal_samples;
     for (size_t view_index = 0; view_index < input.views.size(); ++view_index) {
         const VisualIntegrityView& view = input.views[view_index];
-        if (!HasExpectedSize(view)) {
+        if (!HasExpectedSize(view) || !HasFiniteDepth(view) || !HasDepthRange(view)) {
             AddFinding(result, "invalid-evidence", static_cast<int>(view_index), "", 0, 0,
-                       "target, material, and depth buffers must match the viewport", &view);
+                       "target, material, and depth buffers must match the viewport and depth range", &view);
             continue;
         }
         has_valid_view = true;
@@ -134,6 +236,14 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
         int target_pixels = 0;
         int projected_target_pixels = 0;
         for (size_t pixel = 0; pixel < view.targetMask.size(); ++pixel) {
+            if (view.partIds[pixel] > 0 &&
+                !std::binary_search(expected_ids.begin(), expected_ids.end(), view.partIds[pixel])) {
+                AddFinding(result, "invalid-evidence", static_cast<int>(view_index),
+                           std::to_string(view.partIds[pixel]), 0, 0,
+                           "diagnostic buffer contains a part ID absent from the geometry inventory", &view);
+                view_failed = true;
+                continue;
+            }
             // `partIds` is the target-only, geometry-derived projection.  It
             // establishes what can be demanded from this camera.  A fragment
             // is observed only when its depth also agrees with the rendered
@@ -152,7 +262,12 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
             }
             if (view.partIds[pixel] > 0) observed_parts.push_back(view.partIds[pixel]);
             ++target_pixels;
-            if (view.sceneDepth[pixel] < 1.0f &&
+            const bool is_transparent_part = std::find(transparent_part_ids.begin(),
+                transparent_part_ids.end(), view.partIds[pixel]) != transparent_part_ids.end();
+            // Blended fragments can be visibly composited without writing the
+            // scene depth buffer. Their visibility is established by the
+            // target capture's ordering evidence, not depth equality.
+            if (!is_transparent_part && view.sceneDepth[pixel] < 1.0f &&
                 std::fabs(view.sceneDepth[pixel] - view.targetDepth[pixel]) > input.depthEpsilon) {
                 AddFinding(result, "depth-consistency", static_cast<int>(view_index), "",
                            0, 0, "target depth differs from the visible scene depth", &view);
@@ -178,7 +293,8 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
             temporal_samples[view.temporalGroup].push_back(
                 {target_pixels, projected_target_pixels});
         }
-        const int largest_hole = CountInteriorHolePixels(view);
+        const int largest_hole = CountInteriorHolePixels(
+            view, input.depthEpsilon, transparent_part_ids);
         if (largest_hole >= input.minimumInteriorHolePixels) {
             AddFinding(result, "silhouette-hole", static_cast<int>(view_index), "",
                        largest_hole, input.minimumInteriorHolePixels,
@@ -226,6 +342,35 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
                            input.minimumPartPixels,
                            "expected target part produced too few visible fragments", part_view);
             }
+            const auto inventory_part = std::find_if(input.expectedParts.begin(), input.expectedParts.end(),
+                [expected_part](const VisualIntegrityPart& part) { return part.id == expected_part; });
+            if (inventory_part != input.expectedParts.end() && inventory_part->materialSlot >= 0) {
+                AddFinding(result, "material-coverage", -1, std::to_string(inventory_part->materialSlot),
+                           pixels, input.minimumPartPixels,
+                           "expected authored material slot produced too few target fragments", part_view);
+            }
+        }
+    }
+    if (input.minimumPartCoverageRatio > 0.0f) {
+        for (int expected_part : input.expectedPartIds) {
+            for (size_t view_index = 0; view_index < input.views.size(); ++view_index) {
+                const VisualIntegrityView& view = input.views[view_index];
+                if (!HasExpectedSize(view)) continue;
+                const int projected = CountPart(view.partIds, expected_part);
+                if (projected < input.minimumPartPixels) continue;
+                int observed = 0;
+                for (size_t pixel = 0; pixel < view.partIds.size(); ++pixel) {
+                    if (view.partIds[pixel] == expected_part && view.targetMask[pixel] != 0)
+                        ++observed;
+                }
+                const int required = std::max(input.minimumPartPixels,
+                    static_cast<int>(std::ceil(projected * input.minimumPartCoverageRatio)));
+                if (observed < required) {
+                    AddFinding(result, "part-coverage", static_cast<int>(view_index),
+                               std::to_string(expected_part), observed, required,
+                               "visible target fragments cover too little of the projected part area", &view);
+                }
+            }
         }
     }
     for (const VisualIntegrityPart& part : input.expectedParts) {
@@ -252,6 +397,23 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
     std::sort(observed_parts.begin(), observed_parts.end());
     observed_parts.erase(std::unique(observed_parts.begin(), observed_parts.end()), observed_parts.end());
     result.partsObserved = static_cast<int>(observed_parts.size());
+    if (input.minimumObservedPartRatio > 0.0f) {
+        const int required_observed_parts = static_cast<int>(std::ceil(
+            static_cast<float>(result.partsExpected) * input.minimumObservedPartRatio));
+        if (result.partsObserved < required_observed_parts) {
+            std::ostringstream missing_part_ids;
+            int listed_parts = 0;
+            for (int expected_part : input.expectedPartIds) {
+                if (std::binary_search(observed_parts.begin(), observed_parts.end(), expected_part)) continue;
+                if (listed_parts++ > 0) missing_part_ids << ',';
+                missing_part_ids << expected_part;
+                if (listed_parts == 8) break;
+            }
+            AddFinding(result, "inventory-coverage", -1, missing_part_ids.str(),
+                       result.partsObserved, required_observed_parts,
+                       "too little expected geometry produced visible target fragments across the capture");
+        }
+    }
     if (input.requireTemporalEvidence) {
         bool has_repeated_group = false;
         for (const auto& group : temporal_samples) {
@@ -299,12 +461,17 @@ const char* VisualIntegrityStatusName(VisualIntegrityStatus status) {
 
 std::string VisualIntegrityJson(const VisualIntegrityResult& result) {
     std::ostringstream output;
-    output << "{\"status\":\"" << VisualIntegrityStatusName(result.status)
+    output << "{\"schemaVersion\":1,\"status\":\"" << VisualIntegrityStatusName(result.status)
            << "\",\"viewsChecked\":" << result.viewsChecked
            << ",\"viewsPassed\":" << result.viewsPassed
            << ",\"viewsFailed\":" << result.viewsFailed
            << ",\"partsExpected\":" << result.partsExpected
            << ",\"partsObserved\":" << result.partsObserved
+           << ",\"summary\":{\"viewsChecked\":" << result.viewsChecked
+           << ",\"viewsPassed\":" << result.viewsPassed
+           << ",\"viewsFailed\":" << result.viewsFailed
+           << ",\"partsExpected\":" << result.partsExpected
+           << ",\"partsObserved\":" << result.partsObserved << "}"
            << ",\"findings\":[";
     for (size_t index = 0; index < result.findings.size(); ++index) {
         const auto& finding = result.findings[index];
@@ -315,6 +482,8 @@ std::string VisualIntegrityJson(const VisualIntegrityResult& result) {
                << "\",\"viewIndex\":" << finding.viewIndex
                << ",\"observedPixels\":" << finding.observedPixels
                << ",\"requiredPixels\":" << finding.requiredPixels
+               << ",\"observed\":" << finding.observedPixels
+               << ",\"expectedMinimum\":" << finding.requiredPixels
                << ",\"reason\":\"" << EscapeJson(finding.reason) << "\""
                << ",\"views\":";
         if (finding.view.empty()) output << "[]";

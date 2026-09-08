@@ -1,24 +1,9 @@
 #pragma once
 #include <string>
 #include <thread>
-#include <mutex>
-#include <queue>
 #include <atomic>
 #include <functional>
-
-struct DebugCommand {
-    std::string type;
-    int level = -1;
-    int val = 0;
-    std::string taskId;
-    std::string modelId;
-    bool has_pos = false;
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-    int orbit_frames = 0;
-    int video_fps = 12;
-};
+#include "debug_command_queue.h"
 
 class App; // Forward declaration
 
@@ -41,7 +26,6 @@ private:
     App* app_;
     std::thread watcher_thread_;
     std::atomic<bool> running_;
-    std::mutex queue_mutex_;
-    std::queue<DebugCommand> command_queue_;
+    DebugCommandQueue command_queue_;
     std::string commands_file_path_;
 };

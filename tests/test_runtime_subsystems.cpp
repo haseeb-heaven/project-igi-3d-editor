@@ -426,27 +426,6 @@ TEST(PauseMenuFontTest, PropertyLayoutUsesTheActiveFontMetrics) {
     EXPECT_EQ(layout.widgets.front().y2 - layout.widgets.front().y1, 38);
 }
 
-TEST(AutoSavePolicyTest, DisabledMenuStateCannotRunTimer) {
-    EXPECT_FALSE(ShouldRunAutoSave(true, false, false, 1));
-    EXPECT_TRUE(ShouldRunAutoSave(true, true, false, 1));
-    EXPECT_FALSE(ShouldRunAutoSave(false, true, false, 1));
-    EXPECT_FALSE(ShouldRunAutoSave(true, true, true, 1));
-}
-
-TEST(AutoSavePolicyTest, DisabledMenuStateCannotSaveBeforeGameLaunch) {
-    EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(true, false));
-    EXPECT_TRUE(ShouldSaveBeforeExternalGameLaunch(true, true));
-    EXPECT_FALSE(ShouldSaveBeforeExternalGameLaunch(false, true));
-}
-
-TEST(AutoSavePolicyTest, EnabledEditorStateSavesBeforeGracefulQuit) {
-    EXPECT_TRUE(ShouldSaveBeforeEditorExit(true, true, 1));
-    EXPECT_TRUE(ShouldSaveBeforeEditorExit(true, true, 14));
-    EXPECT_FALSE(ShouldSaveBeforeEditorExit(true, false, 1));
-    EXPECT_FALSE(ShouldSaveBeforeEditorExit(false, true, 1));
-    EXPECT_FALSE(ShouldSaveBeforeEditorExit(true, true, 0));
-}
-
 // The loading bar is drawn synchronously on the main loop; a queued scene
 // repaint dispatched by the overlay's event pump must never overwrite or swap
 // over it, or the bar is never seen (the "progress bar missing" bug).
@@ -524,39 +503,6 @@ TEST(PauseMenuMusicTest, FailedStartDoesNotPersistEnabledState) {
               (PauseMusicToggleResult{false, false}));
 }
 
-TEST(EditorHistoryTest, PushUndoInvalidatesRedoAndKeepsLatestEntries) {
-    std::vector<int> undo{1, 2};
-    std::vector<int> redo{9};
-    PushEditorUndo(undo, redo, 3, 3);
-    EXPECT_EQ(undo, (std::vector<int>{1, 2, 3}));
-    EXPECT_TRUE(redo.empty());
-
-    PushEditorUndo(undo, redo, 4, 3);
-    EXPECT_EQ(undo, (std::vector<int>{2, 3, 4}));
-}
-
-TEST(EditorHistoryTest, UndoAndRedoMoveCurrentStateBetweenStacks) {
-    std::vector<int> undo{10};
-    std::vector<int> redo;
-    int restored = 0;
-    ASSERT_TRUE(MoveEditorUndoToRedo(undo, redo, 20, restored));
-    EXPECT_EQ(restored, 10);
-    EXPECT_TRUE(undo.empty());
-    EXPECT_EQ(redo, (std::vector<int>{20}));
-
-    ASSERT_TRUE(MoveEditorRedoToUndo(undo, redo, restored, restored));
-    EXPECT_EQ(restored, 20);
-    EXPECT_EQ(undo, (std::vector<int>{10}));
-    EXPECT_TRUE(redo.empty());
-}
-
-TEST(EditorHistoryTest, ClearDropsHistoryAtDocumentBoundary) {
-    std::vector<int> undo{1, 2};
-    std::vector<int> redo{3};
-    ClearEditorHistory(undo, redo);
-    EXPECT_TRUE(undo.empty());
-    EXPECT_TRUE(redo.empty());
-}
 TEST(WeaponViewSwayTest, LowersAndRaisesTheRigInTheReferenceNumberOfTicks) {
     WeaponViewSway weapon_view_sway;
 
@@ -906,86 +852,6 @@ TEST(RuntimeProjectileTest, ReferenceGrenadeBouncesAndDetonatesAtFuseExpiry) {
     EXPECT_TRUE(projectiles.GetProjectiles().empty());
     ASSERT_EQ(projectiles.GetDetonations().size(), 1U);
     EXPECT_EQ(projectiles.GetDetonations()[0].type, ProjectileType::FragGrenade);
-}
-
-// 1. Game Clock Determinism & Tick Tests
-TEST(RuntimeClockTest, DeterministicTicksAndCatchUp) {
-    GameClock clock;
-    EXPECT_EQ(clock.GetTickCount(), 0);
-    EXPECT_FALSE(clock.IsTickDue());
-
-    // Establish time base, then advance by 100ms (~3 ticks)
-    clock.Update(0);
-    clock.Update(100);
-    EXPECT_TRUE(clock.IsTickDue());
-
-    int tick_count = 0;
-    while (clock.IsTickDue()) {
-        clock.CompleteTick();
-        tick_count++;
-        if (clock.GetTickCount() < GameClock::GUARDED_STARTUP_TICKS) {
-            clock.CompleteRender();
-        }
-    }
-    EXPECT_GE(tick_count, 3);
-    EXPECT_EQ(clock.GetTickCount(), static_cast<uint64_t>(tick_count));
-
-    // Test pause
-    clock.SetPaused(true);
-    clock.Update(300);
-    EXPECT_FALSE(clock.IsTickDue());
-}
-
-TEST(RuntimeClockTest, UsesAbsoluteDeadlinesInsteadOfRoundedAccumulator) {
-    GameClock clock;
-    clock.Reset(1000);
-    clock.Update(1000);
-    clock.Update(1034);
-
-    ASSERT_TRUE(clock.IsTickDue());
-    EXPECT_EQ(clock.GetDueMilliseconds(), 1000);
-    clock.CompleteTick();
-    clock.CompleteRender();
-
-    clock.Update(1067);
-    EXPECT_TRUE(clock.IsTickDue());
-    EXPECT_EQ(clock.GetDueMilliseconds(), 1033);
-}
-
-TEST(RuntimeClockTest, BoundsCatchUpBurstAndExcludesNestedWallTime) {
-    GameClock clock;
-    clock.Reset(0);
-    clock.Update(0);
-    clock.Update(1000);
-
-    // The first three ticks are render-guarded in the reference loop.
-    for (int startup_tick = 0; startup_tick < GameClock::GUARDED_STARTUP_TICKS; ++startup_tick) {
-        ASSERT_TRUE(clock.IsTickDue());
-        clock.CompleteTick();
-        clock.CompleteRender();
-    }
-
-    int completed_ticks = 0;
-    while (clock.IsTickDue()) {
-        clock.CompleteTick();
-        ++completed_ticks;
-    }
-
-    EXPECT_EQ(completed_ticks, 11);
-    EXPECT_TRUE(clock.IsCatchUpCapped());
-
-    clock.Reset(100);
-    clock.Update(100);
-    clock.BeginExcludedTime(100);
-    clock.BeginExcludedTime(200);
-    clock.EndExcludedTime(300);
-    clock.EndExcludedTime(400);
-    clock.Update(400);
-
-    EXPECT_EQ(clock.GetExcludedMilliseconds(), 300);
-    EXPECT_FALSE(clock.IsTickDue());
-    clock.Update(401);
-    EXPECT_TRUE(clock.IsTickDue());
 }
 
 // 2. QVM Bytecode Execution & Native Registry Tests

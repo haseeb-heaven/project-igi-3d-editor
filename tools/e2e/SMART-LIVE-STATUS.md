@@ -31,10 +31,12 @@ The two authored fixtures are deliberately run together:
 | Fixture | Model | Authored task ID | Expected result |
 |---|---|---|---|
 | Watchtower | `405_02_1` | `570` | visual `PASS` |
-| WinchHouse | `463_01_1` | `-1#907` | visual `PASS` with no findings |
+| WinchHouse | `463_01_1` | `-1#907` | visual `FAIL` with actionable missing or under-covered geometry |
 
-The recorded batch is `PASS`: loader and visual evidence pass for both objects,
-including the formerly incomplete WinchHouse attachment coverage.
+The recorded batch below predates the current visual-integrity result contract
+and its required WinchHouse negative classification. It is historical evidence
+only, not current acceptance evidence. A fresh capture must accept Watchtower
+and reject WinchHouse under the configured `Required` policy.
 
 Rerun the pair with explicit task identity and a fresh artifact directory:
 
@@ -54,14 +56,16 @@ The runner passes `task=<id>` to the editor command watcher and preserves the
 same value in `batch.json`, `evidence.jsonl`, visual-integrity records, and the
 per-object directory name, including anonymous IDs such as `-1#907`.
 
-## Recorded evidence
+## Historical evidence
 
-The verified live batch is retained at:
+The pre-contract live batch is retained at:
 
 `artifacts/visual-integrity-level12-depthfix-20260907-155140/batch.json`
 
 It records one WMI launch and close, 20 selected screenshots, the inventory and
-editor SHA-256 values, loader evidence, and visual status for both fixtures.
+editor SHA-256 values, loader evidence, and the older visual status for both fixtures.
+Because it accepts WinchHouse and lacks the current nested summary contract, it
+must not be used to approve the current gate.
 The one-view task-ID smoke evidence is at:
 
 `artifacts/visual-integrity-taskid-smoke-20260907/`

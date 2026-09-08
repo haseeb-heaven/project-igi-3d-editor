@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "regressions": [
+    {
+      "id": "IGIED-FNT-RGB565-LUMINANCE-001",
+      "symptom": "RGB565 white glyph pixels were decoded with a dark alpha value.",
+      "sourceAnchors": ["source/renderer/fnt_parser.cpp:FNT_ParseBytes"],
+      "unitOrComponentCases": ["FntParserSyntheticTest.ParsesMinimalRgb565FontAndGlyphMap"],
+      "e2eCases": [],
+      "requiredCapabilities": ["synthetic-fixtures"],
+      "status": "fixed",
+      "fixCommit": null,
+      "evidenceRunIds": [],
+      "mem0Status": "pending-interface"
+    },
+    {
+      "id": "IGIED-SAVE-ACTIVE-EDIT",
+      "symptom": "Configured save must persist the currently edited property.",
+      "sourceAnchors": ["source/app_level.cpp:App::SaveCurrentLevel"],
+      "unitOrComponentCases": [],
+      "e2eCases": ["level12-transform-save-reopen"],
+      "requiredCapabilities": ["interactive-session", "disposable-corpus"],
+      "status": "planned",
+      "fixCommit": null,
+      "evidenceRunIds": [],
+      "mem0Status": "not-a-new-fix"
+    }
+  ]
+}

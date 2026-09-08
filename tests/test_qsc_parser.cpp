@@ -60,6 +60,24 @@ TEST(QscParserTest, EmptyBlock) {
     EXPECT_EQ(blk.children.size(), 0u);
 }
 
+TEST(QscParserPropertyTest, WhitespaceAndCommentsPreserveCallShape) {
+    for (const std::string& gap : {" ", "\n", "\r\n", "/*gap*/"}) {
+        const std::string source = "F" + gap + "(" + gap + "17," + gap + "TRUE);";
+        const auto lexed = Lex(source);
+        ASSERT_TRUE(lexed.ok) << source << ": " << lexed.error;
+        const auto parsed = Parse(lexed.tokens);
+        ASSERT_TRUE(parsed.ok) << source << ": " << parsed.error;
+        const Node* call = FirstCallNode(parsed);
+        ASSERT_NE(call, nullptr) << source;
+        EXPECT_EQ(call->s_val, "F");
+        ASSERT_EQ(call->children.size(), 2u);
+        EXPECT_EQ(call->children[0]->kind, NodeKind::IntLit);
+        EXPECT_EQ(call->children[0]->i_val, 17);
+        EXPECT_EQ(call->children[1]->kind, NodeKind::BoolLit);
+        EXPECT_TRUE(call->children[1]->b_val);
+    }
+}
+
 // ============================================================
 //  Function calls
 // ============================================================

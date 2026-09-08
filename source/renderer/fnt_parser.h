@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 
 struct FntGlyph {
@@ -31,3 +32,4 @@ struct FntFont {
 };
 
 FntFont FNT_Parse(const std::string& filepath);
+FntFont FNT_ParseBytes(std::span<const uint8_t> bytes);

@@ -36,7 +36,10 @@ if ($levelRows.Count -ne 1) { throw 'Missing or ambiguous level inventory.' }
 $all = @($levelRows[0].inventory)
 $IncludeTypes = @($IncludeTypes | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 if ($IncludeTypes.Count) { $all = @($all | Where-Object { $IncludeTypes -contains [string]$_.type }) }
-$modelAnchors = @($all | Where-Object { $_.modelId -and $_.authoredPosition -and $_.authoredRotation })
+$modelAnchors = @($all | Where-Object {
+    $_.modelId -and $_.authoredPosition -and $_.authoredRotation -and
+    $_.renderable -ne $false -and $_.helperModel -ne $true -and $_.modelResolved -ne $false
+})
 if ($DistinctTypes) {
     $selected = [System.Collections.Generic.List[object]]::new()
     $groups = @($modelAnchors | Group-Object type)
@@ -49,8 +52,13 @@ if ($DistinctTypes) {
     $renderable = @($modelAnchors | Sort-Object {[string]$_.taskId})
     if ($MaxObjects -gt 0) { $renderable = @($renderable | Select-Object -First $MaxObjects) }
 }
-$skipped = @($all | Where-Object { -not ($_.modelId -and $_.authoredPosition -and $_.authoredRotation) } | ForEach-Object {
-    $reason = if (-not $_.modelId) { 'non-renderable task' }
+$skipped = @($all | Where-Object {
+    -not ($_.modelId -and $_.authoredPosition -and $_.authoredRotation -and
+        $_.renderable -ne $false -and $_.helperModel -ne $true -and $_.modelResolved -ne $false)
+} | ForEach-Object {
+    $reason = if ($_.modelId -and $_.modelResolved -eq $false) { 'model unresolved in deployed corpus' }
+        elseif ($_.helperModel -eq $true -or $_.renderable -eq $false) { 'authored helper/non-renderable model' }
+        elseif (-not $_.modelId) { 'non-renderable task' }
         elseif (-not $_.authoredPosition) { 'missing authored position' }
         elseif (-not $_.authoredRotation) { 'missing authored rotation' }
     [pscustomobject]@{taskId=[string]$_.taskId;type=[string]$_.type;modelId=$_.modelId;status='SKIPPED';reason=$reason}
@@ -122,6 +130,7 @@ foreach ($anchor in $ordered) {
         }
         $plan = Join-Path $objectRoot 'camera-plan.json'
         if (-not (Test-Path -LiteralPath $plan)) {
+            $global:LASTEXITCODE = 0
             & $planTool -ObjPath $obj -Position ([double[]]$anchor.authoredPosition) -Rotation ([double[]]$anchor.authoredRotation) -OutputPath $plan | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Camera plan generation failed.' }
         }

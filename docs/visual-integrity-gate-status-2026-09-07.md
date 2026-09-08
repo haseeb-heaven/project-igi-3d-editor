@@ -9,11 +9,13 @@ The editor now emits deterministic, target-scoped visual evidence for native
 model captures:
 
 - a geometry-derived submesh/material inventory;
+- local geometry bounds and authored texture identity for every inventory part;
 - recursive MEF attachment inventory and transforms;
 - object-ID, material-ID, and depth evidence buffers;
 - projected-part coverage checks against the rendered scene;
 - strict coverage for independently rendered attachment instances;
 - diagnostic overlays and per-capture visual-integrity JSON;
+- serialized projected-part measurements and an independent portable-bundle analyzer;
 - task identity propagation, including anonymous IDs such as `-1#907`;
 - a required visual-integrity policy in the native capture runner;
 - dashboard display of visual-integrity results.
@@ -32,7 +34,7 @@ igi-editor.vcxproj -> bin/Release/igi1ed.exe
 buildExit=0
 ```
 
-Focused analyzer tests: 6/6 passed.
+Focused analyzer tests: 27/27 passed.
 
 The mandated WMI `Win32_Process.Create` Session 1 capture was run against Level
 12 with the Watchtower and WinchHouse fixtures:
@@ -43,8 +45,13 @@ The mandated WMI `Win32_Process.Create` Session 1 capture was run against Level
 | WinchHouse | `463_01_1`, task `-1#907` | FAIL with 20 attachment part-coverage findings |
 
 The batch result is correctly `FAIL`; loader success does not mask visual
-failure. The full evidence is in
-`artifacts/visual-integrity-level12-strict-live-20260907/batch.json`.
+failure. The refreshed evidence is in
+`artifacts/visual-integrity-current2-winch/batch.json` and
+`artifacts/visual-integrity-current2-watch/batch.json`.
+
+The independent `Analyze-VisualIntegrityBundle.ps1` re-evaluated the
+Watchtower as `PASS` and the WinchHouse as `FAIL` (`52/116` observed parts
+versus an `87`-part shared-calibration minimum).
 
 A one-view WMI smoke capture also confirmed that generated evidence preserves
 both task IDs:

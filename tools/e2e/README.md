@@ -56,10 +56,11 @@ $out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-D
   -VisualIntegrityPolicy Required -ArtifactsRoot $out
 ```
 
-The expected fixture result is batch `PASS`: Watchtower (`405_02_1`, task
-`570`) and WinchHouse (`463_01_1`, task `-1#907`) both pass the required visual
-integrity policy with no findings. A verified run is recorded at
-`artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
+The explicit acceptance fixtures have opposite classifications: Watchtower
+(`405_02_1`, task `570`) must pass, while WinchHouse (`463_01_1`, task
+`-1#907`) must fail with actionable under-covered geometry findings. A
+verified run is recorded at
+`artifacts/visual-integrity-level12-strict-live-20260907/`.
 
 The explicit artifact root contains `batch.json`. Per-object directories under
 `screenshots/obj-<index>-task<id>-<model>/` contain the native stills,

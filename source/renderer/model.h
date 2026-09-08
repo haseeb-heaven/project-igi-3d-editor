@@ -11,6 +11,11 @@ struct SubMesh {
     int    alphaMode   = 0; // 0=OPAQUE, 1=MASK, 2=BLEND
     glm::vec4 baseColorFactor = glm::vec4(1.0f);
     int    materialSlot = -1;
+    // Stable authored identity and local-space bounds retained for diagnostic
+    // evidence.  GL object names are process-local and are not evidence.
+    std::string textureName;
+    glm::vec3 localMin = glm::vec3(0.0f);
+    glm::vec3 localMax = glm::vec3(0.0f);
     // Average LOCAL-space face normal of this submesh (model space, pre-transform).
     // Used to re-light a baked lightmap live when the object is rotated/moved.
     glm::vec3 avgNormal = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -20,6 +25,7 @@ struct Mesh {
     GLuint VAO, VBO, IBO;
     int vertexCount, indexCount;
     GLuint textureID;
+    std::string textureName;
     glm::vec3 halfExtents;
     glm::vec3 center;
     float zOffset;

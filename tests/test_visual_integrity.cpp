@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include "mcp/mcp_json.h"
 #include "visual_integrity.h"
 
@@ -76,6 +77,43 @@ TEST(VisualIntegrityTest, FailsWhenExpectedPartHasNoFragments) {
     EXPECT_TRUE(HasRule(missing, "part-coverage"));
 }
 
+TEST(VisualIntegrityTest, ReportsMissingAuthoredMaterialCoverage) {
+    auto view = MakeView({1, 1, 1, 1, 2, 2, 2, 2,
+                          2, 2, 2, 2, 2, 2, 2, 2});
+    view.targetMask.assign(16, 0);
+    view.targetMask[0] = view.targetMask[1] = view.targetMask[2] = view.targetMask[3] = 1;
+    igi::VisualIntegrityPart part;
+    part.id = 2;
+    part.materialSlot = 7;
+    auto input = MakeInput({1, 2}, {view});
+    input.expectedParts = {igi::VisualIntegrityPart{1}, part};
+    const auto result = igi::EvaluateVisualIntegrity(input);
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "material-coverage"));
+}
+
+TEST(VisualIntegrityTest, DuplicateExpectedPartIdCannotPass) {
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1, 1}, {MakeView(std::vector<int>(16, 1))}));
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "invalid-inventory"));
+}
+
+TEST(VisualIntegrityTest, StrictAttachmentMustBeAnExpectedUniquePart) {
+    auto input = MakeInput({1}, {MakeView(std::vector<int>(16, 1))});
+    input.strictPartIds = {2};
+    const auto result = igi::EvaluateVisualIntegrity(input);
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "invalid-inventory"));
+}
+
+TEST(VisualIntegrityTest, NonFiniteDepthEvidenceCannotPass) {
+    auto view = MakeView(std::vector<int>(16, 1));
+    view.sceneDepth[0] = std::numeric_limits<float>::quiet_NaN();
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1}, {view}));
+    EXPECT_NE(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_TRUE(HasRule(result, "invalid-evidence"));
+}
+
 TEST(VisualIntegrityTest, PassesWhenEveryExpectedPartHasVisibleFragments) {
     const auto result = igi::EvaluateVisualIntegrity(MakeInput(
         {1, 2}, {MakeView({1, 1, 1, 1, 1, 1, 1, 1,
@@ -111,6 +149,20 @@ TEST(VisualIntegrityTest, RequiresProjectedPartsToAgreeWithRenderedScene) {
     EXPECT_TRUE(HasRule(result, "part-coverage"));
 }
 
+TEST(VisualIntegrityTest, FailsWhenPartOnlyProducesTokenCoverageOfItsProjection) {
+    auto view = MakeView(std::vector<int>(16, 1));
+    view.targetMask.assign(16, 0);
+    view.targetMask[0] = 1;
+
+    auto input = MakeInput({1}, {view});
+    input.minimumPartPixels = 1;
+    input.minimumPartCoverageRatio = 0.25f;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "part-coverage"));
+}
+
 TEST(VisualIntegrityTest, FailsWhenTargetDepthDisagreesWithVisibleSceneDepth) {
     auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1, 1, 1, 1});
@@ -122,6 +174,30 @@ TEST(VisualIntegrityTest, FailsWhenTargetDepthDisagreesWithVisibleSceneDepth) {
     EXPECT_TRUE(HasRule(result, "depth-consistency"));
 }
 
+TEST(VisualIntegrityTest, AcceptsVisibleTransparentPartWithoutDepthWrite) {
+    auto view = MakeView(std::vector<int>(16, 1));
+    view.sceneDepth.assign(16, 0.6f);
+    view.targetDepth.assign(16, 0.5f);
+
+    auto input = MakeInput({1}, {view});
+    input.expectedParts = {{1, 48, 16, 0, 2}};
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "depth-consistency"));
+}
+
+TEST(VisualIntegrityTest, FailsWhenInventoryCoverageFallsBelowSharedBaseline) {
+    auto view = MakeView(std::vector<int>(16, 1));
+    auto input = MakeInput({1, 2, 3, 4}, {view});
+    input.minimumObservedPartRatio = 0.75f;
+
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "inventory-coverage"));
+}
+
 TEST(VisualIntegrityTest, FailsWhenTargetMaskContainsLargeInteriorHole) {
     auto view = MakeView({1, 1, 1, 1, 1, 1, 1, 1,
                           1, 1, 1, 1, 1, 1, 1, 1}, 5, 5);
@@ -130,7 +206,6 @@ TEST(VisualIntegrityTest, FailsWhenTargetMaskContainsLargeInteriorHole) {
     view.sceneDepth.assign(25, 0.5f);
     view.targetDepth.assign(25, 0.5f);
     view.targetMask[12] = 0;
-    view.partIds[12] = 0;
 
     auto input = MakeInput({1}, {view});
     input.minimumInteriorHolePixels = 1;
@@ -138,6 +213,57 @@ TEST(VisualIntegrityTest, FailsWhenTargetMaskContainsLargeInteriorHole) {
 
     EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
     EXPECT_TRUE(HasRule(result, "silhouette-hole"));
+}
+
+TEST(VisualIntegrityTest, DoesNotMisclassifyEnclosedSceneOcclusionAsSilhouetteHole) {
+    auto view = MakeView(std::vector<int>(25, 1), 5, 5);
+    view.targetMask.assign(25, 1);
+    view.sceneDepth.assign(25, 0.5f);
+    view.targetDepth.assign(25, 0.5f);
+    view.targetMask[12] = 0;
+    view.sceneDepth[12] = 0.4f;  // A nearer non-target surface covers the target.
+
+    auto input = MakeInput({1}, {view});
+    input.minimumInteriorHolePixels = 1;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "silhouette-hole"));
+}
+
+TEST(VisualIntegrityTest, DoesNotTreatTransparentProjectedRegionAsOpaqueSilhouetteHole) {
+    auto view = MakeView(std::vector<int>(25, 1), 5, 5);
+    view.targetMask.assign(25, 1);
+    view.sceneDepth.assign(25, 0.5f);
+    view.targetDepth.assign(25, 0.5f);
+    view.targetMask[12] = 0;
+
+    igi::VisualIntegrityPart transparent_part;
+    transparent_part.id = 1;
+    transparent_part.alphaMode = 2;
+    auto input = MakeInput({1}, {view});
+    input.expectedParts = {transparent_part};
+    input.minimumInteriorHolePixels = 1;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "silhouette-hole"));
+}
+
+TEST(VisualIntegrityTest, AllowsAuthoredOpeningInProjectedSilhouette) {
+    auto view = MakeView(std::vector<int>(25, 1), 5, 5);
+    view.targetMask.assign(25, 1);
+    view.sceneDepth.assign(25, 0.5f);
+    view.targetDepth.assign(25, 0.5f);
+    view.targetMask[12] = 0;
+    view.partIds[12] = 0;  // no geometry projects into an authored opening
+
+    auto input = MakeInput({1}, {view});
+    input.minimumInteriorHolePixels = 1;
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "silhouette-hole"));
 }
 
 TEST(VisualIntegrityTest, FailsWhenVisibleTargetPixelsEscapeProjectedGeometry) {
@@ -182,6 +308,31 @@ TEST(VisualIntegrityTest, SerializesActionableFindingWithSeverity) {
 
     EXPECT_NE(json.find("\"rule\":\"part-coverage\""), std::string::npos);
     EXPECT_NE(json.find("\"severity\":\"error\""), std::string::npos);
+    EXPECT_NE(json.find("\"schemaVersion\":1"), std::string::npos);
+    EXPECT_NE(json.find("\"summary\":{"), std::string::npos);
+    EXPECT_NE(json.find("\"expectedMinimum\":4"), std::string::npos);
+}
+
+TEST(VisualIntegrityTest, FindingReferencesTheDiagnosticOverlay) {
+    auto view = MakeView({1, 1, 1, 1,
+                          2, 2, 2, 2,
+                          2, 2, 2, 2,
+                          2, 2, 2, 2});
+    view.name = "Ext_000";
+    view.sourceFramePath = "views/Ext_000.png";
+    view.overlayPath = "overlays/Ext_000-diagnostic.png";
+    for (size_t index = 4; index < view.targetMask.size(); ++index)
+        view.targetMask[index] = 0;
+
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1, 2}, {view}));
+    ASSERT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    const auto finding = std::find_if(result.findings.begin(), result.findings.end(),
+        [](const igi::VisualIntegrityFinding& value) {
+            return value.rule == "part-coverage";
+        });
+    ASSERT_NE(finding, result.findings.end());
+    EXPECT_EQ(finding->view, "Ext_000");
+    EXPECT_EQ(finding->evidence, "overlays/Ext_000-diagnostic.png");
 }
 
 TEST(VisualIntegrityTest, MarksUnmeasurableProjectedPartAsInconclusive) {

@@ -275,3 +275,63 @@ TEST(AiPatrolPortTest, QuitStopsPatrol) {
     const auto& g = ai.GetGuards()[0];
     EXPECT_TRUE(g.patrol_stopped);
 }
+
+// The runtime contract is deterministic for a supported build: replaying the
+// same authored guard, stimuli, player inputs, and fixed deltas must produce
+// the same externally visible state.  Keep this as a pure simulation test so
+// it does not depend on wall-clock timing or an installed level.
+TEST(AiPatrolPortTest, IdenticalReplayProducesIdenticalGuardOutcome) {
+    AiSystem first;
+    AiSystem second;
+    first.SetAlarmActive(true);
+    second.SetAlarmActive(true);
+    first.SetLineOfSightQuery([](const glm::vec3&, const glm::vec3&) { return true; });
+    second.SetLineOfSightQuery([](const glm::vec3&, const glm::vec3&) { return true; });
+
+    AiGuardEntity authored;
+    authored.id = 44;
+    authored.position = glm::vec3(0.0f);
+    authored.waypoints = {
+        glm::vec3(0.0f, 3.0f * 4096.0f, 0.0f),
+        glm::vec3(2.0f * 4096.0f, 3.0f * 4096.0f, 0.0f),
+    };
+    first.RegisterGuard(authored);
+    second.RegisterGuard(authored);
+
+    for (int tick = 0; tick < 180; ++tick) {
+        const float phase = static_cast<float>(tick % 60) / 60.0f;
+        const glm::vec3 player(
+            (tick % 2 == 0 ? 8.0f : -8.0f) * 4096.0f,
+            (10.0f + phase) * 4096.0f,
+            0.0f);
+        const bool player_alive = (tick % 47) != 0;
+
+        if (tick == 20 || tick == 95) {
+            AiStimulusEvent impact;
+            impact.type = AiEventType::GroundImpact;
+            impact.position = glm::vec3(1.0f * 4096.0f, 1.0f * 4096.0f, 0.0f);
+            impact.hearing_radius_units = 20.0f * 4096.0f;
+            first.GetEventQueue().Post(impact);
+            second.GetEventQueue().Post(impact);
+        }
+
+        first.Update(1.0 / 30.0, player, player_alive);
+        second.Update(1.0 / 30.0, player, player_alive);
+
+        ASSERT_EQ(first.GetSimulationTick(), second.GetSimulationTick());
+        ASSERT_EQ(first.GetGuards().size(), second.GetGuards().size());
+        const auto& left = first.GetGuards()[0];
+        const auto& right = second.GetGuards()[0];
+        EXPECT_EQ(left.state, right.state) << "tick " << tick;
+        EXPECT_EQ(left.current_waypoint, right.current_waypoint) << "tick " << tick;
+        EXPECT_EQ(left.tick, right.tick) << "tick " << tick;
+        EXPECT_EQ(left.animation_request_serial, right.animation_request_serial)
+            << "tick " << tick;
+        EXPECT_EQ(left.locomotion_anim, right.locomotion_anim) << "tick " << tick;
+        EXPECT_FLOAT_EQ(left.position.x, right.position.x);
+        EXPECT_FLOAT_EQ(left.position.y, right.position.y);
+        EXPECT_FLOAT_EQ(left.position.z, right.position.z);
+        EXPECT_FLOAT_EQ(left.yaw, right.yaw);
+        EXPECT_FLOAT_EQ(left.suspicion, right.suspicion);
+    }
+}

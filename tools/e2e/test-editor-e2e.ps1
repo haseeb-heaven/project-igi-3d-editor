@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $runner = Join-Path $PSScriptRoot 'editor-e2e.ps1'
 $valid = Join-Path $PSScriptRoot 'scenarios\editor-regression.json'
 $invalid = Join-Path $PSScriptRoot 'scenarios\invalid-missing-step-id.json'
+$invalidActionOracle = Join-Path $PSScriptRoot 'scenarios\invalid-action-oracle-dependency.json'
 $workflows = Join-Path $PSScriptRoot 'scenarios\editor-workflows.json'
 $objectVisual = Join-Path $PSScriptRoot 'scenarios\object-visual-workflows.json'
 $assetWorkflows = Join-Path $PSScriptRoot 'scenarios\asset-workflows.json'
@@ -25,6 +26,11 @@ function Invoke-Validation([string] $manifest) {
 $invalidCode = Invoke-Validation $invalid
 if ($invalidCode -eq 0) {
     throw 'Malformed manifest was accepted.'
+}
+
+$invalidActionOracleCode = Invoke-Validation $invalidActionOracle
+if ($invalidActionOracleCode -eq 0) {
+    throw 'Action-result oracle with a missing dependency was accepted.'
 }
 
 $validCode = Invoke-Validation $valid

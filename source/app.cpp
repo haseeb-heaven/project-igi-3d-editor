@@ -3,6 +3,7 @@
 #include "runtime/human_player_config.h"
 #include "runtime/audio_system.h"
 #include "runtime/gameplay_spawn.h"
+#include "runtime/log_policy.h"
 #include "runtime/map_computer_camera.h"
 #include "runtime/auto_save_policy.h"
 #include "runtime/progress_overlay_policy.h"
@@ -137,6 +138,15 @@ bool App::Init(int argc, char** argv) {
 	}
 
 	ConfigData& cfg = Config::Get();
+	// Native diagnostic sessions need their load-time evidence before the
+	// initial level is opened. This changes only the in-memory developer
+	// session; the authored qedconfig QSC/QVM remains untouched.
+	developer_mode_ = Arg_OptionIdx(argc, argv, "--developer-mode") > -1;
+	if (developer_mode_) {
+		cfg.enableLogging = true;
+		if (cfg.logLevelThreshold > igi::kLogLevelInfo)
+			cfg.logLevelThreshold = igi::kLogLevelInfo;
+	}
 
 	renderer_.SetLightmapsEnabled(cfg.enableLightmaps);
 	renderer_.SetFogEnabled(cfg.enableFog);
@@ -195,8 +205,7 @@ bool App::Init(int argc, char** argv) {
 	bridge_.SetEnabled(show_hud_);
 	bridge_.Start();
 
-	if (Arg_OptionIdx(argc, argv, "--developer-mode") > -1) {
-		developer_mode_ = true;
+	if (developer_mode_) {
 		debug_cmd_mgr_.Start();
 		Logger::Get().Log(LogLevel::INFO, "[App] Developer Mode ON via command line");
 	}

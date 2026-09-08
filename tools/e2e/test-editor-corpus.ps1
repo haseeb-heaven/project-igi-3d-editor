@@ -10,13 +10,28 @@ if (-not (Test-Path -LiteralPath $generator)) {
 }
 
 try {
-    & pwsh -NoProfile -ExecutionPolicy Bypass -File $generator -GameRoot $root -OutputPath $output
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File $generator -GameRoot $root -OutputPath $output -Profile exhaustive
     if ($LASTEXITCODE -ne 0) { throw "Corpus manifest generator failed with exit code $LASTEXITCODE." }
     if (-not (Test-Path -LiteralPath $output)) { throw "Generator did not write $output." }
 
     $manifest = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+    if ([string]$manifest.inventoryHash -notmatch '^[0-9a-f]{64}$') {
+        throw 'Corpus manifest must contain a lowercase SHA-256 inventory hash.'
+    }
     $scenarios = @($manifest.scenarios)
     if ($scenarios.Count -ne 28) { throw "Expected 28 level scenarios, got $($scenarios.Count)." }
+    if ([string]$manifest.profile -ne 'exhaustive' -or [int]$manifest.coverage.selected -ne 28) { throw 'Exhaustive profile metadata is incomplete.' }
+    foreach ($profileExpectation in @(@('smoke',15), @('nightly',28))) {
+        $profilePath = Join-Path $env:TEMP ('igi-editor-corpus-profile-' + [guid]::NewGuid().ToString('N') + '.json')
+        try {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $generator -GameRoot $root -OutputPath $profilePath -Profile $profileExpectation[0]
+            if ($LASTEXITCODE -ne 0) { throw "Profile $($profileExpectation[0]) generation failed." }
+            $profileManifest = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            if ([string]$profileManifest.profile -ne $profileExpectation[0]) { throw 'Profile metadata mismatch.' }
+            if ([int]$profileManifest.coverage.selected -ne [int]$profileExpectation[1]) { throw "Profile $($profileExpectation[0]) selected count mismatch." }
+            if ([string]$profileManifest.inventoryHash -ne [string]$manifest.inventoryHash) { throw 'Profiles must share the same inventory hash.' }
+        } finally { Remove-Item -LiteralPath $profilePath -Force -ErrorAction SilentlyContinue }
+    }
     $levels = @($scenarios | ForEach-Object { [int]$_.level } | Sort-Object)
     if (($levels -join ',') -ne '1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14') {
         throw "Generated level coverage was '$($levels -join ',')'."
@@ -37,6 +52,11 @@ try {
             if ($types -notcontains $required) { throw "Level $($scenario.level) is missing $required coverage." }
         }
         if (@($scenario.corpusFiles).Count -lt 6) { throw "Level $($scenario.level) is missing required corpus inventory entries." }
+        foreach ($file in @($scenario.corpusFiles | Where-Object { $_.kind -eq 'file' })) {
+            if ([int64]$file.bytes -le 0 -or [string]$file.sha256 -notmatch '^[0-9a-f]{64}$') {
+                throw "Corpus file metadata is incomplete for $($file.path)."
+            }
+        }
         if ($types -notcontains 'assert_log') { throw "Level $($scenario.level) has no log assertions." }
         $sceneCheck = @($scenario.steps | Where-Object { $_.id -eq 'scene-visible' })
         if ($sceneCheck.Count -ne 1) { throw "Level $($scenario.level) must have exactly one scene-visible check." }

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <glm/glm.hpp>
 
 namespace igi {
 
@@ -31,6 +32,9 @@ struct VisualIntegrityPart {
     int triangleCount = 0;
     int materialSlot = -1;
     int alphaMode = 0;  // 0=opaque, 1=mask, 2=blend
+    std::string textureIdentity;
+    glm::vec3 localBoundsMin{0.0f};
+    glm::vec3 localBoundsMax{0.0f};
 };
 
 struct VisualIntegrityView {
@@ -60,6 +64,12 @@ struct VisualIntegrityInput {
     std::vector<int> strictPartIds;
     std::vector<VisualIntegrityView> views;
     int minimumPartPixels = 1;
+    // Minimum visible fraction of a part's target-only projected area for a
+    // view to count as covered. Zero retains count-only compatibility.
+    float minimumPartCoverageRatio = 0.0f;
+    // Shared calibration floor for the fraction of the expected geometry
+    // inventory that produces visible target fragments across the capture.
+    float minimumObservedPartRatio = 0.0f;
     int minimumInteriorHolePixels = 16;
     float depthEpsilon = 0.0001f;
     bool requireTemporalEvidence = false;

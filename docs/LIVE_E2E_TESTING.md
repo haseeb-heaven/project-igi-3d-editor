@@ -63,11 +63,11 @@ $out = 'D:\Code\project-igi-editor\artifacts\visual-integrity-level12-' + (Get-D
   -VisualIntegrityPolicy Required -ArtifactsRoot $out
 ```
 
-Expected result: batch `PASS` when both selected objects satisfy the required
-visual-integrity policy. Watchtower (`405_02_1`, task `570`) and WinchHouse
-(`463_01_1`, task `-1#907`) must both be visual `PASS` with no findings. A
+Expected fixture classifications are intentionally split: Watchtower
+(`405_02_1`, task `570`) must be visual `PASS`, while WinchHouse (`463_01_1`,
+task `-1#907`) must be visual `FAIL` with named under-covered geometry. A
 verified run is recorded at
-`artifacts/visual-integrity-level12-depthfix-20260907-155140/`.
+`artifacts/visual-integrity-level12-strict-live-20260907/`.
 
 ---
 

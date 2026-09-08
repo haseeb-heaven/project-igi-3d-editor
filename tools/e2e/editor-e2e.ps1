@@ -278,11 +278,34 @@ function Assert-RestoreHasSnapshot($Scenario, [string]$Name) {
         }
     }
 }
+function Assert-ActionResultDependencies($Scenario, [string]$Name) {
+    # An action-result oracle must explicitly identify an earlier action.  This
+    # keeps a screenshot or process-liveness assertion from being relabelled as
+    # proof that a later edit persisted.
+    $seen = @{}
+    foreach ($step in @(Get-Property $Scenario 'steps')) {
+        $id = [string](Get-Property $step 'id')
+        $role = Get-Property $step 'oracleRole'
+        if ($null -ne $role -and [string]$role -ne 'action-result') {
+            Fail "Scenario '$Name' step '$id' has unsupported oracleRole '$role'."
+        }
+        if ([string]$role -eq 'action-result') {
+            $dependency = [string](Get-Property $step 'dependsOnStepId')
+            if ([string]::IsNullOrWhiteSpace($dependency) -or -not $seen.ContainsKey($dependency)) {
+                Fail "Scenario '$Name' action-result oracle '$id' must reference an earlier step."
+            }
+        } elseif ($null -ne (Get-Property $step 'dependsOnStepId')) {
+            Fail "Scenario '$Name' step '$id' declares dependsOnStepId without oracleRole=action-result."
+        }
+        $seen[$id] = $true
+    }
+}
 function Validate-Scenario($Scenario, [string]$Root) {
     $name = [string](Get-Property $Scenario 'name')
     Assert-RequiresMutationPolicy $Scenario $name
     Assert-ObserverPair $Scenario $name
     Assert-RestoreHasSnapshot $Scenario $name
+    Assert-ActionResultDependencies $Scenario $name
 }
 function Validate-Manifest($Manifest, [string]$Root) {
     if ($null -eq $Manifest) { Fail 'Manifest is empty.' }

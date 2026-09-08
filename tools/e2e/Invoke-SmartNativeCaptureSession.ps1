@@ -161,6 +161,18 @@ function Close-Editor($Process) {
     Start-Sleep -Milliseconds 500
     return $true
 }
+function Remove-FileWithRetry([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+            return
+        } catch {
+            if ($attempt -eq 19) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
 
 $ArtifactsRoot = [IO.Path]::GetFullPath($ArtifactsRoot)
 if (Test-Path -LiteralPath $ArtifactsRoot) { throw 'Use a fresh artifact directory.' }
@@ -322,11 +334,26 @@ if ($PrepareOnly) { Write-Output "Prepared native one-session level ${Level}: $(
 
 $commandPath = Join-Path $GameRoot 'editor/tools/debug-command.txt'
 $screenshotRoot = Join-Path $GameRoot 'screenshots'
+$qedConfigPath = Join-Path $GameRoot 'editor/qed/qedconfig.qsc'
+$qedConfigQvmPath = Join-Path $GameRoot 'editor/qed/qedconfig.qvm'
 $commandOriginal = if (Test-Path -LiteralPath $commandPath) { [IO.File]::ReadAllBytes($commandPath) } else { $null }
+$qedConfigOriginal = if (Test-Path -LiteralPath $qedConfigPath) { [IO.File]::ReadAllBytes($qedConfigPath) } else { $null }
+$qedConfigQvmOriginal = if (Test-Path -LiteralPath $qedConfigQvmPath) { [IO.File]::ReadAllBytes($qedConfigQvmPath) } else { $null }
+$qedConfigChanged = $false
 $fileBackups = @{}
 $process = $null; $logOffset = if(Test-Path -LiteralPath $logPath){(Get-Item -LiteralPath $logPath).Length}else{0}
 $runFailure = $null
 try {
+    if ($null -eq $qedConfigOriginal) { throw "Native capture requires editor configuration: $qedConfigPath" }
+    $qedConfigSource = [Text.Encoding]::UTF8.GetString($qedConfigOriginal)
+    $enabledConfigSource = $qedConfigSource -replace 'QEDLogs\(\s*(?:FALSE|false|0)\s*\)', 'QEDLogs(TRUE)'
+    if ($enabledConfigSource -eq $qedConfigSource -and $qedConfigSource -notmatch 'QEDLogs\(\s*(?:TRUE|true|1)\s*\)') {
+        throw 'Native capture requires a QEDLogs(TRUE/FALSE) setting in qedconfig.qsc.'
+    }
+    if ($enabledConfigSource -ne $qedConfigSource) {
+        [IO.File]::WriteAllText($qedConfigPath, $enabledConfigSource, [Text.UTF8Encoding]::new($false))
+        $qedConfigChanged = $true
+    }
     $wmi = [wmiclass]'\\.\root\cimv2:Win32_Process'
     $created = $wmi.Create(('"' + $EditorExePath + '" --developer-mode --game-path "' + $GameRoot + '" -level ' + $Level), $GameRoot)
     if ([int]$created.ReturnValue -ne 0) { throw "WMI launch failed with return code $($created.ReturnValue)." }
@@ -353,8 +380,10 @@ try {
     $orbitFrames = if ($Video -or $PSBoundParameters.ContainsKey('VideoSeconds')) { [int]($VideoSeconds * $VideoFps) } else { 0 }
     $ffmpegBin = Get-FFmpegPath
     foreach ($plan in $plans) {
-        $allPaths = @($allCaptureViews | ForEach-Object { Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.png' -f $Level,$plan.modelId,$_ ) })
-        $allPaths += @($allCaptureViews | ForEach-Object {
+        $diagnosticViews = @($allCaptureViews)
+        if ($orbitFrames -gt 0) { $diagnosticViews += @('Orbit_000','Orbit_360') }
+        $allPaths = @($diagnosticViews | ForEach-Object { Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.png' -f $Level,$plan.modelId,$_ ) })
+        $allPaths += @($diagnosticViews | ForEach-Object {
             @(
                 (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.object-id.png' -f $Level,$plan.modelId,$_)),
                 (Join-Path $screenshotRoot ('Level{0:D2}_Model{1}_{2}.material-id.png' -f $Level,$plan.modelId,$_)),
@@ -473,6 +502,14 @@ try {
                     }
                 }
             }
+            if ($portableVisualIntegrity.visualIntegrity -and $portableVisualIntegrity.visualIntegrity.findings) {
+                foreach ($finding in @($portableVisualIntegrity.visualIntegrity.findings)) {
+                    if ($null -ne $finding.evidence) {
+                        $finding.evidence = @($finding.evidence |
+                            ForEach-Object { [IO.Path]::GetFileName([string]$_) })
+                    }
+                }
+            }
             $portableVisualIntegrity | ConvertTo-Json -Depth 20 |
                 Set-Content -LiteralPath (Join-Path $targetDir 'visual-integrity.json') -Encoding UTF8
         }
@@ -493,7 +530,14 @@ try {
         $bundleManifest = [ordered]@{
             schemaVersion = 1
             object = [ordered]@{ level = $Level; taskId = [string]$plan.taskId; modelId = [string]$plan.modelId; type = [string]$plan.type }
-            source = [ordered]@{ editorExecutable = $EditorExePath; editorSha256 = $editorHash; inventoryPath = $InventoryPath; inventorySha256 = $inventoryHash }
+            source = [ordered]@{
+                editorExecutable = $EditorExePath
+                editorSha256 = $editorHash
+                inventoryPath = $InventoryPath
+                inventorySha256 = $inventoryHash
+                levelSourcePath = $sourcePath
+                levelSourceSha256 = $sourceHash
+            }
             capture = [ordered]@{ requestedViewCount = $captureViews.Count; capturedViewCount = $captureEvidence.Count; viewNames = @($captureEvidence | ForEach-Object { [string]$_.view }); method = 'native direct camera' }
             expectedParts = if ($null -ne $portableVisualIntegrity) { @($portableVisualIntegrity.expectedParts) } else { @() }
             visualIntegrityPath = 'visual-integrity.json'
@@ -509,7 +553,12 @@ try {
     $runFailure = $_.Exception.Message
 } finally {
     $closed = Close-Editor $process
-    if ($null -ne $commandOriginal) { [IO.File]::WriteAllBytes($commandPath,$commandOriginal) } elseif (Test-Path -LiteralPath $commandPath) { Remove-Item -LiteralPath $commandPath -Force }
+    if ($null -ne $commandOriginal) { [IO.File]::WriteAllBytes($commandPath,$commandOriginal) } elseif (Test-Path -LiteralPath $commandPath) { Remove-FileWithRetry $commandPath }
+    if ($qedConfigChanged) {
+        [IO.File]::WriteAllBytes($qedConfigPath, $qedConfigOriginal)
+    }
+    if ($null -ne $qedConfigQvmOriginal) { [IO.File]::WriteAllBytes($qedConfigQvmPath, $qedConfigQvmOriginal) }
+    elseif ($qedConfigChanged -and (Test-Path -LiteralPath $qedConfigQvmPath)) { Remove-FileWithRetry $qedConfigQvmPath }
     foreach ($path in $fileBackups.Keys) { if (-not $fileBackups[$path] -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } }
 }
 
@@ -526,7 +575,7 @@ foreach($plan in $plans){
     $anchor=[pscustomobject]@{taskId=$plan.taskId;type=$plan.type;modelId=$plan.modelId;authoredPosition=$plan.authoredPosition;authoredRotation=$plan.authoredRotation;requiredTextures=$plan.requiredTextures}
     $item=Test-SmartModelLog $freshLog $anchor
     $shots=@(Get-ChildItem -LiteralPath (Join-Path $ArtifactsRoot ('screenshots\'+$plan.prefix)) -File -Filter '*.png' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match '_(Ext|Int)_[0-9]{3}\.png$' })
+        Where-Object { $_.Name -match '_(Ext|Int|Orbit)_[0-9]{3}\.png$' })
     $item | Add-Member -NotePropertyName taskId -NotePropertyValue $plan.taskId -Force
     $item | Add-Member -NotePropertyName objectName -NotePropertyValue $plan.objectName -Force
     $item | Add-Member -NotePropertyName type -NotePropertyValue $plan.type -Force

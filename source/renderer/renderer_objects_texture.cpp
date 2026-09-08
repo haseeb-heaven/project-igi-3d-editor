@@ -534,6 +534,7 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
             }
 
             mesh.subMeshes[i].textureID = texture;
+            mesh.subMeshes[i].textureName = resolvedTexId;
             if (texture) {
                 ++assigned;
                 // ARGB-format textures carry real per-texel alpha (sunglasses lenses,
@@ -552,6 +553,7 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
 
         if (!mesh.subMeshes.empty()) {
             mesh.textureID = mesh.subMeshes.front().textureID;
+            mesh.textureName = mesh.subMeshes.front().textureName;
         }
 
         Logger::Get().Log(
@@ -572,6 +574,7 @@ void Renderer_Objects::ApplyTexturesToMesh(Mesh& mesh, const std::string& modelI
     }
 
     mesh.textureID = textures.front();
+    if (mesh.textureName.empty() && !textureIds.empty()) mesh.textureName = textureIds.front();
     Logger::Get().Log(
         LogLevel::INFO,
         "[TEX Native] Applied legacy single texture to modelId=" + modelId +

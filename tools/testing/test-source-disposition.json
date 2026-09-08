@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "tests/test_ai_behavior.cpp": {
+      "status": "repair-required",
+      "reason": "Targets a superseded AI API: ResolveAiArchetype, civilian/panic fields, and detection state are absent from the current AiSystem interface.",
+      "resolvesIn": "Testing Master Plan Task 8"
+    },
+    "tests/test_debug_command_manager.cpp": {
+      "status": "repair-required",
+      "reason": "Defines a substitute App and relies on timing and a shared commands.txt file.",
+      "resolvesIn": "Testing Master Plan Task 9"
+    },
+    "tests/test_debug_cli.py": {
+      "status": "repair-required",
+      "reason": "Writes commands.txt in the process working directory and needs fixture isolation before registration.",
+      "resolvesIn": "Testing Master Plan Task 3"
+    }
+  }
+}

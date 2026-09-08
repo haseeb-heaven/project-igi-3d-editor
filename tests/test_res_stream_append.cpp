@@ -2,6 +2,7 @@
 #include "../source/renderer/res_writer.h"
 #include "../source/renderer/res_compiler.h"
 #include "utils.h"
+#include "support/temp_directory.h"
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -21,7 +22,7 @@ static std::string SrcResPath() {
 
 class ResStreamAppendTest : public ::testing::Test {
 protected:
-    std::filesystem::path tmpDir;
+    test_support::TempDirectory temporary_directory_;
     std::filesystem::path src;
     std::filesystem::path out;
 
@@ -30,17 +31,15 @@ protected:
         if (!std::filesystem::exists(srcPath))
             GTEST_SKIP() << "level1.res not found (set IGI_GAME_PATH): " << srcPath;
 
-        tmpDir = std::filesystem::temp_directory_path() / "igi_res_stream_test";
-        std::filesystem::create_directories(tmpDir);
-        src = tmpDir / "src.res";
-        out = tmpDir / "out.res";
+        src = temporary_directory_.path() / "src.res";
+        out = temporary_directory_.path() / "out.res";
         std::filesystem::copy_file(srcPath, src,
             std::filesystem::copy_options::overwrite_existing);
     }
 
     void TearDown() override {
-        std::error_code ec;
-        std::filesystem::remove_all(tmpDir, ec);
+        std::error_code error;
+        EXPECT_TRUE(temporary_directory_.Cleanup(error)) << error.message();
     }
 };
 

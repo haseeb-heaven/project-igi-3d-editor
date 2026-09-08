@@ -163,6 +163,49 @@ function Get-Sha256Text([string]$Text) {
     try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant() }
     finally { $sha.Dispose() }
 }
+function Get-FileInventory([string]$Root, [string]$GameRoot) {
+    # Keep the source corpus immutable: this is read-only evidence used to
+    # reproduce selection and to distinguish an absent asset from an omitted
+    # test.  Sort by relative path so filesystem enumeration order cannot
+    # change the resulting manifest/hash.
+    $records = New-Object System.Collections.Generic.List[object]
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File | Sort-Object { Get-RelativePath $_.FullName $GameRoot })) {
+        $records.Add([ordered]@{
+            path=(Get-RelativePath $file.FullName $GameRoot)
+            bytes=[int64]$file.Length
+            sha256=(Get-Sha256 $file.FullName)
+        })
+    }
+    return $records.ToArray()
+}
+function Read-MefAttachments([string]$Path, [string]$ModelId) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $attachments = New-Object System.Collections.Generic.List[object]
+    if ($bytes.Length -lt 36 -or [Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ne 'ILFF') { return @() }
+    $offset = 20
+    while (($offset + 16) -le $bytes.Length) {
+        $tag = [Text.Encoding]::ASCII.GetString($bytes, $offset, 4)
+        $size = [BitConverter]::ToUInt32($bytes, $offset + 4)
+        $skip = [BitConverter]::ToUInt32($bytes, $offset + 12)
+        $data = $offset + 16
+        if ($size -gt [uint32]($bytes.Length - $data)) { break }
+        if ($tag -eq 'ATTA' -and ($size % 68) -eq 0) {
+            for ($record = 0; $record -lt $size; $record += 68) {
+                $at = $data + $record
+                $name = [Text.Encoding]::ASCII.GetString($bytes, $at, 16).Trim([char]0).Trim()
+                $position = @([BitConverter]::ToSingle($bytes, $at + 16), [BitConverter]::ToSingle($bytes, $at + 20), [BitConverter]::ToSingle($bytes, $at + 24))
+                $rotation = @()
+                for ($r = 0; $r -lt 9; $r++) { $rotation += [BitConverter]::ToSingle($bytes, $at + 28 + ($r * 4)) }
+                $attachments.Add([ordered]@{ name=$name; modelId=$ModelId; position=$position; rotation=$rotation; boneId=[BitConverter]::ToInt32($bytes, $at + 64) })
+            }
+        }
+        if ($skip -eq 0) { break }
+        if ($skip -lt 16 -or ($offset + $skip) -le $offset -or ($offset + $skip) -gt $bytes.Length) { break }
+        $offset += [int]$skip
+    }
+    return $attachments.ToArray()
+}
 function Get-RelativePath([string]$Path, [string]$Root) {
     $rootUri = [Uri]((Full $Root).TrimEnd('\') + '\')
     $pathUri = [Uri](Full $Path)
@@ -300,6 +343,28 @@ $exclusions = New-Object System.Collections.Generic.List[object]
 $scenarioKeys = @{}
 try {
     New-Item -ItemType Directory -Path $disposableRoot -Force | Out-Null
+    $modelExtractRoot = Join-Path $disposableRoot 'models'
+    New-Item -ItemType Directory -Path $modelExtractRoot -Force | Out-Null
+    $extractedModelPaths = @{}
+    # Extract archives below the disposable root once.  This gives the
+    # independent MEF parser access to authored ATTA records without ever
+    # writing beside the installed corpus.  First occurrence wins, while all
+    # archive paths remain represented in the level file inventory.
+    $archivesToExtract = @(Get-ChildItem -LiteralPath $locationRoot -Directory |
+        Where-Object { $_.Name -match '^level([0-9]+)$' } |
+        ForEach-Object { Join-Path $_.FullName ("models\" + $_.Name + '.res') } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Sort-Object -Unique)
+    foreach ($archive in $archivesToExtract) {
+        $archiveName = [IO.Path]::GetFileNameWithoutExtension((Split-Path -Leaf $archive))
+        $extractPath = Join-Path $modelExtractRoot $archiveName
+        New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
+        Get-ConverterOutput $converter @('res', 'extract', $archive, '-o', $extractPath) | Out-Null
+        foreach ($modelFile in @(Get-ChildItem -LiteralPath $extractPath -Recurse -Filter '*.mef' -File | Sort-Object Name)) {
+            $key = $modelFile.BaseName.ToLowerInvariant()
+            if (-not $extractedModelPaths.ContainsKey($key)) { $extractedModelPaths[$key] = $modelFile.FullName }
+        }
+    }
+    $mefAttachmentCache = @{}
     foreach ($directory in $levelDirectories) {
         $level = [int]$directory.Name.Substring(5)
         $objectsQvm = Join-Path $directory.FullName 'objects.qvm'
@@ -308,6 +373,7 @@ try {
         Get-ConverterOutput $converter @('qvm', 'decompile', $objectsQvm, '-o', $decompiled) | Out-Null
         RequireFile $decompiled
         $source = Get-Content -LiteralPath $decompiled -Raw
+        $fileInventory = Get-FileInventory $directory.FullName $GameRoot
         $declarations = Get-DeclarationMap $source
         $calls = @(Get-FunctionCalls $source 'Task_New')
         if ($calls.Count -eq 0) { Fail "No Task_New instances found in $objectsQvm." }
@@ -358,6 +424,15 @@ try {
             $lodKey = $modelId -replace '(?i)\.mef$', ''
             $lodBase = if ($lodKey -match '^(.*)_[0-9]+$') { $Matches[1] } else { $lodKey }
             $lods = if ($modelLods.ContainsKey($lodBase)) { @($modelLods[$lodBase]) } else { @() }
+            $hasModel = -not [string]::IsNullOrWhiteSpace($modelId)
+            $modelKey = ($modelId -replace '(?i)\.mef$', '').ToLowerInvariant()
+            $attachments = @()
+            if ($hasModel -and $extractedModelPaths.ContainsKey($modelKey)) {
+                if (-not $mefAttachmentCache.ContainsKey($modelKey)) {
+                    $mefAttachmentCache[$modelKey] = @(Read-MefAttachments $extractedModelPaths[$modelKey] $modelId)
+                }
+                $attachments = @($mefAttachmentCache[$modelKey])
+            }
             # Helper models are authored collision/logic placeholders rather
             # than renderable meshes: waypoint (spline marker), colbox/collision
             # boxes, joint_fixer, and bare numeric spline indices.  They are
@@ -383,6 +458,18 @@ try {
                 authoredRotation=@($rotation)
                 textures=@($textures | Sort-Object -Unique)
                 lods=@($lods)
+                modelVariants=@($lods | ForEach-Object { "$lodBase`_$_.mef" })
+                attachments=$attachments
+                attachmentCount=$attachments.Count
+                aspectCoverage=[ordered]@{
+                    position=($hasPosition)
+                    orientation=($hasRotation)
+                    model=$hasModel
+                    lod=(@($lods).Count -gt 0)
+                    attachments=($attachments.Count -gt 0)
+                    textures=(@($textures).Count -gt 0)
+                    sounds=(@($sounds).Count -gt 0)
+                }
                 sounds=@($sounds)
                 sourceHash=$sourceHash
                 renderable=$renderable
@@ -560,6 +647,7 @@ try {
             level=$level
             sourcePath=(Get-RelativePath $objectsQvm $GameRoot)
             sourceHash=$sourceHash
+            files=$fileInventory
             taskIds=$taskIds.ToArray()
             declarations=@($declarations.Keys | Sort-Object)
             inventory=$inventory.ToArray()

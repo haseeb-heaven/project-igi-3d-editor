@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$GameRoot = 'D:\IGI1',
-    [Parameter(Mandatory=$true)][string]$OutputPath
+    [Parameter(Mandatory=$true)][string]$OutputPath,
+    [ValidateSet('smoke','nightly','exhaustive')][string]$Profile = 'exhaustive'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,7 +21,26 @@ function RequiredFile([string]$LevelRoot, [string]$RelativePath) {
     $length = (Get-Item -LiteralPath $full).Length
     if ($length -le 0) { Fail "Required corpus file is empty: $full" }
     $relativePath = Relative $full $GameRoot
-    return [ordered]@{ path=$relativePath; kind='file'; minBytes=[int][Math]::Min($length, 2147483647) }
+    return [ordered]@{
+        path=$relativePath
+        kind='file'
+        bytes=[int64]$length
+        sha256=(Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+        minBytes=[int][Math]::Min($length, 2147483647)
+    }
+}
+
+function Get-InventoryHash($Scenarios) {
+    $records = foreach ($scenario in @($Scenarios | Sort-Object name)) {
+        foreach ($file in @($scenario.corpusFiles | Where-Object { $_.kind -eq 'file' } | Sort-Object path)) {
+            "$($file.path)|$($file.bytes)|$($file.sha256)"
+        }
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
+        return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally { $sha.Dispose() }
 }
 
 $GameRoot = Full $GameRoot
@@ -118,12 +138,30 @@ foreach ($levelDir in $levelDirs) {
     }
 }
 
+$allScenarios = @($scenarios)
+# Profiles are selected from authored scenario metadata and stable level order;
+# numeric IDs never decide pass/fail, only deterministic breadth.
+switch ($Profile) {
+    'smoke' {
+        $scenarios = @($allScenarios | Where-Object { $_.name -like '*-corpus-load-render' })
+        $scenarios += @($allScenarios | Where-Object { $_.name -like '*-terrain-shortcut' } | Select-Object -First 1)
+    }
+    'nightly' { $scenarios = @($allScenarios) }
+    'exhaustive' { $scenarios = @($allScenarios) }
+}
 $manifest = [ordered]@{
     schemaVersion=1
     generatedBy='New-EditorCorpusManifest.ps1'
     generatedFrom=$GameRoot
+    profile=$Profile
+    inventoryHash=(Get-InventoryHash $allScenarios)
+    selectionHash=(Get-InventoryHash $scenarios)
     coverage=[ordered]@{
         levels=14
+        planned=$allScenarios.Count
+        applicable=$allScenarios.Count
+        selected=$scenarios.Count
+        featureCombinations=@('corpus-load-render','terrain-shortcut')
         actions=@('load','render','process-health','corpus-file-presence','authored-weather-resolution','missing-texture-detection','pause-menu','cursor-visibility','graceful-quit','terrain-edit-shortcut')
     }
     scenarios=$scenarios

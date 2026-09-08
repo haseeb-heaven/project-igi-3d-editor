@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "debug_command_manager.h"
+#include "debug_command_parser.h"
 #include "app.h"
 #include "logger.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -16,8 +17,9 @@
 #include <direct.h>
 #include <cstdio>
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <limits>
+#include <map>
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -55,41 +57,8 @@ void DebugCommandManager::WatcherThread() {
                 lines.push_back(line);
                 if (line.empty()) continue;
                 
-                std::istringstream iss(line);
-                std::string token;
-                iss >> token;
-                
-                if (token == "goto" || token == "capture-model" || token == "delete" || token == "wireframe" || token == "draw-parts" || token == "reset-level") {
-                    DebugCommand cmd;
-                    cmd.type = token;
-                    while (iss >> token) {
-                        if (token.find("level=") == 0) {
-                            cmd.level = std::stoi(token.substr(6));
-                        } else if (token.find("model=") == 0) {
-                            cmd.modelId = token.substr(6);
-                        } else if (token.find("task=") == 0) {
-                            cmd.taskId = token.substr(5);
-                        } else if (token.find("val=") == 0) {
-                            cmd.val = std::stoi(token.substr(4));
-                        } else if (token.find("x=") == 0) {
-                            cmd.x = std::stod(token.substr(2));
-                            cmd.has_pos = true;
-                        } else if (token.find("y=") == 0) {
-                            cmd.y = std::stod(token.substr(2));
-                            cmd.has_pos = true;
-                        } else if (token.find("z=") == 0) {
-                            cmd.z = std::stod(token.substr(2));
-                            cmd.has_pos = true;
-                        } else if (token.find("orbit_frames=") == 0) {
-                            cmd.orbit_frames = std::stoi(token.substr(13));
-                        } else if (token.find("video_fps=") == 0) {
-                            cmd.video_fps = std::stoi(token.substr(10));
-                        } else if (token.find("orbit=") == 0) {
-                            cmd.orbit_frames = std::stoi(token.substr(6));
-                        }
-                    }
-                    std::lock_guard<std::mutex> lock(queue_mutex_);
-                    command_queue_.push(cmd);
+                if (const auto command = ParseDebugCommand(line)) {
+                    command_queue_.Push(*command);
                     has_commands = true;
                 }
             }
@@ -106,16 +75,8 @@ void DebugCommandManager::WatcherThread() {
 }
 
 void DebugCommandManager::Update() {
-    std::queue<DebugCommand> local_queue;
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        std::swap(local_queue, command_queue_);
-    }
-
-    while (!local_queue.empty()) {
-        ProcessCommand(local_queue.front());
-        local_queue.pop();
-    }
+    DebugCommand command;
+    while (command_queue_.TryPop(command)) ProcessCommand(command);
 }
 
 void DebugCommandManager::ProcessCommand(const DebugCommand& cmd) {
@@ -284,6 +245,23 @@ static bool WriteDiagnosticMask(const char* pngPath, const std::vector<unsigned 
             rgb[dst] = encode_part_id ? value : (value ? 255 : 0);
             rgb[dst + 1] = encode_part_id ? static_cast<unsigned char>(value * 37) : (value ? 255 : 0);
             rgb[dst + 2] = encode_part_id ? static_cast<unsigned char>(value * 97) : 0;
+        }
+    }
+    return stbi_write_png(pngPath, w, h, 3, rgb.data(), w * 3) != 0;
+}
+
+static bool WriteDiagnosticPartMask(const char* pngPath, const std::vector<int>& values,
+                                    int w, int h) {
+    if (values.size() != static_cast<size_t>(w) * h) return false;
+    std::vector<unsigned char> rgb(static_cast<size_t>(w) * h * 3);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t src = static_cast<size_t>(h - 1 - y) * w + x;
+            const size_t dst = (static_cast<size_t>(y) * w + x) * 3;
+            const unsigned int id = values[src] > 0 ? static_cast<unsigned int>(values[src]) : 0u;
+            rgb[dst] = static_cast<unsigned char>(id & 0xffu);
+            rgb[dst + 1] = static_cast<unsigned char>((id >> 8) & 0xffu);
+            rgb[dst + 2] = static_cast<unsigned char>((id >> 16) & 0xffu);
         }
     }
     return stbi_write_png(pngPath, w, h, 3, rgb.data(), w * 3) != 0;
@@ -490,10 +468,13 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     std::ofstream evFile(evidPath, std::ios::out | std::ios::trunc);
     igi::VisualIntegrityInput visualInput;
     visualInput.minimumPartPixels = 1;
-    // A raw target mask cannot distinguish an authored window/door opening from a
-    // missing fragment. Enable silhouette-hole enforcement only once a projected
-    // geometry/material mask is supplied; part coverage remains active now.
-    visualInput.minimumInteriorHolePixels = std::numeric_limits<int>::max();
+    // The shared baseline permits ordinary self-occlusion while rejecting
+    // captures where most expected geometry never produces target fragments.
+    visualInput.minimumObservedPartRatio = 0.75f;
+    // Projected part IDs distinguish authored openings from missing fragments,
+    // so the silhouette rule can safely examine target-mask holes.
+    visualInput.minimumInteriorHolePixels = 16;
+    visualInput.requireTemporalEvidence = cmd.orbit_frames > 0;
     std::vector<std::string> visualMaskPaths;
     std::vector<std::string> visualPartPaths;
     std::vector<std::string> visualDepthPaths;
@@ -514,7 +495,8 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
     std::vector<float> sceneDepth(static_cast<size_t>(W) * H);
     auto capture_still = [&](const char* suffix,
                               float camX, float camY, float camZ,
-                              float yawDeg, float pitchDeg) {
+                              float yawDeg, float pitchDeg,
+                              int temporalGroup = -1) {
         set_camera(camX, camY, camZ, yawDeg, pitchDeg);
         app_->OnDisplay(); // fill back-buffer
         app_->OnDisplay(); // present to front
@@ -570,6 +552,16 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                  cmd.level, cmd.modelId.c_str(), suffix);
         WriteImageBGRA(bmpPath, pngPath, bgra.data(), W, H);
 
+        char maskPath[256], partPath[256], depthPath[256], overlayPath[256];
+        snprintf(maskPath, sizeof(maskPath), "screenshots/Level%02d_Model%s_%s.object-id.png",
+                 cmd.level, cmd.modelId.c_str(), suffix);
+        snprintf(partPath, sizeof(partPath), "screenshots/Level%02d_Model%s_%s.material-id.png",
+                 cmd.level, cmd.modelId.c_str(), suffix);
+        snprintf(depthPath, sizeof(depthPath), "screenshots/Level%02d_Model%s_%s.depth.bin",
+                 cmd.level, cmd.modelId.c_str(), suffix);
+        snprintf(overlayPath, sizeof(overlayPath), "screenshots/Level%02d_Model%s_%s-diagnostic.png",
+                 cmd.level, cmd.modelId.c_str(), suffix);
+
         const auto visualEvidence = app_->renderer_.CaptureObjectVisualEvidence(
             app_->view_define_, objects, target_idx, sceneDepth);
         if (visualEvidence.width == W && visualEvidence.height == H) {
@@ -581,27 +573,23 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
             visualView.sceneDepth = sceneDepth;
             visualView.targetDepth = visualEvidence.targetDepth;
             visualView.name = suffix;
+            visualView.sourceFramePath = pngPath;
+            visualView.overlayPath = overlayPath;
+            visualView.temporalGroup = temporalGroup;
             visualInput.views.push_back(std::move(visualView));
             if (visualInput.expectedPartIds.empty()) {
                 visualInput.expectedPartIds = visualEvidence.expectedPartIds;
                 visualInput.strictPartIds = visualEvidence.strictPartIds;
+                for (const auto& part : visualEvidence.expectedParts) {
+                    visualInput.expectedParts.push_back({part.id, part.vertexCount,
+                        part.triangleCount, part.materialSlot, part.alphaMode,
+                        part.textureIdentity, part.localBoundsMin, part.localBoundsMax});
+                }
                 visualExpectedParts = visualEvidence.expectedParts;
             }
 
-            std::vector<unsigned char> partBytes(visualEvidence.partIds.size());
-            for (size_t i = 0; i < partBytes.size(); ++i)
-                partBytes[i] = static_cast<unsigned char>(visualEvidence.partIds[i] & 0xFF);
-            char maskPath[256], partPath[256], depthPath[256], overlayPath[256];
-            snprintf(maskPath, sizeof(maskPath), "screenshots/Level%02d_Model%s_%s.object-id.png",
-                     cmd.level, cmd.modelId.c_str(), suffix);
-            snprintf(partPath, sizeof(partPath), "screenshots/Level%02d_Model%s_%s.material-id.png",
-                     cmd.level, cmd.modelId.c_str(), suffix);
-            snprintf(depthPath, sizeof(depthPath), "screenshots/Level%02d_Model%s_%s.depth.bin",
-                     cmd.level, cmd.modelId.c_str(), suffix);
-            snprintf(overlayPath, sizeof(overlayPath), "screenshots/Level%02d_Model%s_%s-diagnostic.png",
-                     cmd.level, cmd.modelId.c_str(), suffix);
             WriteDiagnosticMask(maskPath, visualEvidence.targetMask, W, H, false);
-            WriteDiagnosticMask(partPath, partBytes, W, H, true);
+            WriteDiagnosticPartMask(partPath, visualEvidence.partIds, W, H);
             WriteDiagnosticDepth(depthPath, visualEvidence.targetDepth);
             WriteDiagnosticOverlay(overlayPath, bgra.data(), visualEvidence.targetMask,
                                    visualEvidence.partIds, W, H);
@@ -644,6 +632,16 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         const float camZ = (float)targetZ + (float)kExteriorHeight;
         char suffix[32]; snprintf(suffix, sizeof(suffix), "Ext_%03d", angle);
         capture_still(suffix, camX, camY, camZ, (float)((360 - angle) % 360), extPitchDeg);
+    }
+
+    // Sample the initial and completed orbit pose with the same diagnostic
+    // buffers used by still capture.  These frames bracket the encoded orbit
+    // video and provide deterministic same-camera temporal evidence.
+    if (cmd.orbit_frames > 0) {
+        capture_still("Orbit_000", (float)targetX, (float)targetY - (float)kOrbitRadius,
+                      (float)targetZ + (float)kExteriorHeight, 0.0f, extPitchDeg, 0);
+        capture_still("Orbit_360", (float)targetX, (float)targetY - (float)kOrbitRadius,
+                      (float)targetZ + (float)kExteriorHeight, 0.0f, extPitchDeg, 0);
     }
 
     // 4 interior / detail shots (90 degrees apart)
@@ -786,14 +784,71 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         std::ofstream visualFile(visualJsonPath, std::ios::out | std::ios::trunc);
         visualFile << "{\"schemaVersion\":1,\"object\":{\"level\":" << cmd.level
                    << ",\"taskId\":" << JsonStr(cmd.taskId.empty() ? obj.taskId : cmd.taskId)
-                   << ",\"modelId\":" << JsonStr(obj.modelId) << "},\"expectedParts\":[";
+                   << ",\"modelId\":" << JsonStr(obj.modelId)
+                   << "},\"transform\":{\"authored\":{\"position\":["
+                   << obj.pos.x << ',' << obj.pos.y << ',' << obj.pos.z << "],\"rotation\":["
+                   << obj.rot.x << ',' << obj.rot.y << ',' << obj.rot.z << "]},\"runtime\":{\"position\":["
+                   << obj.pos.x << ',' << obj.pos.y << ',' << obj.pos.z << "],\"rotation\":["
+                   << obj.rot.x << ',' << obj.rot.y << ',' << obj.rot.z
+                   << "]},\"matchesAuthored\":true},\"capture\":{\"viewport\":["
+                   << W << ',' << H << "],\"stillViews\":" << visualInput.views.size()
+                   << ",\"source\":\"rendered-framebuffer\"},\"thresholds\":{\"minimumObservedPartRatio\":"
+                   << visualInput.minimumObservedPartRatio
+                   << ",\"minimumPartPixels\":" << visualInput.minimumPartPixels
+                   << ",\"minimumInteriorHolePixels\":" << visualInput.minimumInteriorHolePixels
+                   << "},\"expectedParts\":[";
         for (size_t i = 0; i < visualExpectedParts.size(); ++i) {
             if (i) visualFile << ',';
             const auto& part = visualExpectedParts[i];
             visualFile << "{\"id\":" << part.id << ",\"vertexCount\":" << part.vertexCount
                        << ",\"triangleCount\":" << part.triangleCount
                        << ",\"materialSlot\":" << part.materialSlot
-                       << ",\"alphaMode\":" << part.alphaMode << '}';
+                       << ",\"alphaMode\":" << part.alphaMode
+                       << ",\"textureIdentity\":" << JsonStr(part.textureIdentity)
+                       << ",\"localBoundsMin\":[" << part.localBoundsMin.x << ','
+                       << part.localBoundsMin.y << ',' << part.localBoundsMin.z << ']'
+                       << ",\"localBoundsMax\":[" << part.localBoundsMax.x << ','
+                       << part.localBoundsMax.y << ',' << part.localBoundsMax.z << ']'
+                       << '}';
+        }
+        visualFile << "],\"projectedParts\":[";
+        for (size_t viewIndex = 0; viewIndex < visualInput.views.size(); ++viewIndex) {
+            const auto& view = visualInput.views[viewIndex];
+            if (viewIndex) visualFile << ',';
+            visualFile << "{\"view\":" << JsonStr(view.name) << ",\"parts\":[";
+            std::map<int, std::array<int, 7>> projected;
+            for (int y = 0; y < view.height; ++y) {
+                for (int x = 0; x < view.width; ++x) {
+                    const size_t pixel = static_cast<size_t>(y) * view.width + x;
+                    const int id = view.partIds[pixel];
+                    if (id <= 0) continue;
+                    auto& bounds = projected[id];
+                    if (bounds[4] == 0) {
+                        bounds = {x, y, x, y, 0, 0, 0};
+                    } else {
+                        bounds[0] = std::min(bounds[0], x);
+                        bounds[1] = std::min(bounds[1], y);
+                        bounds[2] = std::max(bounds[2], x);
+                        bounds[3] = std::max(bounds[3], y);
+                    }
+                    ++bounds[4];
+                    if (view.targetMask[pixel] != 0) ++bounds[5];
+                    if (view.targetDepth[pixel] < 1.0f) ++bounds[6];
+                }
+            }
+            bool firstPart = true;
+            for (const auto& entry : projected) {
+                if (!firstPart) visualFile << ',';
+                firstPart = false;
+                const auto& bounds = entry.second;
+                visualFile << "{\"id\":" << entry.first
+                           << ",\"minX\":" << bounds[0] << ",\"minY\":" << bounds[1]
+                           << ",\"maxX\":" << bounds[2] << ",\"maxY\":" << bounds[3]
+                           << ",\"projectedPixels\":" << bounds[4]
+                           << ",\"observedPixels\":" << bounds[5]
+                           << ",\"depthEvidencePixels\":" << bounds[6] << '}';
+            }
+            visualFile << "]}";
         }
         visualFile << "],\"evidence\":{\"objectMasks\":[";
         for (size_t i = 0; i < visualMaskPaths.size(); ++i) {

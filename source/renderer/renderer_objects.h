@@ -121,6 +121,9 @@ public:
             int triangleCount = 0;
             int materialSlot = -1;
             int alphaMode = 0;
+            std::string textureIdentity;
+            glm::vec3 localBoundsMin{0.0f};
+            glm::vec3 localBoundsMax{0.0f};
         };
         int width = 0;
         int height = 0;

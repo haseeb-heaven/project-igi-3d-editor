@@ -388,7 +388,6 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    glEnable(GL_POLYGON_OFFSET_FILL);
 
     glUseProgram(pick_shader_prog_);
     glBindBufferBase(GL_UNIFORM_BUFFER, ubo_binding_point_, ubo_mats);
@@ -420,7 +419,9 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
                 const int part_id = next_part_id++;
                 evidence.expectedPartIds.push_back(part_id);
                 evidence.expectedParts.push_back({part_id, part_mesh.vertexCount,
-                                                  part_mesh.vertexCount / 3, -1, 0});
+                                                  part_mesh.vertexCount / 3, -1, 0,
+                                                  part_mesh.textureName, part_mesh.center - part_mesh.halfExtents,
+                                                  part_mesh.center + part_mesh.halfExtents});
                 if (strict_coverage) evidence.strictPartIds.push_back(part_id);
                 glUniform1i(loc_id, part_id);
                 glBindVertexArray(part_mesh.VAO);
@@ -433,13 +434,18 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
             const int part_id = next_part_id++;
             evidence.expectedPartIds.push_back(part_id);
             evidence.expectedParts.push_back({part_id, sub.vertexCount, sub.vertexCount / 3,
-                                              sub.materialSlot, sub.alphaMode});
+                                              sub.materialSlot, sub.alphaMode, sub.textureName,
+                                              sub.localMin, sub.localMax});
             if (strict_coverage) evidence.strictPartIds.push_back(part_id);
             glUniform1i(loc_id, part_id);
             glBindVertexArray(sub.VAO);
             glDrawArrays(GL_TRIANGLES, 0, sub.vertexCount);
         }
     };
+    // The visible hull path draws with this offset.  The diagnostic must use
+    // the identical depth convention before comparing its projection with the
+    // captured scene depth.
+    glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(-1.0f, -1.0f);
     draw_mesh_parts(mesh, model, false);
 
@@ -449,6 +455,9 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     // excludes known non-visual authored data using the same data-derived
     // predicates as the renderer (death zones, collision fallbacks and large
     // untextured trigger slabs).
+    // Attachments are drawn one offset step closer than their parent hull in
+    // the visible renderer to prevent z-fighting with hull walls.
+    glPolygonOffset(-2.0f, -2.0f);
     EnsureDeathZoneIdsLoaded();
     EnsureAiModelIdsLoaded();
     const std::string prefix = obj.isBuilding ? "building:" : "object:";
@@ -493,8 +502,8 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
         }
     };
     std::unordered_set<std::string> ancestry{modelId};
-    glPolygonOffset(-2.0f, -2.0f);
     draw_attachments(modelId, glm::scale(model, glm::vec3(1.0f / (40.96f * obj.scale))), ancestry);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glBindVertexArray(0);
     glUseProgram(0);
 
@@ -510,15 +519,19 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
                             static_cast<int>(color[color_index + 2]);
         if (part_id == 0) continue;
         evidence.partIds[index] = part_id;
-        if (scene_depth[index] < 1.0f &&
-            std::abs(scene_depth[index] - evidence.targetDepth[index]) <= 0.0001f) {
+        const auto part = std::find_if(evidence.expectedParts.begin(), evidence.expectedParts.end(),
+            [part_id](const VisualEvidence::PartInventory& value) { return value.id == part_id; });
+        const bool is_transparent_part = part != evidence.expectedParts.end() && part->alphaMode == 2;
+        if ((is_transparent_part &&
+             scene_depth[index] >= evidence.targetDepth[index] - 0.0001f) ||
+            (!is_transparent_part && scene_depth[index] < 1.0f &&
+             std::abs(scene_depth[index] - evidence.targetDepth[index]) <= 0.0001f)) {
             evidence.targetMask[index] = 1;
         }
     }
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
-    glDisable(GL_POLYGON_OFFSET_FILL);
     return evidence;
 }
 

@@ -53,47 +53,21 @@ static float ReadF32LE(const uint8_t* p) {
     return f;
 }
 
-FntFont FNT_Parse(const std::string& filepath) {
+static FntFont ParseFntBytes(std::span<const uint8_t> bytes, const std::string& source) {
     FntFont font;
-
-    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not open file: " + filepath);
-        return font;
-    }
-
-    std::streampos pos = file.tellg();
-    if (pos == std::streampos(-1)) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not determine file size: " + filepath);
-        return font;
-    }
-    size_t fileSize = static_cast<size_t>(pos);
+    const size_t fileSize = bytes.size();
     if (fileSize < 20) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] File too small for ILFF header: " + filepath);
-        return font;
-    }
-
-    std::vector<uint8_t> buf;
-    try {
-        buf.resize(fileSize);
-    } catch (const std::bad_alloc&) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Memory allocation failed for file: " + filepath);
-        return font;
-    }
-    file.seekg(0, std::ios::beg);
-    file.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(fileSize));
-    if (static_cast<size_t>(file.gcount()) != fileSize) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not read whole file: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[FNT] File too small for ILFF header: " + source);
         return font;
     }
 
     // Validate 20-byte ILFF header: "ILFF" at 0, "FONT" content type at 16.
-    if (ReadU32LE(buf.data()) != FOURCC_ILFF) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Not an ILFF file (missing ILFF magic): " + filepath);
+    if (ReadU32LE(bytes.data()) != FOURCC_ILFF) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Not an ILFF file (missing ILFF magic): " + source);
         return font;
     }
-    if (ReadU32LE(buf.data() + 16) != FOURCC_FONT) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Not a FONT file (wrong content type): " + filepath);
+    if (ReadU32LE(bytes.data() + 16) != FOURCC_FONT) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Not a FONT file (wrong content type): " + source);
         return font;
     }
 
@@ -106,7 +80,7 @@ FntFont FNT_Parse(const std::string& filepath) {
 
     size_t offset = 20;
     while (offset + 16 <= fileSize) {
-        const uint8_t* h = buf.data() + offset;
+        const uint8_t* h = bytes.data() + offset;
         uint32_t fourcc = ReadU32LE(h);
         uint32_t length = ReadU32LE(h + 4);
         uint32_t skip   = ReadU32LE(h + 12);
@@ -117,7 +91,7 @@ FntFont FNT_Parse(const std::string& filepath) {
                 std::to_string(offset));
             break;
         }
-        const uint8_t* data = buf.data() + dataOffset;
+        const uint8_t* data = bytes.data() + dataOffset;
 
         if (fourcc == FOURCC_FNTH) {
             if (length >= 24) {
@@ -156,14 +130,14 @@ FntFont FNT_Parse(const std::string& filepath) {
     }
 
     if (numGlyphs == 0 || !anmf || !tran || !body || texWidth == 0 || texHeight == 0) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Missing required chunks in: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Missing required chunks in: " + source);
         return font;
     }
     if (numGlyphs > std::numeric_limits<size_t>::max() / 40 ||
         numGlyphs > std::numeric_limits<size_t>::max() / 2 ||
         anmfLen < static_cast<size_t>(numGlyphs) * 40 ||
         tranLen < static_cast<size_t>(numGlyphs) * 2) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Glyph table truncated in: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Glyph table truncated in: " + source);
         return font;
     }
 
@@ -176,13 +150,13 @@ FntFont FNT_Parse(const std::string& filepath) {
     if (numPixels > std::numeric_limits<size_t>::max() / 4 ||
         numPixels > std::numeric_limits<size_t>::max() / bytesPerPixel ||
         bodyLen < numPixels * bytesPerPixel) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Atlas size overflows or BODY is truncated: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Atlas size overflows or BODY is truncated: " + source);
         return font;
     }
     try {
         font.rgba.resize(numPixels * 4);
     } catch (const std::bad_alloc&) {
-        Logger::Get().Log(LogLevel::ERR, "[FNT] Memory allocation failed for atlas: " + filepath);
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Memory allocation failed for atlas: " + source);
         return font;
     }
 
@@ -207,7 +181,10 @@ FntFont FNT_Parse(const std::string& filepath) {
             int g = (v >> 5) & 0x3f;
             int b = v & 0x1f;
             // approximate luminance, scaled to 0..255
-            int lum = (r * 8 + g * 4 + b * 8) / 3;
+            // Scale each RGB565 component to the full 8-bit range before
+            // averaging. The old bit-shift approximation made an all-white
+            // source pixel partially transparent (249 rather than 255).
+            int lum = ((r * 255 / 31) + (g * 255 / 63) + (b * 255 / 31)) / 3;
             if (lum > 255) lum = 255;
             font.rgba[i * 4 + 0] = 255;
             font.rgba[i * 4 + 1] = 255;
@@ -256,9 +233,41 @@ FntFont FNT_Parse(const std::string& filepath) {
     }
 
     font.valid = true;
-    Logger::Get().Log(LogLevel::INFO, "[FNT] Parsed " + filepath + " | Glyphs: " +
+    Logger::Get().Log(LogLevel::INFO, "[FNT] Parsed " + source + " | Glyphs: " +
         std::to_string(font.glyphs.size()) + " | Atlas: " +
         std::to_string(texWidth) + "x" + std::to_string(texHeight) +
         " | LineHeight: " + std::to_string(font.lineHeight));
     return font;
+}
+
+FntFont FNT_ParseBytes(std::span<const uint8_t> bytes) {
+    return ParseFntBytes(bytes, "<memory>");
+}
+
+FntFont FNT_Parse(const std::string& filepath) {
+    FntFont font;
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not open file: " + filepath);
+        return font;
+    }
+    const std::streampos pos = file.tellg();
+    if (pos == std::streampos(-1)) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not determine file size: " + filepath);
+        return font;
+    }
+    std::vector<uint8_t> bytes;
+    try {
+        bytes.resize(static_cast<size_t>(pos));
+    } catch (const std::bad_alloc&) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Memory allocation failed for file: " + filepath);
+        return font;
+    }
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (static_cast<size_t>(file.gcount()) != bytes.size()) {
+        Logger::Get().Log(LogLevel::ERR, "[FNT] Could not read whole file: " + filepath);
+        return font;
+    }
+    return ParseFntBytes(bytes, filepath);
 }

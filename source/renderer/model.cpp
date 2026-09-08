@@ -104,6 +104,13 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         sub.alphaMode = 0;
         sub.vertexCount = static_cast<int>(verts.size() / 10);
         sub.baseColorFactor = glm::vec4(1.0f);
+        sub.localMin = glm::vec3(std::numeric_limits<float>::max());
+        sub.localMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t v = 0; v + 2 < verts.size(); v += 10) {
+            const glm::vec3 p(verts[v], verts[v + 1], verts[v + 2]);
+            sub.localMin = glm::min(sub.localMin, p);
+            sub.localMax = glm::max(sub.localMax, p);
+        }
 
         glGenVertexArrays(1, &sub.VAO);
         glGenBuffers(1, &sub.VBO);
@@ -199,6 +206,13 @@ Mesh BuildMeshFromGeometry(const ParsedGeometry& geometry, const std::string& fi
         sub.baseColorFactor = glm::vec4(1.0f);
         sub.alphaMode = hasAlpha ? 2 : 0;
         sub.materialSlot = materialSlot;
+        sub.localMin = glm::vec3(std::numeric_limits<float>::max());
+        sub.localMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t v = 0; v + 2 < verts.size(); v += 10) {
+            const glm::vec3 p(verts[v], verts[v + 1], verts[v + 2]);
+            sub.localMin = glm::min(sub.localMin, p);
+            sub.localMax = glm::max(sub.localMax, p);
+        }
 
         // Average local-space normal (normal is floats [3..5] of each 10-float vertex) —
         // used to re-light this block's baked lightmap when the object is rotated.

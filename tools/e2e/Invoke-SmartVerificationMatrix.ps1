@@ -52,7 +52,14 @@ if ($Resume) {
     $prior = Get-Content -LiteralPath $matrixPath -Raw | ConvertFrom-Json
     if ($null -ne $prior.PSObject.Properties['prepareOnly']) { $previousPrepareOnly = [bool]$prior.prepareOnly }
     if ($null -ne $prior.PSObject.Properties['maxObjects']) { $previousMaxObjects = [int]$prior.maxObjects }
-    $matrixResults += @($prior.levels | Where-Object { $null -ne $_.PSObject.Properties['level'] })
+    foreach ($old in @($prior.results | Where-Object { $null -ne $_.PSObject.Properties['level'] })) {
+        $oldBatchPath = Join-Path (Join-Path $ArtifactsRoot ('level'+[int]$old.level)) 'batch.json'
+        if (Test-Path -LiteralPath $oldBatchPath) {
+            $oldBatch = Get-Content -LiteralPath $oldBatchPath -Raw | ConvertFrom-Json
+            $oldStatus = if (@($oldBatch.results | Where-Object status -eq 'FAIL').Count -eq 0) { 'PASS' } else { 'FAIL' }
+            $matrixResults += [pscustomobject]@{level=[int]$old.level;status=$oldStatus;candidateCount=[int]$oldBatch.renderableInstances;totalTasks=[int]$oldBatch.totalTasks;preparedTasks=@($oldBatch.results | Where-Object status -eq 'PREPARED').Count;skippedTasks=@($oldBatch.skippedTasks).Count;failedTasks=@($oldBatch.results | Where-Object status -eq 'FAIL').Count;artifactRoot=(Join-Path $ArtifactsRoot ('level'+[int]$old.level));failure=$(if($oldStatus -eq 'FAIL'){'Inspect level batch.json'}else{$null})}
+        } else { $matrixResults += $old }
+    }
 }
 
 function Save-Matrix {
@@ -76,7 +83,7 @@ foreach ($level in $Levels) {
     $levelRoot = Join-Path $ArtifactsRoot ('level'+$level)
     $levelRows = @($inventory.levels | Where-Object level -eq $level)[0].inventory
     if ($filterTypes.Count) { $levelRows = @($levelRows | Where-Object { $filterTypes -contains [string]$_.type }) }
-    $candidateCount = @($levelRows | Where-Object { $_.modelId -and $_.authoredPosition -and $_.authoredRotation }).Count
+    $candidateCount = @($levelRows | Where-Object { $_.modelId -and $_.authoredPosition -and $_.authoredRotation -and $_.renderable -ne $false -and $_.helperModel -ne $true -and $_.modelResolved -ne $false }).Count
     if ($MaxObjects -gt 0 -and $remaining -le 0) {
         $matrixResults += [pscustomobject]@{level=$level;status='NOT_RUN_LIMIT_REACHED';candidateCount=$candidateCount;failure=$null}
         Save-Matrix
@@ -91,7 +98,8 @@ foreach ($level in $Levels) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $levelTool @args
     $status = if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }
     $matrixResults = @($matrixResults | Where-Object level -ne $level)
-    $matrixResults += [pscustomobject]@{level=$level;status=$status;candidateCount=$candidateCount;artifactRoot=$levelRoot;failure=$(if($status -eq 'FAIL'){'Inspect level batch.json'}else{$null})}
+    $batch = Get-Content -LiteralPath (Join-Path $levelRoot 'batch.json') -Raw | ConvertFrom-Json
+    $matrixResults += [pscustomobject]@{level=$level;status=$status;candidateCount=[int]$batch.renderableInstances;totalTasks=[int]$batch.totalTasks;preparedTasks=@($batch.results | Where-Object status -eq 'PREPARED').Count;skippedTasks=@($batch.skippedTasks).Count;failedTasks=@($batch.results | Where-Object status -eq 'FAIL').Count;artifactRoot=$levelRoot;failure=$(if($status -eq 'FAIL'){'Inspect level batch.json'}else{$null})}
     if ($MaxObjects -gt 0) { $remaining -= $levelLimit }
     Save-Matrix
     if ($status -eq 'FAIL') { exit 1 }

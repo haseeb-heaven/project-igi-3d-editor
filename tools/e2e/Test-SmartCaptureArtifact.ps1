@@ -56,6 +56,11 @@ foreach ($batch in $batches) {
                 catch { $failures.Add("$identity has invalid object-evidence/manifest.json: $($_.Exception.Message)") }
                 if ($null -ne $bundleManifest) {
                     if ([int]$bundleManifest.schemaVersion -ne 1) { $failures.Add("$identity has unsupported evidence manifest schema.") }
+                    if ([string]$bundleManifest.source.editorSha256 -notmatch '^[a-f0-9]{64}$' -or
+                        [string]$bundleManifest.source.inventorySha256 -notmatch '^[a-f0-9]{64}$' -or
+                        [string]$bundleManifest.source.levelSourceSha256 -notmatch '^[a-f0-9]{64}$') {
+                        $failures.Add("$identity evidence manifest lacks reproducible source hashes.")
+                    }
                     if ([int]$bundleManifest.object.level -ne [int]$batch.level -or
                         [string]$bundleManifest.object.taskId -ne [string]$object.taskId -or
                         [string]$bundleManifest.object.modelId -ne [string]$object.modelId) {
@@ -87,6 +92,12 @@ foreach ($batch in $batches) {
                                 if ($null -eq $integrity) {
                                     $failures.Add("$identity visual-integrity result is absent from its evidence contract.")
                                 } else {
+                                    if ($null -eq $portableResult.projectedParts) {
+                                        $failures.Add("$identity visual-integrity evidence lacks serialized projected-part measurements.")
+                                    }
+                                    if ([int]$integrity.schemaVersion -ne 1 -or $null -eq $integrity.summary) {
+                                        $failures.Add("$identity visual-integrity result has an unsupported result contract.")
+                                    }
                                     if ($null -eq $portableResult.transform -or $null -eq $portableResult.capture) {
                                         $failures.Add("$identity visual-integrity contract lacks authored/runtime transform or capture metadata.")
                                     }
@@ -99,12 +110,25 @@ foreach ($batch in $batches) {
                                     if (([int]$integrity.viewsPassed + [int]$integrity.viewsFailed) -ne [int]$integrity.viewsChecked) {
                                         $failures.Add("$identity visual-integrity view summary is internally inconsistent.")
                                     }
+                                    if ([int]$integrity.summary.partsExpected -ne [int]$integrity.partsExpected -or
+                                        [int]$integrity.summary.partsObserved -ne [int]$integrity.partsObserved -or
+                                        [int]$integrity.summary.viewsChecked -ne [int]$integrity.viewsChecked) {
+                                        $failures.Add("$identity visual-integrity nested summary disagrees with its compatibility fields.")
+                                    }
                                     foreach ($finding in @($integrity.findings)) {
                                         if ([string]$finding.severity -notin @('error','warning')) {
                                             $failures.Add("$identity visual-integrity finding has no actionable severity.")
                                         }
                                         foreach ($reference in @($finding.evidence)) {
                                             Test-BundleFile $bundleRoot ([string]$reference) $identity | Out-Null
+                                        }
+                                    }
+                                    $independentAnalyzer = Join-Path $PSScriptRoot 'Analyze-VisualIntegrityBundle.ps1'
+                                    if (Test-Path -LiteralPath $independentAnalyzer -PathType Leaf) {
+                                        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $independentAnalyzer `
+                                            -BundleRoot $bundleRoot -VisualIntegrityPolicy $VisualIntegrityPolicy | Out-Null
+                                        if ($LASTEXITCODE -ne 0 -and $VisualIntegrityPolicy -eq 'Required') {
+                                            $failures.Add("$identity independent visual-integrity bundle analysis failed.")
                                         }
                                     }
                                 }

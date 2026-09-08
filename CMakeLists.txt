@@ -236,7 +236,9 @@ FetchContent_Declare(
 # CRT), causing __imp__calloc_dbg / _CrtDbgReport link errors when mixing
 # gtest.lib with DLL-CRT object files.
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)
+option(FETCHCONTENT_FULLY_DISCONNECTED
+    "Use already provisioned FetchContent dependencies" ON)
+option(IGI_TEST_ASAN "Instrument test targets with AddressSanitizer" OFF)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
@@ -269,6 +271,7 @@ add_executable(igi_tests
     tests/test_graph_overlay.cpp
     tests/test_animation.cpp
     tests/test_res_parser.cpp
+    tests/test_res_stream_append.cpp
     tests/test_tex_parser.cpp
     tests/test_mtp_parser.cpp
     tests/test_mtp_writer.cpp
@@ -424,7 +427,9 @@ set_source_files_properties(
 target_precompile_headers(igi_tests PRIVATE source/pch.h)
 
 include(GoogleTest)
-gtest_discover_tests(igi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+gtest_discover_tests(igi_tests
+    TEST_PREFIX "aggregate."
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 # Keep the editor-start policy regression lightweight and independent from the
 # large runtime integration translation unit/PCH. This gives the camera policy
@@ -433,11 +438,52 @@ gtest_discover_tests(igi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 add_executable(editor_camera_start_tests
     tests/test_editor_camera_start.cpp
 )
+
+if(IGI_TEST_ASAN AND MSVC)
+    # ASan is an isolated opt-in lane. Release symbols avoid /RTC conflicts;
+    # disable incremental linking because the linker does not support it with
+    # the sanitizer runtime.
+    target_compile_options(igi_tests PRIVATE /fsanitize=address /Zi)
+    target_link_options(igi_tests PRIVATE /INCREMENTAL:NO)
+endif()
 target_include_directories(editor_camera_start_tests PRIVATE
+    ${PROJECT_SOURCE_DIR}/source
     ${PROJECT_SOURCE_DIR}/third_party/glm-1.0.1
+    ${PROJECT_SOURCE_DIR}/third_party/GL/include
 )
 target_link_libraries(editor_camera_start_tests PRIVATE gtest_main)
-gtest_discover_tests(editor_camera_start_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+target_precompile_headers(editor_camera_start_tests PRIVATE source/pch.h)
+gtest_discover_tests(editor_camera_start_tests
+    TEST_PREFIX "camera."
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+add_executable(editor_policy_tests
+    tests/test_editor_policy.cpp
+)
+target_include_directories(editor_policy_tests PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_link_libraries(editor_policy_tests PRIVATE gtest_main)
+gtest_discover_tests(editor_policy_tests
+    TEST_PREFIX "policy."
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+add_executable(game_clock_tests
+    tests/test_game_clock.cpp
+    source/game_clock.cpp
+)
+target_include_directories(game_clock_tests PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_link_libraries(game_clock_tests PRIVATE gtest_main)
+gtest_discover_tests(game_clock_tests
+    TEST_PREFIX "clock."
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+add_executable(debug_command_queue_tests
+    tests/test_debug_command_queue.cpp
+)
+target_include_directories(debug_command_queue_tests PRIVATE ${PROJECT_SOURCE_DIR}/source)
+target_link_libraries(debug_command_queue_tests PRIVATE gtest_main)
+gtest_discover_tests(debug_command_queue_tests
+    TEST_PREFIX "debug_queue."
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 add_executable(igi_mcp
     source/mcp/mcp_main.cpp

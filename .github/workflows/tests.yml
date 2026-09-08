@@ -1,0 +1,38 @@
+name: synthetic-tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-synthetic:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:GOOGLETEST_SOURCE) { throw 'GOOGLETEST_SOURCE must point to a provisioned GoogleTest source.' }
+          & "$env:GITHUB_WORKSPACE\tools\testing\Invoke-TestLane.ps1" `
+            -Lane registration -GoogleTestSource $env:GOOGLETEST_SOURCE `
+            -BuildRoot "$env:RUNNER_TEMP\igi-build" `
+            -ArtifactsRoot "$env:GITHUB_WORKSPACE\artifacts\registration"
+      - name: Validate required status
+        if: always()
+        shell: pwsh
+        run: |
+          $report = "$env:GITHUB_WORKSPACE\artifacts\registration\run.json"
+          if (-not (Test-Path -LiteralPath $report)) { throw 'Required registration report was not produced.' }
+          & "$env:GITHUB_WORKSPACE\tools\testing\Get-RequiredLaneStatus.ps1" -ReportPath $report -OutputPath "$env:GITHUB_WORKSPACE\artifacts\required-status.json"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: error
