@@ -374,8 +374,9 @@ void Renderer_Objects::ClearResCache() {
 
 void Renderer_Objects::RefreshTextureResCache() {
     res_tex_indexes_.clear();
+    res_model_indexes_.clear();
     LoadResCache(current_level_, Utils::GetIGIRootPath());
-    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Refreshed texture .res index for level " +
+    Logger::Get().Log(LogLevel::INFO, "[Renderer_Objects] Refreshed texture and model .res index for level " +
         std::to_string(current_level_));
 }
 

@@ -165,7 +165,25 @@ std::vector<std::string> Renderer_Objects::GetTextureIdsForModel(const std::stri
         }
     }
 
-    // 3. Variant fallback within current level: NNN_XX_N -> NNN_01_1
+    // 3. Sibling LOD fallback within same variant: NNN_VV_N -> NNN_VV_1 (e.g. 001_02_2 -> 001_02_1)
+    {
+        size_t p2 = modelId.rfind('_');
+        if (p2 != std::string::npos && p2 > 0) {
+            std::string sameVariantPrimary = modelId.substr(0, p2) + "_1";
+            if (sameVariantPrimary != modelId) {
+                auto it = model_texture_map_cache_.find(sameVariantPrimary);
+                if (it != model_texture_map_cache_.end()) {
+                    return it->second;
+                }
+                auto git = global_texture_map_.find(sameVariantPrimary);
+                if (git != global_texture_map_.end()) {
+                    return git->second;
+                }
+            }
+        }
+    }
+
+    // 4. Variant fallback within current level: NNN_XX_N -> NNN_01_1
     {
         size_t p1 = modelId.find('_');
         if (p1 != std::string::npos && p1 + 4 < modelId.size()) {
@@ -179,7 +197,7 @@ std::vector<std::string> Renderer_Objects::GetTextureIdsForModel(const std::stri
         }
     }
 
-    // 4. Variant fallback in global DAT
+    // 5. Variant fallback in global DAT
     {
         size_t p1 = modelId.find('_');
         if (p1 != std::string::npos && p1 + 4 < modelId.size()) {
@@ -342,27 +360,39 @@ GLuint Renderer_Objects::GetOrLoadTexture(const std::string& textureId) {
     // ── 1b. Lazy cross-level .res index if texture not found in current level ────
     {
         EnsureGlobalTextureMapLoaded();
+        int targetLvl = -1;
         auto tit = texture_level_map_.find(textureId);
         if (tit == texture_level_map_.end()) {
             const std::string stripped = StripTextureFormatSuffix(textureId);
             tit = texture_level_map_.find(stripped);
         }
         if (tit != texture_level_map_.end() && tit->second != current_level_) {
-            int targetLvl = tit->second;
+            targetLvl = tit->second;
             Logger::Get().Log(LogLevel::INFO, "[TEX] Lazy indexing level " +
                 std::to_string(targetLvl) + " .res for cross-level: " + textureId);
             LoadResCache(targetLvl, Utils::GetIGIRootPath());
-            std::vector<uint8_t> xBytes = FindTextureData(textureId);
-            if (!xBytes.empty()) {
-                pics_s pics2{};
-                if (Tex_LoadFromMemory(xBytes.data(), xBytes.size(), pics2) && pics2.pics_ && pics2.num_pic_ > 0) {
-                    const GLuint tex = GL_RegisterTexture(pics2.pics_, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true);
-                    texture_cache_[cacheKey] = tex;
-                    Pic_FreePics(pics2);
-                    return tex;
-                }
-                Pic_FreePics(pics2);
+        }
+
+        std::vector<uint8_t> xBytes = FindTextureData(textureId);
+        if (xBytes.empty()) {
+            // DAT files are not guaranteed to provide a complete owner map.
+            // Search all other packed texture archives using the indexed reader.
+            for (int lvl = 1; lvl <= 14 && xBytes.empty(); ++lvl) {
+                if (lvl == current_level_ || lvl == targetLvl) continue;
+                LoadResCache(lvl, Utils::GetIGIRootPath());
+                xBytes = FindTextureData(textureId);
             }
+        }
+
+        if (!xBytes.empty()) {
+            pics_s pics2{};
+            if (Tex_LoadFromMemory(xBytes.data(), xBytes.size(), pics2) && pics2.pics_ && pics2.num_pic_ > 0) {
+                const GLuint tex = GL_RegisterTexture(pics2.pics_, GL_REPEAT, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR, true);
+                texture_cache_[cacheKey] = tex;
+                Pic_FreePics(pics2);
+                return tex;
+            }
+            Pic_FreePics(pics2);
         }
     }
 

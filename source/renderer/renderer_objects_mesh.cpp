@@ -50,6 +50,23 @@ Mesh Renderer_Objects::GetOrLoadMesh(const std::string& modelId, bool isBuilding
     // ── 1. Try in-memory .res index first (no disk extraction needed) ────────────
     {
         std::vector<uint8_t> meshBytes = FindMeshData(modelId);
+        if (meshBytes.empty()) {
+            EnsureGlobalTextureMapLoaded();
+            int targetLvl = -1;
+            auto mit = model_level_map_.find(modelId);
+            if (mit != model_level_map_.end() && mit->second != current_level_) {
+                targetLvl = mit->second;
+                LoadResCache(targetLvl, Utils::GetIGIRootPath());
+                meshBytes = FindMeshData(modelId);
+            }
+            if (meshBytes.empty()) {
+                for (int lvl = 1; lvl <= 14 && meshBytes.empty(); ++lvl) {
+                    if (lvl == current_level_ || lvl == targetLvl) continue;
+                    LoadResCache(lvl, Utils::GetIGIRootPath());
+                    meshBytes = FindMeshData(modelId);
+                }
+            }
+        }
         if (!meshBytes.empty()) {
             try {
                 // Pre-populate ATTA cache from the bytes we already have so
@@ -345,6 +362,23 @@ std::string Renderer_Objects::GetOrExtractMefTemp(const std::string& modelId, bo
 
     // Extract from res cache to temp.
     std::vector<uint8_t> bytes = FindMeshData(modelId);
+    if (bytes.empty()) {
+        EnsureGlobalTextureMapLoaded();
+        int targetLvl = -1;
+        auto mit = model_level_map_.find(modelId);
+        if (mit != model_level_map_.end() && mit->second != current_level_) {
+            targetLvl = mit->second;
+            LoadResCache(targetLvl, Utils::GetIGIRootPath());
+            bytes = FindMeshData(modelId);
+        }
+        if (bytes.empty()) {
+            for (int lvl = 1; lvl <= 14 && bytes.empty(); ++lvl) {
+                if (lvl == current_level_ || lvl == targetLvl) continue;
+                LoadResCache(lvl, Utils::GetIGIRootPath());
+                bytes = FindMeshData(modelId);
+            }
+        }
+    }
     if (bytes.empty()) return "";
 
     std::ofstream f(tmpPath, std::ios::binary);
@@ -363,6 +397,23 @@ const ParsedGeometry* Renderer_Objects::GetOrLoadSkinGeometry(const std::string&
     ParsedGeometry geo;
     {
         std::vector<uint8_t> mefBytes = FindMeshData(modelId);
+        if (mefBytes.empty()) {
+            EnsureGlobalTextureMapLoaded();
+            int targetLvl = -1;
+            auto mit = model_level_map_.find(modelId);
+            if (mit != model_level_map_.end() && mit->second != current_level_) {
+                targetLvl = mit->second;
+                LoadResCache(targetLvl, Utils::GetIGIRootPath());
+                mefBytes = FindMeshData(modelId);
+            }
+            if (mefBytes.empty()) {
+                for (int lvl = 1; lvl <= 14 && mefBytes.empty(); ++lvl) {
+                    if (lvl == current_level_ || lvl == targetLvl) continue;
+                    LoadResCache(lvl, Utils::GetIGIRootPath());
+                    mefBytes = FindMeshData(modelId);
+                }
+            }
+        }
         if (!mefBytes.empty()) {
             try { geo = ParseMefFileFromMemory(mefBytes, modelId); } catch (...) {}
         }

@@ -4,6 +4,7 @@
 #include "common.h"
 #include "logger.h"
 #include "renderer/res_writer.h"
+#include "renderer/renderer_objects.h"
 #include "utils.h"
 #include <filesystem>
 #include <algorithm>
@@ -14,7 +15,8 @@ bool CLIHandler::IsCLICommand(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--help" || arg == "--run-tests" ||
-        arg == "--extract-level" || arg == "--verify-level") {
+        arg == "--extract-level" || arg == "--verify-level" ||
+        arg == "--import-model") {
       return true;
     }
   }
@@ -66,6 +68,23 @@ int CLIHandler::Process(int argc, char **argv) {
     } else if (arg == "--run-tests") {
       Logger::Get().Log(LogLevel::INFO, "[CLI] Run tests command requested.");
       return RunAllTests();
+    } else if (arg == "--import-model" && i + 2 < argc) {
+      int levelNo = std::stoi(argv[++i]);
+      std::string modelId = argv[++i];
+      Renderer_Objects robj;
+      robj.SetLevel(levelNo);
+      bool ok = robj.AddModelToLevelRes(modelId, [](size_t done, size_t total) {
+        if (total > 0 && (done == 0 || done == total || done % 5 == 0)) {
+          std::cout << "[Import] Packing textures: " << done << "/" << total << std::endl;
+        }
+      });
+      if (ok) {
+        std::cout << "[Import] SUCCESS: Model '" << modelId << "' imported into level " << levelNo << std::endl;
+        return 0;
+      } else {
+        std::cerr << "[Import] FAILED: Could not import model '" << modelId << "' into level " << levelNo << std::endl;
+        return 1;
+      }
     } else if (arg == "--extract-level" && i + 1 < argc) {
       int levelNo = std::stoi(argv[++i]);
       std::string outDir = (i + 1 < argc)

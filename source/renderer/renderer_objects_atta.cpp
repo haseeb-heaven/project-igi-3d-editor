@@ -296,6 +296,11 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     // ResCache) and extracting to a temp file — needed when the foreign model was
     // never extracted to disk (only lives inside another level's archive).
     if (!familyModels.count(modelId)) {
+        EnsureGlobalTextureMapLoaded();
+        auto mit = model_level_map_.find(modelId);
+        if (mit != model_level_map_.end() && mit->second != current_level_) {
+            LoadResCache(mit->second, Utils::GetIGIRootPath());
+        }
         std::string mefPath = GetOrExtractMefTemp(modelId, /*isBuilding=*/false);
         if (mefPath.empty()) mefPath = GetOrExtractMefTemp(modelId, true);
         if (!mefPath.empty()) familyModels.emplace(modelId, mefPath);
@@ -311,6 +316,10 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
             const std::string& stem = gm.first;
             if (familyModels.count(stem)) continue;
             if (!StemInFamily(stem, prefix)) continue;
+            auto mit = model_level_map_.find(stem);
+            if (mit != model_level_map_.end() && mit->second != current_level_) {
+                LoadResCache(mit->second, Utils::GetIGIRootPath());
+            }
             std::string mefPath = GetOrExtractMefTemp(stem, /*isBuilding=*/false);
             if (mefPath.empty()) mefPath = GetOrExtractMefTemp(stem, true);
             if (!mefPath.empty()) familyModels.emplace(stem, mefPath);
@@ -471,18 +480,26 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
     try {
         const std::string exeDir = Utils::GetExeDirectory();
         const std::string lvl = std::to_string(current_level_);
-        std::filesystem::path modelDst = std::filesystem::path(exeDir) / "content" / "models" / ("level" + lvl);
-        std::filesystem::create_directories(modelDst);
+        std::filesystem::path modelDstEditor = std::filesystem::path(exeDir) / "editor" / "models" / ("level" + lvl);
+        std::filesystem::path modelDstContent = std::filesystem::path(exeDir) / "content" / "models" / ("level" + lvl);
+        std::filesystem::create_directories(modelDstEditor);
+        std::filesystem::create_directories(modelDstContent);
         for (const auto& m : looseModels) {
-            std::ofstream out((modelDst / (m.first + ".mef")).string(), std::ios::binary);
-            out.write(reinterpret_cast<const char*>(m.second.data()), (std::streamsize)m.second.size());
+            std::ofstream out1((modelDstEditor / (m.first + ".mef")).string(), std::ios::binary);
+            out1.write(reinterpret_cast<const char*>(m.second.data()), (std::streamsize)m.second.size());
+            std::ofstream out2((modelDstContent / (m.first + ".mef")).string(), std::ios::binary);
+            out2.write(reinterpret_cast<const char*>(m.second.data()), (std::streamsize)m.second.size());
         }
         if (!looseTextures.empty()) {
-            std::filesystem::path texDst = std::filesystem::path(exeDir) / "content" / "textures" / ("level" + lvl);
-            std::filesystem::create_directories(texDst);
+            std::filesystem::path texDstEditor = std::filesystem::path(exeDir) / "editor" / "textures" / ("level" + lvl);
+            std::filesystem::path texDstContent = std::filesystem::path(exeDir) / "content" / "textures" / ("level" + lvl);
+            std::filesystem::create_directories(texDstEditor);
+            std::filesystem::create_directories(texDstContent);
             for (const auto& t : looseTextures) {
-                std::ofstream out((texDst / (t.first + ".tex")).string(), std::ios::binary);
-                out.write(reinterpret_cast<const char*>(t.second.data()), (std::streamsize)t.second.size());
+                std::ofstream out1((texDstEditor / (t.first + ".tex")).string(), std::ios::binary);
+                out1.write(reinterpret_cast<const char*>(t.second.data()), (std::streamsize)t.second.size());
+                std::ofstream out2((texDstContent / (t.first + ".tex")).string(), std::ios::binary);
+                out2.write(reinterpret_cast<const char*>(t.second.data()), (std::streamsize)t.second.size());
             }
         }
     } catch (const std::exception& e) {
@@ -591,6 +608,22 @@ bool Renderer_Objects::AddModelToLevelRes(const std::string& modelId,
                 }
             }
         }
+    }
+
+    // 5. Invalidate caches and reload mapping so subsequent rendering sees the new assets immediately
+    texture_map_level_ = -1;
+    EnsureTextureMapLoaded();
+    RefreshTextureResCache();
+    for (const auto& fm : familyModels) {
+        auto texs = GetTextureIdsForModel(fm.first);
+        global_texture_map_[fm.first] = texs;
+        model_level_map_[fm.first] = current_level_;
+        for (const auto& t : texs) {
+            texture_level_map_[t] = current_level_;
+        }
+        mesh_cache_.erase(std::to_string(current_level_) + ":object:" + fm.first);
+        mesh_cache_.erase(std::to_string(current_level_) + ":building:" + fm.first);
+        skin_geometry_cache_.erase(fm.first);
     }
 
     Logger::Get().Log(LogLevel::INFO, "[Renderer] AddModelToLevelRes: packed family '" + prefix + "' = " +
