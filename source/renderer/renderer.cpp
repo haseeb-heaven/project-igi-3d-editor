@@ -441,6 +441,9 @@ void Renderer::DrawSkinnedMesh(const std::string& modelId, bool isBuilding,
     // (skin/clothes/face/etc.) get their correct textures instead of one
     // flat body texture for the whole mesh.
     auto drawRange = [&](size_t start, size_t count, GLuint tex) {
+        // The normal scene pass leaves the lightmap on unit 1. Fixed-function
+        // texture sampling uses unit 0, so select it before every skin block.
+        glActiveTexture(GL_TEXTURE0);
         if (tex != 0) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, tex);

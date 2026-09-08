@@ -122,6 +122,8 @@ public:
             int materialSlot = -1;
             int alphaMode = 0;
             std::string textureIdentity;
+            bool textureResolved = true;
+            float textureChromaticPixelRatio = 0.0f;
             glm::vec3 localBoundsMin{0.0f};
             glm::vec3 localBoundsMax{0.0f};
         };

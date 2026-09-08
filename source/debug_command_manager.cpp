@@ -572,6 +572,17 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
             visualView.partIds = visualEvidence.partIds;
             visualView.sceneDepth = sceneDepth;
             visualView.targetDepth = visualEvidence.targetDepth;
+            // The visual-ID pass uses static VAO data. Do not use its
+            // projection to judge a frame whose visible object was replaced
+            // by the live CPU-skinned draw.
+            visualView.geometryProjectionMatchesRenderedFrame =
+                app_->GetSkinnedReplacementObjectIndices(false).count(target_idx) == 0;
+            visualView.renderedRgb.resize(static_cast<size_t>(W) * H * 3);
+            for (size_t pixel = 0; pixel < static_cast<size_t>(W) * H; ++pixel) {
+                visualView.renderedRgb[pixel * 3] = bgra[pixel * 4 + 2];
+                visualView.renderedRgb[pixel * 3 + 1] = bgra[pixel * 4 + 1];
+                visualView.renderedRgb[pixel * 3 + 2] = bgra[pixel * 4];
+            }
             visualView.name = suffix;
             visualView.sourceFramePath = pngPath;
             visualView.overlayPath = overlayPath;
@@ -583,7 +594,9 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                 for (const auto& part : visualEvidence.expectedParts) {
                     visualInput.expectedParts.push_back({part.id, part.vertexCount,
                         part.triangleCount, part.materialSlot, part.alphaMode,
-                        part.textureIdentity, part.localBoundsMin, part.localBoundsMax});
+                        part.textureIdentity, part.textureResolved,
+                        part.textureChromaticPixelRatio,
+                        part.localBoundsMin, part.localBoundsMax});
                 }
                 visualExpectedParts = visualEvidence.expectedParts;
             }
@@ -805,6 +818,8 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
                        << ",\"materialSlot\":" << part.materialSlot
                        << ",\"alphaMode\":" << part.alphaMode
                        << ",\"textureIdentity\":" << JsonStr(part.textureIdentity)
+                       << ",\"textureResolved\":" << (part.textureResolved ? "true" : "false")
+                       << ",\"textureChromaticPixelRatio\":" << part.textureChromaticPixelRatio
                        << ",\"localBoundsMin\":[" << part.localBoundsMin.x << ','
                        << part.localBoundsMin.y << ',' << part.localBoundsMin.z << ']'
                        << ",\"localBoundsMax\":[" << part.localBoundsMax.x << ','
@@ -815,7 +830,10 @@ void DebugCommandManager::CaptureModel(const DebugCommand& cmd) {
         for (size_t viewIndex = 0; viewIndex < visualInput.views.size(); ++viewIndex) {
             const auto& view = visualInput.views[viewIndex];
             if (viewIndex) visualFile << ',';
-            visualFile << "{\"view\":" << JsonStr(view.name) << ",\"parts\":[";
+            visualFile << "{\"view\":" << JsonStr(view.name)
+                       << ",\"geometryProjectionMatchesRenderedFrame\":"
+                       << (view.geometryProjectionMatchesRenderedFrame ? "true" : "false")
+                       << ",\"parts\":[";
             std::map<int, std::array<int, 7>> projected;
             for (int y = 0; y < view.height; ++y) {
                 for (int x = 0; x < view.width; ++x) {

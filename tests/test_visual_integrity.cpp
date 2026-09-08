@@ -92,6 +92,57 @@ TEST(VisualIntegrityTest, ReportsMissingAuthoredMaterialCoverage) {
     EXPECT_TRUE(HasRule(result, "material-coverage"));
 }
 
+TEST(VisualIntegrityTest, FailsWhenAuthoredTextureUsesUntexturedFallback) {
+    auto input = MakeInput({1}, {MakeView(std::vector<int>(16, 1))});
+    igi::VisualIntegrityPart part;
+    part.id = 1;
+    part.vertexCount = 3;
+    part.triangleCount = 1;
+    part.textureIdentity = "authored_diffuse";
+    part.textureResolved = false;
+    input.expectedParts = {part};
+
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "texture-resolution"));
+}
+
+TEST(VisualIntegrityTest, FailsWhenColorfulAuthoredMaterialRendersOnlyGrayscale) {
+    auto view = MakeView(std::vector<int>(16, 1));
+    view.renderedRgb.assign(16 * 3, 128);  // visible geometry, but no diffuse colour survives
+    igi::VisualIntegrityPart part;
+    part.id = 1;
+    part.vertexCount = 3;
+    part.triangleCount = 1;
+    part.textureIdentity = "authored_diffuse";
+    part.textureChromaticPixelRatio = 0.50f;
+    auto input = MakeInput({1}, {view});
+    input.expectedParts = {part};
+
+    const auto result = igi::EvaluateVisualIntegrity(input);
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);
+    EXPECT_TRUE(HasRule(result, "texture-appearance"));
+}
+
+TEST(VisualIntegrityTest, DoesNotRejectSkinnedFrameFromStaticDiagnosticProjection) {
+    // The visible renderer may deform an AI mesh, while the diagnostic pass
+    // has only its rest-pose projection. Those two projections cannot be
+    // compared for holes or per-submesh coverage.
+    auto view = MakeView({1, 1, 1, 1, 2, 2, 2, 2,
+                          2, 2, 2, 2, 2, 2, 2, 2});
+    view.geometryProjectionMatchesRenderedFrame = false;
+    for (size_t index = 4; index < view.targetMask.size(); ++index)
+        view.targetMask[index] = 0;
+
+    const auto result = igi::EvaluateVisualIntegrity(MakeInput({1, 2}, {view}));
+
+    EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kPass);
+    EXPECT_FALSE(HasRule(result, "part-coverage"));
+    EXPECT_FALSE(HasRule(result, "silhouette-hole"));
+}
+
 TEST(VisualIntegrityTest, DuplicateExpectedPartIdCannotPass) {
     const auto result = igi::EvaluateVisualIntegrity(MakeInput({1, 1}, {MakeView(std::vector<int>(16, 1))}));
     EXPECT_EQ(result.status, igi::VisualIntegrityStatus::kFail);

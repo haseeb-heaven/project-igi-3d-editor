@@ -378,6 +378,41 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
     evidence.partIds.assign(pixels, 0);
     evidence.targetDepth.assign(pixels, 1.0f);
 
+    std::unordered_map<GLuint, float> texture_chromatic_ratios;
+    auto texture_chromatic_ratio = [&](GLuint texture) {
+        if (texture == 0) return 0.0f;
+        const auto cached = texture_chromatic_ratios.find(texture);
+        if (cached != texture_chromatic_ratios.end()) return cached->second;
+        GLint active_texture = GL_TEXTURE0;
+        GLint prior_texture = 0;
+        GLint width = 0;
+        GLint height = 0;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+        glActiveTexture(GL_TEXTURE0);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &prior_texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+        float ratio = 0.0f;
+        if (width > 0 && height > 0) {
+            const size_t texels = static_cast<size_t>(width) * height;
+            std::vector<uint8_t> rgba(texels * 4);
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+            size_t chromatic = 0;
+            for (size_t texel = 0; texel < texels; ++texel) {
+                const size_t offset = texel * 4;
+                const uint8_t lo = std::min({rgba[offset], rgba[offset + 1], rgba[offset + 2]});
+                const uint8_t hi = std::max({rgba[offset], rgba[offset + 1], rgba[offset + 2]});
+                if (hi - lo >= 16) ++chromatic;
+            }
+            ratio = static_cast<float>(chromatic) / static_cast<float>(texels);
+        }
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prior_texture));
+        glActiveTexture(static_cast<GLenum>(active_texture));
+        texture_chromatic_ratios.emplace(texture, ratio);
+        return ratio;
+    };
+
     glBindFramebuffer(GL_FRAMEBUFFER, pick_fbo_);
     glViewport(0, 0, viewport_width, viewport_height);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -420,7 +455,10 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
                 evidence.expectedPartIds.push_back(part_id);
                 evidence.expectedParts.push_back({part_id, part_mesh.vertexCount,
                                                   part_mesh.vertexCount / 3, -1, 0,
-                                                  part_mesh.textureName, part_mesh.center - part_mesh.halfExtents,
+                                                  part_mesh.textureName,
+                                                  part_mesh.textureName.empty() || part_mesh.textureID != 0,
+                                                  texture_chromatic_ratio(part_mesh.textureID),
+                                                  part_mesh.center - part_mesh.halfExtents,
                                                   part_mesh.center + part_mesh.halfExtents});
                 if (strict_coverage) evidence.strictPartIds.push_back(part_id);
                 glUniform1i(loc_id, part_id);
@@ -435,6 +473,8 @@ Renderer_Objects::VisualEvidence Renderer_Objects::CaptureObjectVisualEvidence(
             evidence.expectedPartIds.push_back(part_id);
             evidence.expectedParts.push_back({part_id, sub.vertexCount, sub.vertexCount / 3,
                                               sub.materialSlot, sub.alphaMode, sub.textureName,
+                                              sub.textureName.empty() || sub.textureID != 0,
+                                              texture_chromatic_ratio(sub.textureID),
                                               sub.localMin, sub.localMax});
             if (strict_coverage) evidence.strictPartIds.push_back(part_id);
             glUniform1i(loc_id, part_id);

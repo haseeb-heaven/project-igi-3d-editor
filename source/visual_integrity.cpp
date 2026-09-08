@@ -16,6 +16,27 @@ bool HasExpectedSize(const VisualIntegrityView& view) {
            view.sceneDepth.size() == pixels && view.targetDepth.size() == pixels;
 }
 
+bool HasValidRenderedRgb(const VisualIntegrityView& view) {
+    return view.renderedRgb.empty() ||
+           view.renderedRgb.size() == static_cast<size_t>(view.width) * view.height * 3;
+}
+
+int CountChromaticRenderedPixels(const VisualIntegrityView& view, int part_id, int* samples) {
+    int chromatic = 0;
+    *samples = 0;
+    for (size_t pixel = 0; pixel < view.partIds.size(); ++pixel) {
+        if (view.targetMask[pixel] == 0 || view.partIds[pixel] != part_id) continue;
+        ++*samples;
+        const size_t rgb = pixel * 3;
+        const uint8_t lo = std::min({view.renderedRgb[rgb], view.renderedRgb[rgb + 1],
+                                     view.renderedRgb[rgb + 2]});
+        const uint8_t hi = std::max({view.renderedRgb[rgb], view.renderedRgb[rgb + 1],
+                                     view.renderedRgb[rgb + 2]});
+        if (hi - lo >= 16) ++chromatic;
+    }
+    return chromatic;
+}
+
 bool HasFiniteDepth(const VisualIntegrityView& view) {
     return std::all_of(view.sceneDepth.begin(), view.sceneDepth.end(), [](float value) {
         return std::isfinite(value);
@@ -184,6 +205,8 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
                 !std::isfinite(part.localBoundsMax.x) ||
                 !std::isfinite(part.localBoundsMax.y) ||
                 !std::isfinite(part.localBoundsMax.z) ||
+                !std::isfinite(part.textureChromaticPixelRatio) ||
+                part.textureChromaticPixelRatio < 0.0f || part.textureChromaticPixelRatio > 1.0f ||
                 (has_geometry_metadata && part.localBoundsMin.x > part.localBoundsMax.x) ||
                 (has_geometry_metadata && part.localBoundsMin.y > part.localBoundsMax.y) ||
                 (has_geometry_metadata && part.localBoundsMin.z > part.localBoundsMax.z)) {
@@ -191,6 +214,10 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
                            "expected geometry inventory contains invalid counts or bounds");
                 result.status = VisualIntegrityStatus::kFail;
                 return result;
+            }
+            if (!part.textureIdentity.empty() && !part.textureResolved) {
+                AddFinding(result, "texture-resolution", -1, std::to_string(part.id), 0, 1,
+                           "authored texture identity fell back to untextured rendering");
             }
         }
         std::sort(inventory_ids.begin(), inventory_ids.end());
@@ -216,11 +243,12 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
         if (part.alphaMode == 2) transparent_part_ids.push_back(part.id);
     }
     bool has_valid_view = false;
+    bool has_projection_evidence = false;
     bool has_inconclusive_evidence = false;
     std::map<int, std::vector<TemporalMeasurement>> temporal_samples;
     for (size_t view_index = 0; view_index < input.views.size(); ++view_index) {
         const VisualIntegrityView& view = input.views[view_index];
-        if (!HasExpectedSize(view) || !HasFiniteDepth(view) || !HasDepthRange(view)) {
+        if (!HasExpectedSize(view) || !HasValidRenderedRgb(view) || !HasFiniteDepth(view) || !HasDepthRange(view)) {
             AddFinding(result, "invalid-evidence", static_cast<int>(view_index), "", 0, 0,
                        "target, material, and depth buffers must match the viewport and depth range", &view);
             continue;
@@ -233,6 +261,15 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
                        "runtime target transform differs from its authored task anchor", &view);
             view_failed = true;
         }
+        // The ordinary scene may have been drawn from a live skinned pose,
+        // while this diagnostic only has rest-pose vertices. Do not compare
+        // those different silhouettes or material projections.
+        if (!view.geometryProjectionMatchesRenderedFrame) {
+            if (view_failed) ++result.viewsFailed;
+            else ++result.viewsPassed;
+            continue;
+        }
+        has_projection_evidence = true;
         int target_pixels = 0;
         int projected_target_pixels = 0;
         for (size_t pixel = 0; pixel < view.targetMask.size(); ++pixel) {
@@ -316,6 +353,7 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
         }
         return nullptr;
     };
+    if (has_projection_evidence) {
     for (int expected_part : input.expectedPartIds) {
         const VisualIntegrityView* part_view = evidence_for_part(expected_part);
         const int projected = CountPart(projected_parts, expected_part);
@@ -394,10 +432,31 @@ VisualIntegrityResult EvaluateVisualIntegrity(const VisualIntegrityInput& input)
                        evidence_for_part(part.id));
         }
     }
+    }
+    // A textured render may have complete geometry coverage while still losing its
+    // diffuse binding. Only textures proven to contain substantial colour are
+    // assessed, so deliberately neutral materials remain outside this rule.
+    for (const VisualIntegrityPart& part : input.expectedParts) {
+        if (part.textureChromaticPixelRatio < 0.10f) continue;
+        int samples = 0;
+        int chromatic = 0;
+        for (const VisualIntegrityView& view : input.views) {
+            if (!HasExpectedSize(view) || !view.geometryProjectionMatchesRenderedFrame ||
+                view.renderedRgb.empty()) continue;
+            int view_samples = 0;
+            chromatic += CountChromaticRenderedPixels(view, part.id, &view_samples);
+            samples += view_samples;
+        }
+        if (samples >= 16 && chromatic == 0) {
+            AddFinding(result, "texture-appearance", -1, std::to_string(part.id), chromatic, 1,
+                       "a materially colorful authored texture rendered only grayscale target fragments",
+                       evidence_for_part(part.id));
+        }
+    }
     std::sort(observed_parts.begin(), observed_parts.end());
     observed_parts.erase(std::unique(observed_parts.begin(), observed_parts.end()), observed_parts.end());
     result.partsObserved = static_cast<int>(observed_parts.size());
-    if (input.minimumObservedPartRatio > 0.0f) {
+    if (has_projection_evidence && input.minimumObservedPartRatio > 0.0f) {
         const int required_observed_parts = static_cast<int>(std::ceil(
             static_cast<float>(result.partsExpected) * input.minimumObservedPartRatio));
         if (result.partsObserved < required_observed_parts) {

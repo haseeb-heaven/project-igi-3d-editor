@@ -33,6 +33,14 @@ struct VisualIntegrityPart {
     int materialSlot = -1;
     int alphaMode = 0;  // 0=opaque, 1=mask, 2=blend
     std::string textureIdentity;
+    // A non-empty authored texture identity must be backed by a live GL
+    // texture.  This distinguishes normal geometry coverage from the
+    // untextured fallback that the visible renderer uses on load failure.
+    bool textureResolved = true;
+    // Fraction of texels whose RGB channels differ enough to carry authored
+    // colour information.  It is measured from the live diffuse texture only
+    // for capture evidence, not inferred from the model name.
+    float textureChromaticPixelRatio = 0.0f;
     glm::vec3 localBoundsMin{0.0f};
     glm::vec3 localBoundsMax{0.0f};
 };
@@ -44,6 +52,13 @@ struct VisualIntegrityView {
     std::vector<int> partIds;
     std::vector<float> sceneDepth;
     std::vector<float> targetDepth;
+    // Rendered framebuffer RGB values, one triplet per target-mask pixel.
+    // Empty retains compatibility for captures that cannot read colour.
+    std::vector<uint8_t> renderedRgb;
+    // False when the normal frame used a deformed/skinned mesh but this
+    // capture only has a static projection. Such a projection cannot make
+    // silhouette or submesh-coverage claims about the visible frame.
+    bool geometryProjectionMatchesRenderedFrame = true;
     std::string name;
     std::string sourceFramePath;
     std::string overlayPath;
