@@ -125,4 +125,96 @@ TEST(EditorCameraStartTest, ResolveCursorModeForTerrainTools) {
     EXPECT_EQ(ResolveCursorMode(true, false, false, 0, -1, -1), CursorMode::Move);
 }
 
+// Regression Guard: The cursor must NEVER return Hover (highlighttool.spr,
+// a 33x33 blue-and-white square) or Selected (activetool.spr, a 33x33 white square)
+// under ANY combination of scene hover or selection states.
+TEST(EditorCameraStartTest, RegressionGuard_NeverReturnsSquareToolIcons) {
+    using igi::CursorMode;
+    using igi::ResolveCursorMode;
+
+    const bool bools[] = {false, true};
+    const int brushes[] = {-2, -1, 0, 1, 2, 3, 4, 10};
+    const int objectIndices[] = {-1, 0, 1, 42, 999};
+
+    for (bool cam : bools) {
+        for (bool lmb : bools) {
+            for (bool terrainEdit : bools) {
+                for (int brush : brushes) {
+                    for (int selIdx : objectIndices) {
+                        for (int hovIdx : objectIndices) {
+                            CursorMode mode = ResolveCursorMode(
+                                cam, lmb, terrainEdit, brush, selIdx, hovIdx);
+
+                            // Absolute invariant: square toolbar icons must NEVER be used as cursors
+                            EXPECT_NE(mode, CursorMode::Hover)
+                                << "Regression: Hover square tool icon (blue/white square) was returned!";
+                            EXPECT_NE(mode, CursorMode::Selected)
+                                << "Regression: Selected square tool icon was returned!";
+                            EXPECT_NE(mode, CursorMode::Inactive)
+                                << "Regression: Inactive tool icon was returned!";
+
+                            if (cam) {
+                                EXPECT_EQ(mode, lmb ? CursorMode::Camera : CursorMode::Move);
+                            } else if (terrainEdit) {
+                                if (brush == 0) EXPECT_EQ(mode, CursorMode::TerrainLift);
+                                else if (brush == 1) EXPECT_EQ(mode, CursorMode::TerrainLower);
+                                else if (brush == 2) EXPECT_EQ(mode, CursorMode::TerrainSoften);
+                                else if (brush == 3) EXPECT_EQ(mode, CursorMode::TerrainFlatten);
+                                else EXPECT_EQ(mode, CursorMode::TerrainDrop);
+                            } else {
+                                EXPECT_EQ(mode, CursorMode::Default);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Contract: Verify enum integer indices match the exact SPR loading order in App::LoadAllCursors()
+TEST(EditorCameraStartTest, CursorModeEnumValuesMatchSprSlotIndexContract) {
+    using igi::CursorMode;
+
+    EXPECT_EQ(static_cast<int>(CursorMode::Default), 0);
+    EXPECT_EQ(static_cast<int>(CursorMode::Hover), 1);
+    EXPECT_EQ(static_cast<int>(CursorMode::Selected), 2);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainLift), 3);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainLower), 4);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainFlatten), 5);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainFlattenLine), 6);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainDrop), 7);
+    EXPECT_EQ(static_cast<int>(CursorMode::TerrainSoften), 8);
+    EXPECT_EQ(static_cast<int>(CursorMode::Inactive), 9);
+    EXPECT_EQ(static_cast<int>(CursorMode::Camera), 10);
+    EXPECT_EQ(static_cast<int>(CursorMode::Move), 11);
+}
+
+// Contract: When selecting each terrain tool from the palette, verify the cursor updates to the distinct tool icon
+TEST(EditorCameraStartTest, TerrainBrushSwitchingGivesDistinctIcons) {
+    using igi::CursorMode;
+    using igi::ResolveCursorMode;
+
+    // Each terrain brush must have a UNIQUE cursor mode so the icon visually changes
+    CursorMode lift    = ResolveCursorMode(false, false, true, 0, -1, -1);
+    CursorMode lower   = ResolveCursorMode(false, false, true, 1, -1, -1);
+    CursorMode soften  = ResolveCursorMode(false, false, true, 2, -1, -1);
+    CursorMode flatten = ResolveCursorMode(false, false, true, 3, -1, -1);
+    CursorMode drop    = ResolveCursorMode(false, false, true, 4, -1, -1);
+
+    EXPECT_EQ(lift,    CursorMode::TerrainLift);
+    EXPECT_EQ(lower,   CursorMode::TerrainLower);
+    EXPECT_EQ(soften,  CursorMode::TerrainSoften);
+    EXPECT_EQ(flatten, CursorMode::TerrainFlatten);
+    EXPECT_EQ(drop,    CursorMode::TerrainDrop);
+
+    // None of the brushes can share the same cursor mode with each other
+    EXPECT_NE(lift, lower);
+    EXPECT_NE(lift, soften);
+    EXPECT_NE(lift, flatten);
+    EXPECT_NE(lower, soften);
+    EXPECT_NE(lower, flatten);
+    EXPECT_NE(soften, flatten);
+}
+
 } // namespace

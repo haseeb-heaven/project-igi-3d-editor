@@ -159,3 +159,61 @@ INSTANTIATE_TEST_SUITE_P(
         return name;
     }
 );
+
+// Regression Guard: Verify all terrain cursors are 32x32 with valid alpha channels
+// and that their pixel buffers are distinct so each tool has a visibly unique icon.
+TEST(CursorSprIntegrityTest, TerrainCursorsAreDistinctAndTransparent) {
+    const char* terrainIcons[] = {
+        "TerrainEditIcon_Pointer.spr",
+        "TerrainEditIcon_Lift.spr",
+        "TerrainEditIcon_Lower.spr",
+        "TerrainEditIcon_Flatten.spr",
+        "TerrainEditIcon_FlattenLine.spr",
+        "TerrainEditIcon_Drop.spr",
+        "TerrainEditIcon_Soften.spr"
+    };
+
+    std::vector<std::vector<uint8_t>> iconPixels;
+
+    for (const char* filename : terrainIcons) {
+        std::string path = QedPath() + filename;
+        if (!std::filesystem::exists(path)) {
+            GTEST_SKIP() << "Skipped: game file not present: " << path;
+        }
+
+        TEXFile tex = TEX_Parse(path);
+        ASSERT_TRUE(tex.valid) << "Failed to parse: " << filename;
+        ASSERT_FALSE(tex.images.empty());
+        const auto& img = tex.images[0];
+
+        // All terrain cursor SPRs must strictly be 32x32 ARGB8888 (mode 3)
+        EXPECT_EQ(img.width, 32u) << filename << " must be 32x32";
+        EXPECT_EQ(img.height, 32u) << filename << " must be 32x32";
+        EXPECT_EQ(img.mode, 3u) << filename << " must be mode 3 (ARGB8888)";
+
+        // Alpha transparency check: real cursor icons have transparent pixels
+        // (unlike highlighttool.spr/activetool.spr which are solid 33x33 button squares)
+        size_t transparentPixels = 0;
+        size_t opaquePixels = 0;
+        for (size_t i = 0; i + 3 < img.pixels.size(); i += 4) {
+            uint8_t a = img.pixels[i + 3];
+            if (a == 0) transparentPixels++;
+            else opaquePixels++;
+        }
+        EXPECT_GT(transparentPixels, 50u)
+            << filename << " must have transparent background pixels to be a valid cursor shape!";
+        EXPECT_GT(opaquePixels, 10u)
+            << filename << " must have visible foreground icon pixels!";
+
+        iconPixels.push_back(img.pixels);
+    }
+
+    // Verify each terrain icon has unique pixel data (not duplicate files)
+    for (size_t i = 0; i < iconPixels.size(); ++i) {
+        for (size_t j = i + 1; j < iconPixels.size(); ++j) {
+            EXPECT_NE(iconPixels[i], iconPixels[j])
+                << "Duplicate cursor sprites: " << terrainIcons[i]
+                << " and " << terrainIcons[j] << " have identical pixel data!";
+        }
+    }
+}
